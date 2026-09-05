@@ -150,10 +150,21 @@
   transform: translateY(-50%);
 }
 
+/* NOT `flex: 1`. `.railGroup` is a COLUMN flex container, so a flex-basis of
+   0% applies to HEIGHT and overrode the inline `height` the component sets —
+   the rail collapsed to 0px and `overflow: hidden` erased every band, marker
+   and budget inside it, leaving the axis labels floating beside an empty
+   column. The `flex: 1` was written when this lived in a ROW. jsdom does no
+   layout, so no gate in this repo can see it; it was found by looking. */
 .rail {
   position: relative;
-  flex: 1;
-  border: 1px solid var(--border-widget);
+  width: 100%;
+  flex: none;
+  /* `--border-default` (`--vscode-panel-border`), not `--border-widget`:
+     `--vscode-widget-border` is optional and many themes leave it undefined,
+     which makes the whole `border` declaration invalid and draws no frame at
+     all — a var() fallback cannot rescue a property set to nothing. */
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   background: var(--surface-input);
   overflow: hidden;
@@ -381,10 +392,13 @@
   overflow: hidden;
 }
 
+/* At the band's TOP. A slot band runs base -> base+budget, so its BOTTOM edge
+   is the base — exactly where the hairline and its own label sit. A label at
+   the bottom printed straight through them. */
 .budgetLabel {
   position: absolute;
-  bottom: 2px;
-  left: var(--space-2);
+  top: 2px;
+  right: var(--space-2);
   font-family: var(--font-family-mono);
   font-size: var(--font-size-xs);
   color: var(--status-info);

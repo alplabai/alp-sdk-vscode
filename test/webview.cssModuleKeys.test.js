@@ -110,3 +110,50 @@ test("every styles.X used in a component is declared in its CSS module", () => {
   assert.ok(checked > 3, `only ${checked} components had a CSS module`);
   assert.deepEqual(problems, []);
 });
+
+test("a class sized inline by its component does not also flex in the main axis", () => {
+  // THE BUG THIS ENCODES. `.rail` carried `flex: 1` — written when it lived in
+  // a ROW — while the component set its height inline. Once it moved into a
+  // COLUMN flex container, `flex: 1`'s `flex-basis: 0%` applied to HEIGHT and
+  // beat the inline value: the rail collapsed to 0px and `overflow: hidden`
+  // erased every band, marker and budget inside it. The panel rendered axis
+  // labels beside an empty column.
+  //
+  // jsdom performs no layout, so the render harness cannot see this and never
+  // will. This is the static half: an element whose size its component sets
+  // inline must not also hand that axis to the flex algorithm.
+  const files = tsxFiles(ROOT);
+  const problems = [];
+  for (const file of files) {
+    const source = fs.readFileSync(file, "utf8");
+    const rel = styleImport(source);
+    if (rel === null) continue;
+    const cssPath = path.join(path.dirname(file), rel);
+    if (!fs.existsSync(cssPath)) continue;
+    // Classes the component sizes inline: `className={styles.x} style={{ height:`
+    // in either order, within one element's attribute list.
+    const sizedInline = new Set();
+    for (const m of source.matchAll(
+      /styles\.([A-Za-z_]\w*)[^>]{0,400}?style=\{\{[^}]*\b(?:height|width):/g,
+    )) {
+      sizedInline.add(m[1]);
+    }
+    const css = fs
+      .readFileSync(cssPath, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const name of sizedInline) {
+      const rule = css.match(new RegExp(`\\.${name}\\s*\\{([^}]*)\\}`));
+      if (!rule) continue;
+      const flex = rule[1].match(/(^|;)\s*flex\s*:\s*([^;]+)/);
+      // `flex: none` / `flex: 0 0 auto` keep the declared size; a numeric grow
+      // with the default 0% basis replaces it.
+      if (flex && /^\s*\d/.test(flex[2]) && !/\bauto\b/.test(flex[2])) {
+        problems.push(
+          `${path.relative(ROOT, file)}: .${name} is sized inline but declares ` +
+            `flex: ${flex[2].trim()} — flex-basis overrides that size in the main axis`,
+        );
+      }
+    }
+  }
+  assert.deepEqual(problems, []);
+});
