@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type {
   BuildPlanData,
   ManifestProvenance,
+  MemoryView,
   SizeReport,
   SystemManifest,
 } from "../../types";
@@ -19,6 +20,9 @@ export interface UseBuildPlan {
    *  last build. Null on the projection path, which has no file. */
   manifestProvenance: ManifestProvenance | null;
   manifestError: string | null;
+  /** #484: the address-space view of that same manifest — what it pins, and
+   *  what the customer declared that it could not place. Host-computed. */
+  memory: MemoryView | null;
   /** Per-slice footprint vs the SoM budget (`tan size`). Null before a build
    *  or when the measurement failed — never rendered as zero. */
   sizes: SizeReport | null;
@@ -48,6 +52,7 @@ export function useBuildPlan(): UseBuildPlan {
   const [manifestProvenance, setManifestProvenance] =
     useState<ManifestProvenance | null>(null);
   const [manifestError, setManifestError] = useState<string | null>(null);
+  const [memory, setMemory] = useState<MemoryView | null>(null);
   const [sizes, setSizes] = useState<SizeReport | null>(null);
   const [sizesError, setSizesError] = useState<string | null>(null);
 
@@ -61,6 +66,7 @@ export function useBuildPlan(): UseBuildPlan {
         setManifest(msg.manifest);
         setManifestPostBuild(msg.postBuild);
         setManifestProvenance(msg.provenance ?? null);
+        setMemory(msg.memory ?? null);
         setManifestError(msg.error ?? null);
       } else if (msg.type === "sliceSizesData") {
         setSizes(msg.report);
@@ -80,6 +86,7 @@ export function useBuildPlan(): UseBuildPlan {
       manifestPostBuild,
       manifestProvenance,
       manifestError,
+      memory,
       sizes,
       sizesError,
       reload() {
@@ -89,6 +96,7 @@ export function useBuildPlan(): UseBuildPlan {
         setManifest(null);
         setManifestProvenance(null);
         setManifestError(null);
+        setMemory(null);
         setSizes(null);
         setSizesError(null);
         postMessage({ type: "requestBuildPlan" });
@@ -111,6 +119,7 @@ export function useBuildPlan(): UseBuildPlan {
       manifestPostBuild,
       manifestProvenance,
       manifestError,
+      memory,
       sizes,
       sizesError,
     ],

@@ -1,0 +1,206 @@
+/* SPDX-License-Identifier: Apache-2.0
+ *
+ * The memory map's paint. Geometry lives in the SVG's viewBox, not here — this
+ * file sets colour, stroke and type only, so no layout rule can collapse the
+ * drawing the way a flex-basis once collapsed its predecessor. Every colour is
+ * a declared token: the chart sits beside a slice list in the same panel, and a
+ * band that borrowed a raw hex would be the one element that stops agreeing
+ * with the editor theme. */
+
+.svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  overflow: visible;
+  font-family: var(--font-family-mono);
+}
+
+.railFrame {
+  fill: var(--surface-input);
+  stroke: var(--border-default);
+  stroke-width: 1;
+}
+
+/* Solid, and coloured by what the extent belongs to — its region, its flash
+   device, or its own core. Neighbouring extents in one region share a colour;
+   that is the fact worth seeing at a glance. Provenance (manifest base vs
+   tan-size budget) is carried by the legend and the row list, not by a dash
+   pattern: a chart where every edge is dashed reads as unfinished. */
+.band,
+.budget {
+  stroke-width: 1;
+}
+
+.band[data-selected],
+.budget[data-selected] {
+  stroke-width: 2.5;
+}
+
+/* A base with no size is a line, not a block. */
+.marker {
+  stroke-width: 2;
+}
+
+.band[data-series="1"],
+.budget[data-series="1"] {
+  fill: color-mix(in srgb, var(--chart-1) 30%, transparent);
+  stroke: var(--chart-1);
+}
+
+.marker[data-series="1"] {
+  stroke: var(--chart-1);
+}
+
+.bandLabel[data-series="1"],
+.markerLabel[data-series="1"] {
+  fill: var(--chart-1);
+}
+
+.band[data-series="2"],
+.budget[data-series="2"] {
+  fill: color-mix(in srgb, var(--chart-2) 30%, transparent);
+  stroke: var(--chart-2);
+}
+
+.marker[data-series="2"] {
+  stroke: var(--chart-2);
+}
+
+.bandLabel[data-series="2"],
+.markerLabel[data-series="2"] {
+  fill: var(--chart-2);
+}
+
+.band[data-series="3"],
+.budget[data-series="3"] {
+  fill: color-mix(in srgb, var(--chart-3) 30%, transparent);
+  stroke: var(--chart-3);
+}
+
+.marker[data-series="3"] {
+  stroke: var(--chart-3);
+}
+
+.bandLabel[data-series="3"],
+.markerLabel[data-series="3"] {
+  fill: var(--chart-3);
+}
+
+.band[data-series="4"],
+.budget[data-series="4"] {
+  fill: color-mix(in srgb, var(--chart-4) 30%, transparent);
+  stroke: var(--chart-4);
+}
+
+.marker[data-series="4"] {
+  stroke: var(--chart-4);
+}
+
+.bandLabel[data-series="4"],
+.markerLabel[data-series="4"] {
+  fill: var(--chart-4);
+}
+
+.band[data-series="5"],
+.budget[data-series="5"] {
+  fill: color-mix(in srgb, var(--chart-5) 30%, transparent);
+  stroke: var(--chart-5);
+}
+
+.marker[data-series="5"] {
+  stroke: var(--chart-5);
+}
+
+.bandLabel[data-series="5"],
+.markerLabel[data-series="5"] {
+  fill: var(--chart-5);
+}
+
+.band[data-series="6"],
+.budget[data-series="6"] {
+  fill: color-mix(in srgb, var(--chart-6) 30%, transparent);
+  stroke: var(--chart-6);
+}
+
+.marker[data-series="6"] {
+  stroke: var(--chart-6);
+}
+
+.bandLabel[data-series="6"],
+.markerLabel[data-series="6"] {
+  fill: var(--chart-6);
+}
+
+.markerLabel,
+.bandLabel {
+  fill: var(--text-primary);
+  font-size: 10px;
+}
+
+.tick {
+  stroke: var(--border-default);
+  stroke-width: 1;
+}
+
+.tickLabel {
+  fill: var(--text-secondary);
+  font-size: 10px;
+}
+
+.caption {
+  fill: var(--text-secondary);
+  font-size: 10px;
+}
+
+/* The band the detail rail magnifies, marked on the rail it came from. */
+/* The magnified slice of the window, marked on the rail's edge. A box around
+   the band printed its dashes through that band's own label. */
+.detailMark {
+  stroke: var(--text-primary);
+  stroke-width: 3;
+  pointer-events: none;
+}
+
+.bracket {
+  stroke: var(--border-default);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.apertureBar {
+  fill: color-mix(in srgb, var(--accent) 16%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+
+.apertureLabel {
+  fill: var(--accent);
+  font-size: 9px;
+}
+
+.hit {
+  cursor: pointer;
+}
+
+.hit:focus-visible {
+  outline: 1px solid var(--border-focus);
+}
+
+/* Transparent overlay: it exists to catch the pointer for the readout. */
+.hover {
+  fill: transparent;
+}
+
+.hoverLine {
+  stroke: var(--text-secondary);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+
+.hoverLabel {
+  fill: var(--text-primary);
+  font-size: 10px;
+  paint-order: stroke;
+  stroke: var(--surface-bg);
+  stroke-width: 3px;
+}

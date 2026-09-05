@@ -24,6 +24,8 @@ import { DependenciesView } from "../../packages/alp-webview/src/features/depend
 import { HardwareExplorerView } from "../../packages/alp-webview/src/features/hardware-explorer";
 import { BuildPlanView } from "../../packages/alp-webview/src/features/build-plan";
 import { ModelsView } from "../../packages/alp-webview/src/features/models";
+// #484: the harness runs the REAL narrower, not a hand-written payload.
+import { buildMemoryView } from "../../packages/alp-core/src/systemManifest/memoryView";
 // Imported, not hardcoded: a hardcoded `_v: 2` outlived the bump to 3, so every
 // AppProvider here saw a protocol mismatch, held `state` at null, and rendered
 // nine skeletons that the harness scored as PASS.
@@ -368,58 +370,120 @@ function feedState() {
   // never rendered by this harness at all, so nothing here covered it. The
   // shape is the one #331 is about: one slice that succeeded and one that did
   // not, the latter carrying the `reason` the UI used to drop.
+  // #484: the address-space view of that same manifest. NOT hand-written —
+  // `buildMemoryView` is the narrower the panel itself runs, so this harness
+  // exercises the real thing end to end. A hand-written payload is what let the
+  // first revision ship reading the resolver's dataclass field names instead of
+  // the keys the emitter writes: the fixture agreed with the broken code and
+  // every gate was green. The manifest above therefore carries the EMITTER's
+  // keys (`carve_out_base`, `carve_out_size`, `carve_out_region`,
+  // `offset_kib`), verbatim in shape.
+
+  const MANIFEST = {
+    schema_version: 1,
+    generated_by: "tan",
+    hw_info: { sku: "E1M-AEN801" },
+    slices: [
+      {
+        // The second M55: a load address and NO tan-size row, so a hairline
+        // with no budget band beside one that has both. It also makes the
+        // window's span indivisible by the 22x detail factor, which is what
+        // lets the fractional-address gate below actually fire — a gate that
+        // cannot go red is not a gate.
+        core_id: "m55_he",
+        os: "zephyr",
+        status: "ok",
+        board: "alp_e1m_aen801_m55_he",
+        flash_args: { slot0_load_address: "0x80010000" },
+      },
+      {
+        core_id: "m55_hp",
+        os: "zephyr",
+        status: "ok",
+        build_dir: "build/m55_hp",
+        output_artefact: "build/m55_hp/zephyr/zephyr.elf",
+        flash_method: "jlink",
+        toolchain: "arm-zephyr-eabi",
+        flash_args: { slot0_load_address: "0x802b0000" },
+      },
+      {
+        // No `toolchain` — either an SDK predating the field, or a preset
+        // that declares none. Deliberately paired with the slice above that
+        // has one, so the harness covers both the reported and the "not
+        // reported" branch of the readout.
+        core_id: "a32_cluster",
+        os: "yocto",
+        status: "skipped",
+        reason: "bitbake not found",
+        log_path: "build/a32_cluster/bitbake.log",
+      },
+      {
+        // `os: "off"` — this slice never builds. The real fixture
+        // (test/fixtures/system-manifest.aen801.yaml) carries exactly this
+        // shape: an off slice with a `toolchain` value still on it. The
+        // build-toolchain row must be gated on `active`, like the Flash
+        // button, so this value must NOT reach the screen (asserted below).
+        core_id: "a32_idle",
+        os: "off",
+        status: "pending",
+        toolchain: "poky-glibc",
+      },
+    ],
+    ipc: [
+      {
+        name: "rpmsg0",
+        kind: "rpmsg",
+        endpoints: ["m55_hp", "a32_cluster"],
+        status: "degraded",
+        reason: "peer slice skipped",
+      },
+      {
+        // A RESOLVED carve-out, in the emitter's own spelling: quoted hex,
+        // `carve_out_*` keys, and no `status` at all — absence is what
+        // "resolved" looks like in this contract.
+        name: "alp_shmem0",
+        kind: "raw_shmem",
+        endpoints: ["m55_hp", "a32_cluster"],
+        carve_out_base: "0x80540000",
+        carve_out_size: "0x00040000",
+        carve_out_region: "mram_main",
+        cacheable: false,
+        mailbox_channel: 0,
+      },
+      {
+        // Pinned by hand onto the HP image slot (`ipc[].address:`). The
+        // allocator compares carve-outs against carve-outs in the same
+        // region, so this pair is checked nowhere upstream — the view's own
+        // conflict pass is the only thing that reports it.
+        name: "alp_shmem1",
+        kind: "raw_shmem",
+        endpoints: ["m55_hp", "m55_he"],
+        carve_out_base: "0x802b0000",
+        carve_out_size: "0x00001000",
+        carve_out_region: "mram_main",
+        cacheable: false,
+        mailbox_channel: 1,
+      },
+    ],
+    storage: [
+      {
+        name: "data",
+        fs: "littlefs",
+        flash_device: "storage",
+        dt_label: "storage",
+        offset_kib: 0,
+        size_kib: 64,
+        mount: "/lfs",
+      },
+    ],
+    helper_mcus: [],
+    boot_order: [],
+  };
   g.__ALP_POST_TO_WEBVIEW__({
     type: "systemManifestData",
     postBuild: true,
-    manifest: {
-      schema_version: 1,
-      generated_by: "tan",
-      hw_info: { sku: "E1M-AEN801" },
-      slices: [
-        {
-          core_id: "m55_hp",
-          os: "zephyr",
-          status: "ok",
-          build_dir: "build/m55_hp",
-          output_artefact: "build/m55_hp/zephyr/zephyr.elf",
-          flash_method: "jlink",
-          toolchain: "arm-zephyr-eabi",
-        },
-        {
-          // No `toolchain` — either an SDK predating the field, or a preset
-          // that declares none. Deliberately paired with the slice above that
-          // has one, so the harness covers both the reported and the "not
-          // reported" branch of the readout.
-          core_id: "a32_cluster",
-          os: "yocto",
-          status: "skipped",
-          reason: "bitbake not found",
-          log_path: "build/a32_cluster/bitbake.log",
-        },
-        {
-          // `os: "off"` — this slice never builds. The real fixture
-          // (test/fixtures/system-manifest.aen801.yaml) carries exactly this
-          // shape: an off slice with a `toolchain` value still on it. The
-          // build-toolchain row must be gated on `active`, like the Flash
-          // button, so this value must NOT reach the screen (asserted below).
-          core_id: "a32_idle",
-          os: "off",
-          status: "pending",
-          toolchain: "poky-glibc",
-        },
-      ],
-      ipc: [
-        {
-          name: "rpmsg0",
-          kind: "rpmsg",
-          endpoints: ["m55_hp", "a32_cluster"],
-          status: "degraded",
-          reason: "peer slice skipped",
-        },
-      ],
-      helper_mcus: [],
-      boot_order: [],
-    },
+    manifest: MANIFEST,
+    memory: buildMemoryView(MANIFEST as never),
   });
   // #359: per-slice footprint from `tan size`. Deliberately mixed — one slice
   // in budget with real numbers, one that produced nothing — so the harness
@@ -670,6 +734,146 @@ async function main() {
           );
         }
       }
+      // #484 — the Memory tab. Reached by clicking, because the section opens
+      // on Slices; without this the tab would be covered only by the
+      // click-every-button sweep below, which asserts nothing about what it
+      // then shows.
+      const tabs = Array.from(container.querySelectorAll('button[role="tab"]'));
+      const memoryTab = tabs.find((b) =>
+        (b.textContent || "").toLowerCase().includes("memory"),
+      );
+      if (!memoryTab) {
+        problems.push("build-plan: no Memory tab on the system manifest");
+      } else {
+        (memoryTab as HTMLButtonElement).click();
+        await settle();
+        const memText = (container.textContent || "").toLowerCase();
+        for (const needle of [
+          "alp_shmem0", // a sized carve-out, drawn as a band
+          "0x80540000 – 0x80580000", // its extent, both ends
+          "mram_main", // the region it came from
+          "+0 b in storage", // the partition: an offset, never an address
+          "64.0 kib", // its size
+          // m55_hp's slot extent, named as tan's measurement rather than
+          // folded into the address beside it.
+          "5.50 mib · tan size",
+          "peer slice skipped", // a degraded link's reason, verbatim
+          // D3: true scale by default, with the fixed magnified top band
+          // beside it and Equalized offered as a labelled alternative.
+          "true scale",
+          // The window runs from the lowest pinned base to the furthest reach,
+          // budgets included: 0x80010000 (m55_he's load address) to
+          // 0x802b0000 + 5 767 168 B (m55_hp's tan-size budget) = 0x80830000.
+          // A 22x rail covers 1/22 of that = 387 258.18 B, floored to 387 258.
+          "22× top 378.2 kib",
+          "equalized",
+          // D4: the conflict the allocator never checks, stated before the
+          // picture — a carve-out pinned onto the HP image slot.
+          "covers an image load address",
+          "0x802b0000",
+          // D4: the aperture, named beside the map with no extent of its own.
+          // The legend that replaced four paragraphs of prose.
+          "bands are extents, lines are a base with no size",
+        ]) {
+          if (!memText.includes(needle)) {
+            problems.push(`build-plan: memory tab missing "${needle}"`);
+          }
+        }
+        // An address is an integer or it is not an address. `0x80291745.d`
+        // reached a real screen: the detail window was computed as
+        // `hi - (hi - lo) / 22`, which is almost never whole, and
+        // `toString(16)` renders the remainder as hex digits after a dot.
+        //
+        // Checked per LEAF ELEMENT, not on `container.textContent`: that glues
+        // adjacent elements with no separator, so a legitimate
+        // `0x802b1000` beside `4.0 KiB` reads as `0x802b10004.0` and the whole
+        // gate becomes a false alarm. (It did, first run.)
+        for (const el of Array.from(container.querySelectorAll("*"))) {
+          if (el.children.length > 0) continue;
+          const frac = (el.textContent || "").match(
+            /0x[0-9a-fA-F]+\.[0-9a-fA-F]+/,
+          );
+          if (frac) {
+            problems.push(
+              `build-plan: memory tab rendered a fractional address "${frac[0]}"`,
+            );
+          }
+        }
+        // The slot markers exist at all. This asserts PRESENCE only — that a
+        // marker is a hairline rather than a block is a CSS class the harness
+        // cannot see, since run.mjs stubs CSS modules with a key-echoing Proxy
+        // (test/webview.cssModuleKeys.test.js is what covers the class names).
+        const markers = Array.from(
+          container.querySelectorAll('[data-kind="slot_image"]'),
+        );
+        if (markers.length === 0) {
+          problems.push("build-plan: memory tab drew no slot markers");
+        }
+        // The prose moved OUT of the map and into its own tab. Assert it
+        // landed there rather than simply vanishing.
+        const notesTab = tabs.find((b) =>
+          (b.textContent || "").toLowerCase().includes("notes"),
+        );
+        if (!notesTab) {
+          problems.push("build-plan: no Notes tab on the system manifest");
+        } else {
+          (notesTab as HTMLButtonElement).click();
+          await settle();
+          const notes = (container.textContent || "").toLowerCase();
+          for (const needle of [
+            "alp-sdk#1365", // why half the map is missing
+            "not in", // ...the contract
+            "nothing here is editable", // and why it stays read-only
+          ]) {
+            if (!notes.includes(needle)) {
+              problems.push(`build-plan: notes tab missing "${needle}"`);
+            }
+          }
+          // The map must not be on screen at the same time.
+          if (notes.includes("22× top")) {
+            problems.push("build-plan: the notes tab still renders the map");
+          }
+        }
+        (tabs[0] as HTMLButtonElement).click();
+        await settle();
+      }
+
+      // `tan build --plan` is deferred (tan-cli#427), so on the pinned CLI the
+      // panel ALWAYS posts `plan: null` with a deferred message. That used to
+      // collapse the whole tab into "No build plan" and take the system
+      // manifest down with it — the slices, the footprints and the memory map,
+      // all of which the panel had already read off disk and posted. Nothing
+      // could open any of it in a shipped build.
+      const g2 = globalThis as unknown as {
+        __ALP_POST_TO_WEBVIEW__: (m: unknown) => void;
+      };
+      g2.__ALP_POST_TO_WEBVIEW__({
+        type: "buildPlanData",
+        plan: null,
+        error:
+          "`tan build --plan` is deferred and not available in this build " +
+          "(see https://github.com/alplabai/tan-cli/issues/427).",
+      });
+      await settle();
+      const noPlan = (container.textContent || "").toLowerCase();
+      if (!noPlan.includes("system manifest")) {
+        problems.push(
+          "build-plan: the system manifest vanished when no plan was available",
+        );
+      }
+      if (noPlan.includes("no build plan")) {
+        problems.push(
+          "build-plan: a deferred plan still collapses the tab into the empty state",
+        );
+      }
+      if (!noPlan.includes("tan-cli/issues/427")) {
+        problems.push(
+          "build-plan: the plan's absence is not explained on screen",
+        );
+      }
+      // Put the plan back so the click sweep below sees the normal panel.
+      feedState();
+      await settle();
     }
     // The defect this panel exists to remove, asserted at the surface a customer
     // actually reads. Fed the tan-cli#103 report — `fail: 0`, `ninja` at `warn`,

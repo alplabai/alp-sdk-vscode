@@ -92,6 +92,26 @@
   --status-info-border: var(--vscode-inputValidation-infoBorder);
 }
 
+/* ── Color — chart series ───────────────────────────────────────────────────
+ *
+ * VS Code ships a palette for exactly this: `charts.*` are theme-provided and
+ * meant for data series, so a chart drawn from them keeps agreeing with the
+ * editor when the theme changes. They are NOT the status colours — a region's
+ * colour distinguishes it from its neighbour and says nothing about health,
+ * and reusing `--status-err` for "the third region" would say the wrong thing
+ * loudly.
+ *
+ * Each carries a fallback, because a theme need not define `charts.*` and a
+ * `fill` set to nothing paints nothing. */
+:root {
+  --chart-1: var(--vscode-charts-blue, #4daafc);
+  --chart-2: var(--vscode-charts-green, #89d185);
+  --chart-3: var(--vscode-charts-orange, #d18616);
+  --chart-4: var(--vscode-charts-purple, #b180d7);
+  --chart-5: var(--vscode-charts-yellow, #cca700);
+  --chart-6: var(--vscode-charts-red, #f14c4c);
+}
+
 /* ── Motion ─────────────────────────────────────────────────────────────── */
 :root {
   --duration-fast: 100ms;

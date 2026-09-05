@@ -849,12 +849,90 @@ export interface ManifestProvenance {
   reason: string | null;
 }
 
+// --- Memory regions (#484): mirrors
+// @alp-sdk/core/systemManifest/memoryView. The address-space view of a
+// manifest — what it pins, and what the customer declared that it could not
+// place. Host-computed; read-only here. ---
+
+/** `slot_image` a slice's primary image slot · `carve_out` a resolved IPC
+ *  carve-out · `partition` a resolved storage partition. */
+export type MemorySpanKind = "slot_image" | "carve_out" | "partition";
+
+export interface MemorySpan {
+  id: string;
+  kind: MemorySpanKind;
+  label: string;
+  /** Absolute base, or null. A partition is ALWAYS null: its `offset_kib` is
+   *  device-relative and the device's own base is in the SoM region table,
+   *  which system-manifest-v1 does not carry (alp-sdk#1365). */
+  base: number | null;
+  deviceOffset: number | null;
+  /** Null when a base is pinned but no size is — the normal state of a slot
+   *  image, whose capacity is a SoM budget `tan size` reports separately. */
+  sizeBytes: number | null;
+  /** `carve_out_region`: the SoM region the resolver allocated from. */
+  region: string | null;
+  /** `flash_device`: the device this partition lives in. */
+  device: string | null;
+  cores: string[];
+  fs: string | null;
+}
+
+export interface MemoryUnresolved {
+  id: string;
+  kind: MemorySpanKind;
+  label: string;
+  cores: string[];
+  /** The emitter's own word, or `unresolved` when it stated none. */
+  status: string;
+  /** Verbatim and in full — it is the only actionable half. */
+  reason: string | null;
+}
+
+/** A region or device the manifest NAMES but does not describe: the hull is
+ *  what landed inside it, never the aperture's own extent. */
+export interface MemoryAperture {
+  id: string;
+  name: string;
+  kind: "region" | "device";
+  members: string[];
+  hullBase: number | null;
+  hullEnd: number | null;
+}
+
+export type MemoryConflictKind =
+  | "overlap"
+  | "covers_load_address"
+  | "device_overlap";
+
+export interface MemoryConflict {
+  id: string;
+  kind: MemoryConflictKind;
+  first: string;
+  second: string;
+  from: number;
+  to: number;
+  device: string | null;
+}
+
+export interface MemoryView {
+  sku: string;
+  spans: MemorySpan[];
+  unresolved: MemoryUnresolved[];
+  apertures: MemoryAperture[];
+  /** Computed here, not read: the allocator compares carve-outs only against
+   *  carve-outs in the same region, so nothing upstream looks at these pairs. */
+  conflicts: MemoryConflict[];
+}
+
 export interface SystemManifestDataMessage {
   type: "systemManifestData";
   manifest: SystemManifest | null;
   postBuild: boolean;
-  /** Null on the projection path, which has no file to be stale. */
+  /** Null when there is no file, which has no date to report. */
   provenance: ManifestProvenance | null;
+  /** Null exactly when `manifest` is null. */
+  memory: MemoryView | null;
   error?: string;
 }
 

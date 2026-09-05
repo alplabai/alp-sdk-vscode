@@ -4,11 +4,15 @@ import type {
   BuildPlanGeneratedFile,
   BuildPlanSlice,
   ManifestProvenance,
+  MemoryView,
   SizeReport,
   SliceSize,
   SystemManifest,
 } from "../../types";
 import styles from "./BuildPlanView.module.css";
+import { formatBytes } from "./format";
+import { MemoryNotes } from "./MemoryNotes";
+import { MemoryRegions } from "./MemoryRegions";
 import { useBuildPlan } from "./useBuildPlan";
 
 function commandLine(slice: BuildPlanSlice): string {
@@ -25,15 +29,6 @@ const isReady = (value?: string): boolean => !!value && value !== "TBD";
  *  only when the slice carries a real `flash_method` (not the `TBD`
  *  placeholder). There is no per-slice Build button — `tan build` has no
  *  `--core` option, so building a single slice isn't a real CLI command. */
-/** `99452` -> `97.1 KiB`. Bytes are what tan reports and what a linker map
- *  shows, so both are rendered — the exact figure is the one you act on. */
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const kib = bytes / 1024;
-  if (kib < 1024) return `${kib.toFixed(1)} KiB`;
-  return `${(kib / 1024).toFixed(2)} MiB`;
-}
-
 /** One region as `97.1 KiB / 5.50 MiB (1.7%)`, degrading honestly: a null
  *  `used` means nothing could measure it and a null `total` means no budget
  *  resolved. Neither is rendered as 0 — tan reports null rather than guessing,
@@ -109,6 +104,7 @@ function SystemManifestSection({
   provenance,
   error,
   flashSlice,
+  memory,
   sizes,
   sizesError,
 }: {
@@ -117,12 +113,18 @@ function SystemManifestSection({
   provenance: ManifestProvenance | null;
   error: string | null;
   flashSlice: (coreId: string) => void;
+  memory: MemoryView | null;
   sizes: SizeReport | null;
   sizesError: string | null;
 }) {
   const sizeByCore = new Map<string, SliceSize>(
     (sizes?.slices ?? []).map((s) => [s.core_id, s]),
   );
+  // Two readings of one file (#484): the slice list is per-core wiring, the
+  // memory map is the address space. Tabs rather than a second panel — both
+  // come off the same `build/system-manifest.yaml` read, and a second panel
+  // would duplicate that read and its "run `tan build` first" empty state.
+  const [tab, setTab] = useState<"slices" | "memory" | "notes">("slices");
   // Two independent commands feed this section, so both notes are rendered.
   // `sizesError` was reaching the view and being dropped on the floor: a
   // `tan size` failure left the footprint column simply absent, which reads as
@@ -181,109 +183,152 @@ function SystemManifestSection({
         </p>
       )}
       {sizesError && <p className={styles.manifestNote}>{sizesError}</p>}
-      <ul className={styles.manifestSlices}>
-        {manifest.slices.map((s) => {
-          const active = s.os !== "off";
-          return (
-            <li key={s.core_id} className={styles.manifestSlice}>
-              <span className={styles.coreId}>{s.core_id}</span>
-              <span className={styles.backend} data-backend={s.os}>
-                {s.os}
-              </span>
-              <span className={styles.manifestStatus} data-status={s.status}>
-                {s.status}
-              </span>
-              {s.flash_method && (
-                <span className={styles.manifestFlash}>{s.flash_method}</span>
-              )}
-              <code className={styles.manifestTarget}>
-                {s.build_dir ?? s.board ?? s.machine ?? s.image ?? s.app ?? "—"}
-              </code>
-              <span className={styles.manifestActions}>
-                {active && isReady(s.flash_method) && (
-                  <button
-                    type="button"
-                    className={styles.sliceBtn}
-                    onClick={() => flashSlice(s.core_id)}
-                  >
-                    Flash
-                  </button>
+      <div className={styles.tabs} role="tablist" aria-label="System manifest">
+        <button
+          type="button"
+          role="tab"
+          className={styles.tab}
+          aria-selected={tab === "slices"}
+          onClick={() => setTab("slices")}
+        >
+          Slices
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className={styles.tab}
+          aria-selected={tab === "memory"}
+          onClick={() => setTab("memory")}
+        >
+          Memory
+        </button>
+        {/* The map's context, one tab away instead of three paragraphs above
+         *  the chart. A reading surface should not have to explain itself in
+         *  place. */}
+        <button
+          type="button"
+          role="tab"
+          className={styles.tab}
+          aria-selected={tab === "notes"}
+          onClick={() => setTab("notes")}
+        >
+          Notes
+        </button>
+      </div>
+      {tab === "notes" ? (
+        <MemoryNotes />
+      ) : tab === "memory" ? (
+        <MemoryRegions memory={memory} sizes={sizes?.slices ?? []} />
+      ) : (
+        <ul className={styles.manifestSlices}>
+          {manifest.slices.map((s) => {
+            const active = s.os !== "off";
+            return (
+              <li key={s.core_id} className={styles.manifestSlice}>
+                <span className={styles.coreId}>{s.core_id}</span>
+                <span className={styles.backend} data-backend={s.os}>
+                  {s.os}
+                </span>
+                <span className={styles.manifestStatus} data-status={s.status}>
+                  {s.status}
+                </span>
+                {s.flash_method && (
+                  <span className={styles.manifestFlash}>{s.flash_method}</span>
                 )}
-              </span>
-              {/* The status chip alone says `skipped` without saying why, which
-               *  is the complaint behind #331 — the manifest already carries
-               *  the answer and it was being dropped. `reason` first, because
-               *  it is the only one that explains a non-ok slice; then what
-               *  the build produced, then where to read the log. Wraps to its
-               *  own line via flex-basis so the chip row keeps its shape. */}
-              {(s.reason || s.output_artefact || s.log_path) && (
-                <span className={styles.manifestDetail}>
-                  {s.reason && (
-                    <span className={styles.manifestReason}>{s.reason}</span>
-                  )}
-                  {s.output_artefact && (
-                    <span>
-                      out{" "}
-                      <code className={styles.manifestDetailPath}>
-                        {s.output_artefact}
-                      </code>
-                    </span>
-                  )}
-                  {s.log_path && (
-                    <span>
-                      log{" "}
-                      <code className={styles.manifestDetailPath}>
-                        {s.log_path}
-                      </code>
-                    </span>
+                <code className={styles.manifestTarget}>
+                  {s.build_dir ??
+                    s.board ??
+                    s.machine ??
+                    s.image ??
+                    s.app ??
+                    "—"}
+                </code>
+                <span className={styles.manifestActions}>
+                  {active && isReady(s.flash_method) && (
+                    <button
+                      type="button"
+                      className={styles.sliceBtn}
+                      onClick={() => flashSlice(s.core_id)}
+                    >
+                      Flash
+                    </button>
                   )}
                 </span>
-              )}
-              {/* This is THIS BUILD's resolved toolchain, read straight from the
-               *  emitted manifest (`slices[].toolchain`). It is NOT a second
-               *  opinion on Hardware Explorer's "Toolchain" column — both read
-               *  the exact same `topology.<core>.toolchain` field
-               *  (`sdkCatalogue/parse.ts:137` here; alp-sdk
-               *  `alp_orchestrate/loader.py` sets `toolchain=entry.get("toolchain")`
-               *  from that same SoM-topology-merged-with-board.yaml-cores entry,
-               *  and `alp_orchestrate/buildplan.py` says outright it is "never
-               *  invented"). What differs is WHEN it was read, and it only
-               *  differs at all once a build has run: under the `projection`
-               *  badge tan re-derived this live from the current
-               *  board.yaml/preset (`build --manifest`), so it cannot be stale
-               *  and will agree with Hardware Explorer; under `post-build` it
-               *  came off a `build/system-manifest.yaml` on disk
-               *  (`build --manifest-from`), which a previous `som.sku` can have
-               *  left behind. While alp-sdk#964 blocks a per-core override,
-               *  that stale file is the only way the two can disagree; the
-               *  override — the thing that would let them genuinely diverge —
-               *  is the #314 picker half. Gated on `active` like the Flash
-               *  button: an `os: "off"` slice never builds, so its manifest
-               *  toolchain value (if any) would mislead. Absence renders as an
-               *  explicit "not reported", never a blank cell or a guessed
-               *  fallback — a preset that declares no toolchain is schema-legal
-               *  (som-preset-v1's `topology_entry` has `required: []`), though
-               *  no shipped preset omits it today. */}
-              {active && (
-                <span className={styles.manifestDetail}>
-                  <span>
-                    build toolchain{" "}
-                    {s.toolchain ? (
-                      <code className={styles.manifestDetailPath}>
-                        {s.toolchain}
-                      </code>
-                    ) : (
-                      <em>not reported</em>
+                {/* The status chip alone says `skipped` without saying why, which
+                 *  is the complaint behind #331 — the manifest already carries
+                 *  the answer and it was being dropped. `reason` first, because
+                 *  it is the only one that explains a non-ok slice; then what
+                 *  the build produced, then where to read the log. Wraps to its
+                 *  own line via flex-basis so the chip row keeps its shape. */}
+                {(s.reason || s.output_artefact || s.log_path) && (
+                  <span className={styles.manifestDetail}>
+                    {s.reason && (
+                      <span className={styles.manifestReason}>{s.reason}</span>
+                    )}
+                    {s.output_artefact && (
+                      <span>
+                        out{" "}
+                        <code className={styles.manifestDetailPath}>
+                          {s.output_artefact}
+                        </code>
+                      </span>
+                    )}
+                    {s.log_path && (
+                      <span>
+                        log{" "}
+                        <code className={styles.manifestDetailPath}>
+                          {s.log_path}
+                        </code>
+                      </span>
                     )}
                   </span>
-                </span>
-              )}
-              <SliceFootprint size={sizeByCore.get(s.core_id)} />
-            </li>
-          );
-        })}
-      </ul>
-      {manifest.ipc.length > 0 && (
+                )}
+                {/* This is THIS BUILD's resolved toolchain, read straight from the
+                 *  emitted manifest (`slices[].toolchain`). It is NOT a second
+                 *  opinion on Hardware Explorer's "Toolchain" column — both read
+                 *  the exact same `topology.<core>.toolchain` field
+                 *  (`sdkCatalogue/parse.ts:137` here; alp-sdk
+                 *  `alp_orchestrate/loader.py` sets `toolchain=entry.get("toolchain")`
+                 *  from that same SoM-topology-merged-with-board.yaml-cores entry,
+                 *  and `alp_orchestrate/buildplan.py` says outright it is "never
+                 *  invented"). What differs is WHEN it was read, and it only
+                 *  differs at all once a build has run: under the `projection`
+                 *  badge tan re-derived this live from the current
+                 *  board.yaml/preset (`build --manifest`), so it cannot be stale
+                 *  and will agree with Hardware Explorer; under `post-build` it
+                 *  came off a `build/system-manifest.yaml` on disk
+                 *  (`build --manifest-from`), which a previous `som.sku` can have
+                 *  left behind. While alp-sdk#964 blocks a per-core override,
+                 *  that stale file is the only way the two can disagree; the
+                 *  override — the thing that would let them genuinely diverge —
+                 *  is the #314 picker half. Gated on `active` like the Flash
+                 *  button: an `os: "off"` slice never builds, so its manifest
+                 *  toolchain value (if any) would mislead. Absence renders as an
+                 *  explicit "not reported", never a blank cell or a guessed
+                 *  fallback — a preset that declares no toolchain is schema-legal
+                 *  (som-preset-v1's `topology_entry` has `required: []`), though
+                 *  no shipped preset omits it today. */}
+                {active && (
+                  <span className={styles.manifestDetail}>
+                    <span>
+                      build toolchain{" "}
+                      {s.toolchain ? (
+                        <code className={styles.manifestDetailPath}>
+                          {s.toolchain}
+                        </code>
+                      ) : (
+                        <em>not reported</em>
+                      )}
+                    </span>
+                  </span>
+                )}
+                <SliceFootprint size={sizeByCore.get(s.core_id)} />
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {tab === "slices" && manifest.ipc.length > 0 && (
         <div className={styles.manifestSub}>
           <span className={styles.manifestSubTitle}>IPC</span>
           {manifest.ipc.map((link) => (
@@ -297,7 +342,7 @@ function SystemManifestSection({
           ))}
         </div>
       )}
-      {manifest.helper_mcus.length > 0 && (
+      {tab === "slices" && manifest.helper_mcus.length > 0 && (
         <div className={styles.manifestSub}>
           <span className={styles.manifestSubTitle}>Helper MCUs</span>
           {manifest.helper_mcus.map((mcu) => (
@@ -355,6 +400,7 @@ export function BuildPlanView() {
     manifestPostBuild,
     manifestProvenance,
     manifestError,
+    memory,
     sizes,
     sizesError,
     reload,
@@ -392,7 +438,7 @@ export function BuildPlanView() {
           <Skeleton />
           <Skeleton />
         </div>
-      ) : error || !plan ? (
+      ) : !plan && !manifest ? (
         <EmptyState
           icon={<Icon name="cpu" size={28} />}
           title="No build plan"
@@ -403,124 +449,148 @@ export function BuildPlanView() {
         />
       ) : (
         <div className={styles.body}>
-          <div className={styles.meta}>
-            <span className={styles.sku}>{plan.sku}</span>
-            <span className={styles.metaItem}>
-              {plan.slices.length} slice{plan.slices.length === 1 ? "" : "s"}
-            </span>
-          </div>
-          <div className={styles.boardYaml} title={plan.boardYaml}>
-            <code>{plan.boardYaml}</code>
-          </div>
-
-          <div className={styles.actions}>
-            <Button appearance="secondary" onClick={materialise}>
-              Materialise
-            </Button>
-            <Button
-              appearance="primary"
-              onClick={build}
-              disabled={!canBuild}
-              title={
-                canBuild
-                  ? undefined
-                  : `${unbuildable.length} slice(s) have no command yet — resolve the warnings before building.`
-              }
-            >
-              Build
-            </Button>
-          </div>
-          {!canBuild && (
+          {/* `tan build --plan` is deferred (tan-cli#427), so on the pinned CLI
+           *  `plan` is ALWAYS null and this used to collapse the whole tab into
+           *  "No build plan" — taking the system-manifest section down with it,
+           *  including the slices, the footprints and the memory map, all of
+           *  which the panel had already read off disk and posted. The plan's
+           *  absence is now its own line, not the whole page. */}
+          {!plan && (
             <p className={styles.buildNote}>
               <Icon name="warning" size={12} />
               <span>
-                Build unavailable —{" "}
-                <strong>{unbuildable.map((s) => s.coreId).join(", ")}</strong>{" "}
-                {unbuildable.length === 1 ? "has" : "have"} no command yet.
-                Materialise still writes the config artefacts.
+                {error ??
+                  "No build plan for this project — the manifest below is read from the last build."}
               </span>
             </p>
           )}
+          {plan && (
+            <>
+              <div className={styles.meta}>
+                <span className={styles.sku}>{plan.sku}</span>
+                <span className={styles.metaItem}>
+                  {plan.slices.length} slice
+                  {plan.slices.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <div className={styles.boardYaml} title={plan.boardYaml}>
+                <code>{plan.boardYaml}</code>
+              </div>
 
-          <ul className={styles.slices}>
-            {plan.slices.map((slice) => (
-              <li key={slice.coreId}>
-                <Card padding="md" className={styles.slice}>
-                  <div className={styles.sliceHead}>
-                    <span className={styles.coreId}>{slice.coreId}</span>
-                    <span
-                      className={styles.backend}
-                      data-backend={slice.backend}
-                    >
-                      {slice.backend}
-                    </span>
-                  </div>
-                  <code className={styles.cmd}>{commandLine(slice)}</code>
-                  <div className={styles.sliceMeta}>
-                    <span className={styles.buildDir}>{slice.buildDir}</span>
-                  </div>
-                  {Object.keys(slice.env).length > 0 && (
-                    <dl className={styles.env}>
-                      {Object.entries(slice.env).map(([key, value]) => (
-                        <div key={key} className={styles.envRow}>
-                          <dt className={styles.envKey}>{key}</dt>
-                          <dd className={styles.envVal}>{value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  )}
-                  {slice.configArtefacts.length > 0 && (
-                    <ul className={styles.fileList}>
-                      {slice.configArtefacts.map((file) => (
-                        <FileRow
-                          key={file.path}
-                          file={file}
-                          open={expanded === file.path}
-                          onToggle={() => toggle(file.path)}
-                        />
-                      ))}
-                    </ul>
-                  )}
-                </Card>
-              </li>
-            ))}
-          </ul>
+              <div className={styles.actions}>
+                <Button appearance="secondary" onClick={materialise}>
+                  Materialise
+                </Button>
+                <Button
+                  appearance="primary"
+                  onClick={build}
+                  disabled={!canBuild}
+                  title={
+                    canBuild
+                      ? undefined
+                      : `${unbuildable.length} slice(s) have no command yet — resolve the warnings before building.`
+                  }
+                >
+                  Build
+                </Button>
+              </div>
+              {!canBuild && (
+                <p className={styles.buildNote}>
+                  <Icon name="warning" size={12} />
+                  <span>
+                    Build unavailable —{" "}
+                    <strong>
+                      {unbuildable.map((s) => s.coreId).join(", ")}
+                    </strong>{" "}
+                    {unbuildable.length === 1 ? "has" : "have"} no command yet.
+                    Materialise still writes the config artefacts.
+                  </span>
+                </p>
+              )}
 
-          {plan.sharedArtefacts.length > 0 && (
-            <section className={styles.section}>
-              <p className={styles.sectionTitle}>
-                Shared artefacts ({plan.sharedArtefacts.length})
-              </p>
-              <ul className={styles.fileList}>
-                {plan.sharedArtefacts.map((file) => (
-                  <FileRow
-                    key={file.path}
-                    file={file}
-                    open={expanded === file.path}
-                    onToggle={() => toggle(file.path)}
-                  />
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {plan.warnings.length > 0 && (
-            <section className={styles.section}>
-              <p className={styles.sectionTitle}>
-                Warnings ({plan.warnings.length})
-              </p>
-              <ul className={styles.warnings}>
-                {plan.warnings.map((warn, i) => (
-                  <li key={`${warn.code}-${i}`} className={styles.warning}>
-                    <span className={styles.warnCode}>{warn.code}</span>
-                    {warn.coreId && (
-                      <span className={styles.warnCore}>{warn.coreId}</span>
-                    )}
-                    <span className={styles.warnMsg}>{warn.message}</span>
+              <ul className={styles.slices}>
+                {plan.slices.map((slice) => (
+                  <li key={slice.coreId}>
+                    <Card padding="md" className={styles.slice}>
+                      <div className={styles.sliceHead}>
+                        <span className={styles.coreId}>{slice.coreId}</span>
+                        <span
+                          className={styles.backend}
+                          data-backend={slice.backend}
+                        >
+                          {slice.backend}
+                        </span>
+                      </div>
+                      <code className={styles.cmd}>{commandLine(slice)}</code>
+                      <div className={styles.sliceMeta}>
+                        <span className={styles.buildDir}>
+                          {slice.buildDir}
+                        </span>
+                      </div>
+                      {Object.keys(slice.env).length > 0 && (
+                        <dl className={styles.env}>
+                          {Object.entries(slice.env).map(([key, value]) => (
+                            <div key={key} className={styles.envRow}>
+                              <dt className={styles.envKey}>{key}</dt>
+                              <dd className={styles.envVal}>{value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      )}
+                      {slice.configArtefacts.length > 0 && (
+                        <ul className={styles.fileList}>
+                          {slice.configArtefacts.map((file) => (
+                            <FileRow
+                              key={file.path}
+                              file={file}
+                              open={expanded === file.path}
+                              onToggle={() => toggle(file.path)}
+                            />
+                          ))}
+                        </ul>
+                      )}
+                    </Card>
                   </li>
                 ))}
               </ul>
-            </section>
+
+              {plan.sharedArtefacts.length > 0 && (
+                <section className={styles.section}>
+                  <p className={styles.sectionTitle}>
+                    Shared artefacts ({plan.sharedArtefacts.length})
+                  </p>
+                  <ul className={styles.fileList}>
+                    {plan.sharedArtefacts.map((file) => (
+                      <FileRow
+                        key={file.path}
+                        file={file}
+                        open={expanded === file.path}
+                        onToggle={() => toggle(file.path)}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {plan.warnings.length > 0 && (
+                <section className={styles.section}>
+                  <p className={styles.sectionTitle}>
+                    Warnings ({plan.warnings.length})
+                  </p>
+                  <ul className={styles.warnings}>
+                    {plan.warnings.map((warn, i) => (
+                      <li key={`${warn.code}-${i}`} className={styles.warning}>
+                        <span className={styles.warnCode}>{warn.code}</span>
+                        {warn.coreId && (
+                          <span className={styles.warnCore}>{warn.coreId}</span>
+                        )}
+                        <span className={styles.warnMsg}>{warn.message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </>
           )}
 
           <SystemManifestSection
@@ -529,6 +599,7 @@ export function BuildPlanView() {
             provenance={manifestProvenance}
             error={manifestError}
             flashSlice={flashSlice}
+            memory={memory}
             sizes={sizes}
             sizesError={sizesError}
           />

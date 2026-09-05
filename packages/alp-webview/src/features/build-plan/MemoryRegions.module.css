@@ -1,0 +1,204 @@
+/* SPDX-License-Identifier: Apache-2.0
+ *
+ * The memory map (#484). Every colour is a declared token: the ruler sits next
+ * to a slice list in the same panel, and a band that borrowed a raw hex would
+ * be the one element that stops agreeing with the editor theme. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.empty {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.map {
+  display: flex;
+  gap: var(--space-5);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.mapSide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: none;
+}
+
+.scaleRow {
+  display: flex;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  width: fit-content;
+}
+
+.scaleBtn {
+  appearance: none;
+  border: 0;
+  border-right: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.scaleBtn:last-child {
+  border-right: 0;
+}
+
+.scaleBtn[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.band[data-selected],
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 260px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.row[data-selected] {
+  border-color: var(--border-focus);
+  background: var(--surface-hover);
+}
+
+.rowName {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.kind {
+  font-size: var(--font-size-xs);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--text-secondary) 16%, transparent);
+  color: var(--text-secondary);
+}
+
+.addr {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--text-primary);
+}
+
+.rowSize,
+.rowMeta {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.status {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--status-warn) 18%, transparent);
+  color: var(--status-warn);
+}
+
+.status[data-status="ok"] {
+  background: color-mix(in srgb, var(--status-ok) 18%, transparent);
+  color: var(--status-ok);
+}
+
+.unresolved {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.unresolvedTitle {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-section-header);
+}
+
+/* Full width on its own line, wrapping rather than truncating: the reason
+   names the file and the field to change, and a clipped one names neither. */
+.reason {
+  flex-basis: 100%;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+/* Overlapping extents, stated before the picture rather than under it — this
+   is the one thing this view knows that the manifest does not. */
+.conflicts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--status-err);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--status-err) 10%, transparent);
+}
+
+.conflictsTitle {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--status-err);
+}
+
+.conflictList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.conflictRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.conflictKind {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+/* One line under the chart, where four paragraphs used to be. The rest of that
+   context now lives in the Notes tab: the map is a reading surface, not an
+   essay with a picture in it. */
+.legend {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  max-width: 62ch;
+}

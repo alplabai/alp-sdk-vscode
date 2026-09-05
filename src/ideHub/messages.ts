@@ -24,6 +24,7 @@ import type {
   SizeReport,
   SystemManifest,
 } from "@alp-sdk/core/systemManifest/models";
+import type { MemoryView } from "@alp-sdk/core/systemManifest/memoryView";
 import type { ToolchainFixId } from "@alp-sdk/core/toolchain/bootstrapPlan";
 
 // Re-export so callers only need this module.
@@ -491,21 +492,24 @@ export interface BuildPlanDataMessage {
   error?: string;
 }
 
-/** The system manifest — the post-build IDE/tool contract (`alp build
- *  --manifest`). Pushed alongside the build plan: the plan is the planner's
- *  pre-build intent, the manifest is the resolved per-core slices + ipc +
- *  helper MCUs (post-build when `build/system-manifest.yaml` exists, else the
- *  SDK's pre-build projection). */
+/** The system manifest — the post-build IDE/tool contract. Pushed alongside
+ *  the build plan: the plan is the planner's pre-build intent, the manifest is
+ *  the resolved per-core slices + ipc + helper MCUs that a build wrote to
+ *  `build/system-manifest.yaml`.
+ *
+ *  There is no longer a pre-build projection to fall back on: `--manifest` is
+ *  RETIRED, not pending, so with no file on disk the panel posts a null
+ *  manifest and names what produces the file (`retiredBuildOptionMessage`)
+ *  rather than a flag to wait for. */
 export interface SystemManifestDataMessage {
   type: "systemManifestData";
   manifest: SystemManifest | null;
-  /** True when `manifest` is the populated `build/system-manifest.yaml`;
-   *  false when it's the SDK's pre-build projection (slices `status: pending`). */
+  /** True when `manifest` is the populated `build/system-manifest.yaml`.
+   *  False means there is no such file — not a projection standing in for it. */
   postBuild: boolean;
   /**
    * WHEN that file was written and whether it still describes the last build
-   * (#470). `null` on the projection path, which has no file — a projection is
-   * computed on the spot and cannot be stale.
+   * (#470). `null` when there is no file, which has no date to report.
    *
    * `postBuild` alone was the defect: it says a manifest EXISTS, and the panel
    * read that as "this is what your last build did". After a failed build the
@@ -513,6 +517,16 @@ export interface SystemManifestDataMessage {
    * nothing on screen saying so.
    */
   provenance: ManifestProvenance | null;
+  /**
+   * The address-space view of that same manifest (#484): the extents it
+   * actually pins, and the customer-declared entries it could not place.
+   *
+   * Derived host-side rather than in the webview so the narrowing has one
+   * home and a test can reach it — every field there becomes an ADDRESS on
+   * screen, and `parseSystemManifest`'s tolerant whole-array cast is the wrong
+   * doctrine for that. `null` exactly when `manifest` is null.
+   */
+  memory: MemoryView | null;
   error?: string;
 }
 

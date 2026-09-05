@@ -10,6 +10,7 @@ import {
   type WebviewToExtMessage,
 } from "./messages";
 import { buildWebviewHtml } from "./webviewHtml";
+import { buildMemoryView } from "@alp-sdk/core/systemManifest/memoryView";
 import type { SystemManifest } from "@alp-sdk/core/systemManifest/models";
 import { parseSystemManifest } from "@alp-sdk/core/systemManifest/service";
 import { manifestFreshness } from "@alp-sdk/core/systemManifest/staleness";
@@ -295,6 +296,7 @@ export class BuildPlanPanel {
         manifest: null,
         postBuild,
         provenance,
+        memory: null,
         error: retiredBuildOptionMessage("--manifest"),
       } satisfies ExtToWebviewMessage);
       return;
@@ -319,6 +321,11 @@ export class BuildPlanPanel {
       manifest,
       postBuild,
       provenance,
+      // Derived here, from the manifest that was just parsed, so the webview
+      // never re-derives an address off a raw field (#484). Null with no
+      // manifest, including on the parse-error path above: there is nothing to
+      // place, and an empty map would read as "no memory in use".
+      memory: manifest ? buildMemoryView(manifest) : null,
       error,
     } satisfies ExtToWebviewMessage);
   }
