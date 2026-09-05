@@ -496,3 +496,28 @@
   font-style: normal;
   color: var(--text-secondary);
 }
+
+/* Two readings of one manifest (#484): per-core wiring, and the address space.
+   A strip, not a second panel — both come off the same file read. */
+.tabs {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.tab {
+  appearance: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}

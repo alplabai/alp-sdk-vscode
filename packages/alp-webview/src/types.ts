@@ -849,12 +849,58 @@ export interface ManifestProvenance {
   reason: string | null;
 }
 
+// --- Memory regions (#484): mirrors
+// @alp-sdk/core/systemManifest/memoryView. The address-space view of a
+// manifest — what it pins, and what the customer declared that it could not
+// place. Host-computed; read-only here. ---
+
+/** `slot_image` a slice's primary image slot · `carve_out` a resolved IPC
+ *  carve-out · `partition` a resolved storage partition. */
+export type MemorySpanKind = "slot_image" | "carve_out" | "partition";
+
+export interface MemorySpan {
+  id: string;
+  kind: MemorySpanKind;
+  label: string;
+  /** Absolute base, or null. A partition is ALWAYS null: its offset is
+   *  device-relative and the device's own base is in the SoM region table,
+   *  which system-manifest-v1 does not carry (alp-sdk#1365). */
+  base: number | null;
+  deviceOffset: number | null;
+  /** Null when a base is pinned but no size is — the normal state of a slot
+   *  image, whose capacity is a SoM budget `tan size` reports separately. */
+  sizeBytes: number | null;
+  region: string | null;
+  device: string | null;
+  cores: string[];
+  fs: string | null;
+}
+
+export interface MemoryUnresolved {
+  id: string;
+  kind: MemorySpanKind;
+  label: string;
+  cores: string[];
+  /** The emitter's own word, or `unresolved` when it stated none. */
+  status: string;
+  /** Verbatim and in full — it is the only actionable half. */
+  reason: string | null;
+}
+
+export interface MemoryView {
+  sku: string;
+  spans: MemorySpan[];
+  unresolved: MemoryUnresolved[];
+}
+
 export interface SystemManifestDataMessage {
   type: "systemManifestData";
   manifest: SystemManifest | null;
   postBuild: boolean;
   /** Null on the projection path, which has no file to be stale. */
   provenance: ManifestProvenance | null;
+  /** Null exactly when `manifest` is null. */
+  memory: MemoryView | null;
   error?: string;
 }
 

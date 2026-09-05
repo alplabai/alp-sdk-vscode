@@ -1,0 +1,257 @@
+/* SPDX-License-Identifier: Apache-2.0
+ *
+ * The memory map (#484). Every colour is a declared token: the ruler sits next
+ * to a slice list in the same panel, and a band that borrowed a raw hex would
+ * be the one element that stops agreeing with the editor theme. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* The first thing read, because it is what the picture is NOT. */
+.gap {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  border-left: 2px solid var(--border-default);
+  padding-left: var(--space-3);
+  max-width: var(--prose-max);
+}
+
+.empty {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.map {
+  display: flex;
+  gap: var(--space-5);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.mapSide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: none;
+}
+
+.scaleRow {
+  display: flex;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  width: fit-content;
+}
+
+.scaleBtn {
+  appearance: none;
+  border: 0;
+  border-right: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.scaleBtn:last-child {
+  border-right: 0;
+}
+
+.scaleBtn[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.notToScale {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--status-warn);
+}
+
+.ruler {
+  display: flex;
+  gap: var(--space-2);
+  width: 260px;
+}
+
+/* Two labels, not a tick ladder: the window's ends are the only two addresses
+   this side can state without implying it measured the ones between. */
+.axis {
+  position: relative;
+  width: 78px;
+  flex: none;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.axisTop {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.axisBottom {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+}
+
+.rail {
+  position: relative;
+  flex: 1;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-badge);
+  overflow: hidden;
+}
+
+.band,
+.marker {
+  position: absolute;
+  left: 0;
+  right: 0;
+  appearance: none;
+  border: 0;
+  padding: 0 var(--space-2);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-radius: 0;
+}
+
+/* A pinned base with no size is a line, not a block. Giving it an invented
+   height would put a wall where the manifest gave a point. */
+.marker {
+  height: 0;
+  border-top: 2px solid var(--accent);
+  background: transparent;
+  display: flex;
+  align-items: center;
+}
+
+.marker .bandLabel {
+  transform: translateY(-50%);
+  background: var(--surface-bg);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+}
+
+.band[data-kind="partition"] {
+  background: color-mix(in srgb, var(--status-info) 22%, transparent);
+}
+
+.band[data-selected],
+.marker[data-selected] {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+.bandLabel {
+  color: var(--text-primary);
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 260px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.row[data-selected] {
+  border-color: var(--border-focus);
+  background: var(--surface-hover);
+}
+
+.rowName {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.kind {
+  font-size: var(--font-size-xs);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--text-secondary) 16%, transparent);
+  color: var(--text-secondary);
+}
+
+.addr {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--text-primary);
+}
+
+.rowSize,
+.rowMeta {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.status {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--status-warn) 18%, transparent);
+  color: var(--status-warn);
+}
+
+.status[data-status="ok"] {
+  background: color-mix(in srgb, var(--status-ok) 18%, transparent);
+  color: var(--status-ok);
+}
+
+.unresolved {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.unresolvedTitle {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-section-header);
+}
+
+/* Full width on its own line, wrapping rather than truncating: the reason
+   names the file and the field to change, and a clipped one names neither. */
+.reason {
+  flex-basis: 100%;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}

@@ -81,6 +81,7 @@ const CONFIGURATOR_REL =
 const BOARD_REL = "packages/alp-core/src/board/models.ts";
 const MANIFEST_REL = "packages/alp-core/src/systemManifest/models.ts";
 const STALENESS_REL = "packages/alp-core/src/systemManifest/staleness.ts";
+const MEMORY_REL = "packages/alp-core/src/systemManifest/memoryView.ts";
 const PLANNER_REL = "packages/alp-core/src/deps/planner.ts";
 const STATE_REL = "packages/alp-core/src/deps/state.ts";
 const CATALOGUE_REL = "packages/alp-core/src/sdkCatalogue/models.ts";
@@ -108,6 +109,12 @@ const MODELS = [
   { mirror: "SliceSize", file: MANIFEST_REL },
   { mirror: "SizeReport", file: MANIFEST_REL },
   { mirror: "ManifestProvenance", file: STALENESS_REL },
+  // #484: the address-space view. Strict is not set because these are core
+  // models, not HOST_REL wire types — the walk still requires every field to
+  // match, and a mirror-only field is refused outright either way.
+  { mirror: "MemorySpan", file: MEMORY_REL },
+  { mirror: "MemoryUnresolved", file: MEMORY_REL },
+  { mirror: "MemoryView", file: MEMORY_REL },
 
   // ── board.yaml ──
   { mirror: "BoardConfig", file: BOARD_REL },
@@ -299,6 +306,7 @@ const ALIASES = [
   { mirror: "LogLevelOrOff", file: BOARD_REL },
   { mirror: "LibraryEntry", file: BOARD_REL },
   { mirror: "SliceSizeStatus", file: MANIFEST_REL },
+  { mirror: "MemorySpanKind", file: MEMORY_REL },
   { mirror: "ManifestFreshness", file: STALENESS_REL },
   { mirror: "DependencyStatus", file: PLANNER_REL },
   { mirror: "DependencyActionEffect", file: PLANNER_REL },

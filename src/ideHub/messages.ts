@@ -24,6 +24,7 @@ import type {
   SizeReport,
   SystemManifest,
 } from "@alp-sdk/core/systemManifest/models";
+import type { MemoryView } from "@alp-sdk/core/systemManifest/memoryView";
 import type { ToolchainFixId } from "@alp-sdk/core/toolchain/bootstrapPlan";
 
 // Re-export so callers only need this module.
@@ -513,6 +514,16 @@ export interface SystemManifestDataMessage {
    * nothing on screen saying so.
    */
   provenance: ManifestProvenance | null;
+  /**
+   * The address-space view of that same manifest (#484): the extents it
+   * actually pins, and the customer-declared entries it could not place.
+   *
+   * Derived host-side rather than in the webview so the narrowing has one
+   * home and a test can reach it — every field there becomes an ADDRESS on
+   * screen, and `parseSystemManifest`'s tolerant whole-array cast is the wrong
+   * doctrine for that. `null` exactly when `manifest` is null.
+   */
+  memory: MemoryView | null;
   error?: string;
 }
 

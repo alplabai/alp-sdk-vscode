@@ -368,9 +368,87 @@ function feedState() {
   // never rendered by this harness at all, so nothing here covered it. The
   // shape is the one #331 is about: one slice that succeeded and one that did
   // not, the latter carrying the `reason` the UI used to drop.
+  // #484: the address-space view of that same manifest, host-computed by
+  // `buildMemoryView`. Hand-written here rather than derived, so the harness
+  // covers all four shapes the renderer branches on and no single-source bug
+  // can make the fixture agree with a broken narrower: a sized carve-out (a
+  // band), two load addresses with no size (hairline markers), a
+  // device-relative partition (no absolute address, by design), and a blocked
+  // entry whose reason must reach the screen verbatim. Values are the real
+  // E1M-AEN801 ones.
+  const MEMORY_VIEW = {
+    sku: "E1M-AEN801",
+    spans: [
+      {
+        id: "slot_image:m55_he",
+        kind: "slot_image" as const,
+        label: "m55_he",
+        base: 0x80010000,
+        deviceOffset: null,
+        sizeBytes: null,
+        region: null,
+        device: null,
+        cores: ["m55_he"],
+        fs: null,
+      },
+      {
+        id: "slot_image:m55_hp",
+        kind: "slot_image" as const,
+        label: "m55_hp",
+        base: 0x802b0000,
+        deviceOffset: null,
+        sizeBytes: null,
+        region: null,
+        device: null,
+        cores: ["m55_hp"],
+        fs: null,
+      },
+      {
+        id: "carve_out:alp_shmem0",
+        kind: "carve_out" as const,
+        label: "alp_shmem0",
+        base: 0x80540000,
+        deviceOffset: null,
+        sizeBytes: 262144,
+        region: "mram_main",
+        device: null,
+        cores: ["m55_hp", "m55_he"],
+        fs: null,
+      },
+      {
+        id: "partition:data",
+        kind: "partition" as const,
+        label: "data",
+        base: null,
+        deviceOffset: 0,
+        sizeBytes: 65536,
+        region: null,
+        device: "mram_main",
+        cores: [],
+        fs: "littlefs",
+      },
+    ],
+    unresolved: [
+      {
+        id: "carve_out:alp_default_rpmsg",
+        kind: "carve_out" as const,
+        label: "alp_default_rpmsg",
+        cores: ["m55_hp", "a32_cluster"],
+        status: "blocked",
+        // Verbatim from a generated manifest — the sentence names the file and
+        // the field to change, and a summarised one names neither.
+        reason:
+          "memory_map.base is TBD for region 'mram_main' in SoM E1M-AEN801; " +
+          "this SoM hasn't been HW-mapped yet so IPC carve-outs cannot be " +
+          "allocated.",
+      },
+    ],
+  };
+
   g.__ALP_POST_TO_WEBVIEW__({
     type: "systemManifestData",
     postBuild: true,
+    memory: MEMORY_VIEW,
     manifest: {
       schema_version: 1,
       generated_by: "tan",
@@ -669,6 +747,47 @@ async function main() {
             `build-plan: system manifest rendered "${forbidden}" for an inactive (os: "off") slice`,
           );
         }
+      }
+      // #484 — the Memory tab. Reached by clicking, because the section opens
+      // on Slices; without this the tab would be covered only by the
+      // click-every-button sweep below, which asserts nothing about what it
+      // then shows.
+      const tabs = Array.from(container.querySelectorAll('button[role="tab"]'));
+      const memoryTab = tabs.find((b) =>
+        (b.textContent || "").toLowerCase().includes("memory"),
+      );
+      if (!memoryTab) {
+        problems.push("build-plan: no Memory tab on the system manifest");
+      } else {
+        (memoryTab as HTMLButtonElement).click();
+        await settle();
+        const memText = (container.textContent || "").toLowerCase();
+        for (const needle of [
+          "alp_shmem0", // a sized carve-out, drawn as a band
+          "0x80540000 – 0x80580000", // its extent, both ends
+          "mram_main", // the region it came from
+          "+0 b in mram_main", // the partition: an offset, never an address
+          "64.0 kib", // its size
+          "size not in the manifest", // a slot address with no size
+          "alp-sdk#1365", // what the picture is missing, and why
+          // The blocked entry's reason, verbatim.
+          "memory_map.base is tbd for region 'mram_main'",
+        ]) {
+          if (!memText.includes(needle)) {
+            problems.push(`build-plan: memory tab missing "${needle}"`);
+          }
+        }
+        // A slot image is a hairline, never a block: the manifest pins its
+        // base and says nothing about its size, and an invented height would
+        // put a wall where there is a point.
+        const bands = Array.from(
+          container.querySelectorAll('[data-kind="slot_image"]'),
+        );
+        if (bands.length === 0) {
+          problems.push("build-plan: memory tab drew no slot markers");
+        }
+        (tabs[0] as HTMLButtonElement).click();
+        await settle();
       }
     }
     // The defect this panel exists to remove, asserted at the surface a customer
