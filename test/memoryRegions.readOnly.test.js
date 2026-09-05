@@ -27,69 +27,76 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const REPO = path.join(__dirname, "..");
-const VIEW = path.join(
-  REPO,
-  "packages",
-  "alp-webview",
-  "src",
-  "features",
-  "build-plan",
-  "MemoryRegions.tsx",
+/** Every file the memory surface is made of. The chart moved into its own
+ *  module when the picture became an SVG; a prohibition that named only the
+ *  original file would have opened a hole the same day. */
+const VIEW_FILES = ["MemoryRegions.tsx", "MemoryChart.tsx"].map((name) =>
+  path.join(
+    REPO,
+    "packages",
+    "alp-webview",
+    "src",
+    "features",
+    "build-plan",
+    name,
+  ),
 );
 
 const read = (p) => fs.readFileSync(p, "utf8");
 
 test("the memory view has no path back to the host", () => {
-  // Arrange
-  const source = read(VIEW);
-
   // Act / Assert — every way this webview can ask the extension to do
   // anything. `postMessage` is the transport; `runCommand` is the allow-listed
   // command channel; importing the `vscode` shim is how a component reaches
   // either one.
-  for (const forbidden of [
-    "postMessage",
-    "runCommand",
-    'from "../../vscode"',
-  ]) {
-    assert.equal(
-      source.includes(forbidden),
-      false,
-      `MemoryRegions.tsx must not use ${forbidden} — the view is read-only ` +
-        "until alp-sdk#1365 lands `kind` + `owner`",
-    );
+  for (const file of VIEW_FILES) {
+    const source = read(file);
+    for (const forbidden of [
+      "postMessage",
+      "runCommand",
+      'from "../../vscode"',
+    ]) {
+      assert.equal(
+        source.includes(forbidden),
+        false,
+        `${path.basename(file)} must not use ${forbidden} — the view is ` +
+          "read-only until alp-sdk#1365 lands `kind` + `owner`",
+      );
+    }
   }
 });
 
 test("the memory view offers no editing affordance", () => {
-  const source = read(VIEW);
+  // A control that takes a value is the shape of an edit. Buttons and pointer
+  // handlers are allowed and present (scale mode, row selection, the address
+  // readout); they change what is DRAWN, never what is stored.
+  for (const file of VIEW_FILES) {
+    const source = read(file);
+    for (const forbidden of [
+      "<input",
+      "<textarea",
+      "<select",
+      "contentEditable",
+      "onChange",
+      "onSubmit",
+      "draggable",
+    ]) {
+      assert.equal(
+        source.includes(forbidden),
+        false,
+        `${path.basename(file)} must not render ${forbidden}`,
+      );
+    }
 
-  // A control that takes a value is the shape of an edit. Buttons are allowed
-  // and present (scale mode, row selection); they change what is DRAWN, never
-  // what is stored.
-  for (const forbidden of [
-    "<input",
-    "<textarea",
-    "<select",
-    "contentEditable",
-    "onChange",
-    "onSubmit",
-  ]) {
-    assert.equal(
-      source.includes(forbidden),
-      false,
-      `MemoryRegions.tsx must not render ${forbidden}`,
-    );
-  }
-
-  // And the two board.yaml fields an editor would target are not named here at
-  // all, so a half-built editor cannot begin by "just showing" them.
-  for (const field of ["carve_out_kb", "size_kib", "offset_kib"]) {
-    assert.equal(
-      source.includes(field),
-      false,
-      `MemoryRegions.tsx names the editable board.yaml field ${field}`,
-    );
+    // And the board.yaml fields an editor would target are not named here at
+    // all, so a half-built editor cannot begin by "just showing" them.
+    for (const field of ["carve_out_kb", "size_kib", "offset_kib"]) {
+      assert.equal(
+        source.includes(field),
+        false,
+        `${path.basename(file)} names the editable board.yaml field ${field}`,
+      );
+    }
   }
 });
 

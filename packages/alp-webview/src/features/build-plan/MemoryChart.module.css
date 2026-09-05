@@ -1,0 +1,135 @@
+/* SPDX-License-Identifier: Apache-2.0
+ *
+ * The memory map's paint. Geometry lives in the SVG's viewBox, not here — this
+ * file sets colour, stroke and type only, so no layout rule can collapse the
+ * drawing the way a flex-basis once collapsed its predecessor. Every colour is
+ * a declared token: the chart sits beside a slice list in the same panel, and a
+ * band that borrowed a raw hex would be the one element that stops agreeing
+ * with the editor theme. */
+
+.svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  overflow: visible;
+  font-family: var(--font-family-mono);
+}
+
+.railFrame {
+  fill: var(--surface-input);
+  stroke: var(--border-default);
+  stroke-width: 1;
+}
+
+/* A manifest-pinned extent: solid, because the manifest states both ends. */
+.band {
+  fill: color-mix(in srgb, var(--accent) 34%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+
+.band[data-kind="partition"] {
+  fill: color-mix(in srgb, var(--status-info) 34%, transparent);
+  stroke: var(--status-info);
+}
+
+.band[data-selected] {
+  stroke: var(--border-focus);
+  stroke-width: 2;
+}
+
+/* The `tan size` budget: dashed, because its extent comes from a DIFFERENT
+   tool than the base it starts at. */
+.budget {
+  fill: color-mix(in srgb, var(--status-info) 12%, transparent);
+  stroke: var(--status-info);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.budgetLabel {
+  fill: var(--status-info);
+  font-size: 10px;
+}
+
+/* A base with no size is a line, not a block. */
+.marker {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.markerLabel,
+.bandLabel {
+  fill: var(--text-primary);
+  font-size: 10px;
+}
+
+.tick {
+  stroke: var(--border-default);
+  stroke-width: 1;
+}
+
+.tickLabel {
+  fill: var(--text-secondary);
+  font-size: 10px;
+}
+
+.caption {
+  fill: var(--text-secondary);
+  font-size: 10px;
+}
+
+/* The band the detail rail magnifies, marked on the rail it came from. */
+/* Outline only. A fill here washed out the band underneath and printed its
+   dashes through that band's own label. */
+.detailMark {
+  fill: none;
+  stroke: var(--text-secondary);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  pointer-events: none;
+}
+
+.bracket {
+  stroke: var(--border-default);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.apertureBar {
+  fill: color-mix(in srgb, var(--accent) 16%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+
+.apertureLabel {
+  fill: var(--accent);
+  font-size: 9px;
+}
+
+.hit {
+  cursor: pointer;
+}
+
+.hit:focus-visible {
+  outline: 1px solid var(--border-focus);
+}
+
+/* Transparent overlay: it exists to catch the pointer for the readout. */
+.hover {
+  fill: transparent;
+}
+
+.hoverLine {
+  stroke: var(--text-secondary);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+
+.hoverLabel {
+  fill: var(--text-primary);
+  font-size: 10px;
+  paint-order: stroke;
+  stroke: var(--surface-bg);
+  stroke-width: 3px;
+}
