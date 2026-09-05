@@ -46,6 +46,16 @@ function windowOf(spans: MemorySpan[]): { lo: number; hi: number } | null {
   return hi > lo ? { lo, hi } : null;
 }
 
+/**
+ * Vertical breathing room inside the rail, in px.
+ *
+ * Not decoration: the highest and lowest extents land exactly ON the window's
+ * ends, and a hairline drawn at y=0 or y=height has half its label outside a
+ * rail that clips. The window is mapped into the inset instead, which moves
+ * every mark by the same amount and so states the same distances.
+ */
+const PAD = 12;
+
 /** One band or hairline on the ruler. */
 function Band({
   span,
@@ -69,18 +79,19 @@ function Band({
   if (span.base === null) return null;
   const size = span.sizeBytes;
   const span_ = win.hi - win.lo;
+  const usable = height - 2 * PAD;
   // Equalized gives every entry the same slice of the rail, lowest address at
   // the bottom — the same order as the true scale, so switching modes never
   // flips the picture upside down.
-  const rowHeight = height / count;
+  const rowHeight = usable / count;
   const top = equalized
-    ? (count - 1 - index) * rowHeight
-    : ((win.hi - (endOf(span) ?? span.base)) / span_) * height;
+    ? PAD + (count - 1 - index) * rowHeight
+    : PAD + ((win.hi - (endOf(span) ?? span.base)) / span_) * usable;
   const bandHeight = equalized
     ? rowHeight
     : size === null
       ? 0
-      : (size / span_) * height;
+      : (size / span_) * usable;
   return (
     <button
       type="button"
@@ -117,9 +128,16 @@ function Ruler({
   const placed = spans.filter((s) => s.base !== null);
   return (
     <div className={styles.ruler} style={{ height: `${height}px` }}>
+      {/* Two labels, and they sit at the inset ends the marks are mapped into,
+       *  not at the rail's own edges — an axis that names an address a pixel
+       *  away from the mark it belongs to is worse than no axis. */}
       <div className={styles.axis}>
-        <span className={styles.axisTop}>{formatAddress(win.hi)}</span>
-        <span className={styles.axisBottom}>{formatAddress(win.lo)}</span>
+        <span className={styles.axisEnd} style={{ top: `${PAD}px` }}>
+          {formatAddress(win.hi)}
+        </span>
+        <span className={styles.axisEnd} style={{ top: `${height - PAD}px` }}>
+          {formatAddress(win.lo)}
+        </span>
       </div>
       <div className={styles.rail}>
         {placed.map((span, i) => (

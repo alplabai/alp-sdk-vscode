@@ -92,16 +92,10 @@
   color: var(--text-secondary);
 }
 
-.axisTop {
+.axisEnd {
   position: absolute;
-  top: 0;
   right: 0;
-}
-
-.axisBottom {
-  position: absolute;
-  bottom: 0;
-  right: 0;
+  transform: translateY(-50%);
 }
 
 .rail {
