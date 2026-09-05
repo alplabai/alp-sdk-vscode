@@ -56,6 +56,7 @@ import {
 } from "./util";
 import { registerTreeViews } from "./views";
 import { StateManager } from "./views/stateManager";
+import { registerMonitorCommands } from "./monitor";
 import { registerWestCommands } from "./west";
 import { installShellCompletion } from "./completion";
 import {
@@ -340,6 +341,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     ...registerLoaderCommands(context),
     ...registerWestCommands(context),
+    ...registerMonitorCommands(context),
     ...registerBootstrapCommand(context),
     // Backs the `preLaunchTask` labels tan's generated launch.json profiles
     // reference (e.g. "alp: build active target") — without this VS Code has
