@@ -308,6 +308,7 @@ const ALIASES = [
   { mirror: "LogLevelOrOff", file: BOARD_REL },
   { mirror: "LibraryEntry", file: BOARD_REL },
   { mirror: "SliceSizeStatus", file: MANIFEST_REL },
+  { mirror: "HelperFlashPolicy", file: MANIFEST_REL },
   { mirror: "MemorySpanKind", file: MEMORY_REL },
   { mirror: "MemoryConflictKind", file: MEMORY_REL },
   { mirror: "ManifestFreshness", file: STALENESS_REL },

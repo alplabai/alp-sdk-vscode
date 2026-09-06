@@ -812,12 +812,18 @@ export interface ManifestIpcLink {
   reason?: string;
   [key: string]: unknown;
 }
+/** Mirrors `@alp-sdk/core/systemManifest/models`'s `HelperFlashPolicy`. */
+export type HelperFlashPolicy = "customer" | "factory" | "recovery_only";
 export interface ManifestHelperMcu {
   name: string;
   chip: string;
   firmware_path?: string;
   flash_method?: string;
   flash_args?: Record<string, unknown> | string;
+  /** Absent is NOT `customer`: no policy declared, so authority is unknown. */
+  flash_policy?: HelperFlashPolicy | (string & {});
+  /** Field-update channel. Independent of `flash_policy`/`flash_method`. */
+  update_channel?: string;
   [key: string]: unknown;
 }
 export interface SystemManifest {
