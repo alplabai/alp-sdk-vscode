@@ -489,6 +489,28 @@ function naturalRuntime(id: string): string | null {
  * schemas/board.schema.json; kept in sync manually (webview doesn't depend
  * on @alp-sdk/core). Drift-guarded by test/configurator.peripheralCatalog.test.js --
  * a schema change fails that test until this array is updated to match. */
+// The `boot.swap_algorithm` values board.schema.json enumerates, plus the
+// unset state FIRST.
+//
+// There is no local default: alp-sdk v0.16.0 dropped the schema's
+// `"default": "scratch"` because the correct default belongs to the target,
+// not the schema -- the SDK derives it from the resolved slot layout
+// (scripts/alp_orchestrate/secure.py, alp-sdk#1413). This extension is given
+// the SKU and the cores but never the SoM's `memory_map:`, which is the half
+// of that derivation it would need, so the unset state is rendered AS unset
+// (the sibling Bootloader select does the same) rather than naming a mode
+// that may not be the one in force. `vendoredSchemas.ts` carries the full
+// rationale; #658 tracks offering only what the target accepts.
+//
+// Hand-synced to the schema enum, like PERIPHERAL_CHOICES below, and gated
+// the same way by test/configurator.swapAlgorithmDefault.test.js.
+const SWAP_ALGORITHM_CHOICES: [string, string][] = [
+  ["", "(SDK default)"],
+  ["scratch", "scratch"],
+  ["move", "move"],
+  ["overwrite", "overwrite"],
+];
+
 const PERIPHERAL_CHOICES = [
   "adc",
   "can",
@@ -1105,19 +1127,18 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
               </Field>
             </Row>
             <Row>
-              <Field label="Swap algorithm">
+              <Field
+                label="Swap algorithm"
+                hint="Leave unset to let the SDK derive this from the target's slot layout. A single-slot target has no slot1/scratch partition to swap into, so setting any value explicitly there is refused at build time."
+              >
                 <Select
                   label="Swap algorithm"
-                  value={boot.swap_algorithm || "scratch"}
-                  options={[
-                    ["scratch", "scratch"],
-                    ["move", "move"],
-                    ["overwrite", "overwrite"],
-                  ]}
+                  value={boot.swap_algorithm || ""}
+                  options={SWAP_ALGORITHM_CHOICES}
                   onChange={(v) =>
                     mutate((d) => {
                       d.boot = d.boot || {};
-                      if (v === "scratch") delete d.boot.swap_algorithm;
+                      if (!v) delete d.boot.swap_algorithm;
                       else d.boot.swap_algorithm = v as never;
                     })
                   }

@@ -34,6 +34,12 @@ libraries:
   - { name: cmsis_dsp, cores: [m33_sm] }
 `;
 
+// NOTE: no `boot.swap_algorithm:`. This SKU is single-slot -- E1M-AEN801's
+// disjoint-slot0 `memory_map:` declares he_slot0/hp_slot0 and no slot1, no
+// scratch -- so on a project with an m55 core alp-sdk refuses ANY explicit
+// value with an OrchestratorError (alp-sdk#1069 / alp-sdk#1413). Omitting the
+// key is what lets the SDK derive the single-app boot this target actually
+// runs. Do not "complete" this fixture by adding the key back.
 const PRODUCTION = `
 som:
   sku: E1M-AEN801
@@ -57,7 +63,6 @@ libraries: [mbedtls]
 boot:
   method: mcuboot
   signing: { algorithm: ecdsa_p256, key_file: keys/prod_ecdsa_p256.pub.pem }
-  swap_algorithm: scratch
 ota:
   provider: mender
   artifact_name: production-deployment

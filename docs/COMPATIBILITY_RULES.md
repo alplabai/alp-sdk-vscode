@@ -227,11 +227,19 @@ long as the consumed contracts hold. Record each assessed SDK release here.
     real slot layout), and on a single-slot target — E1M-AEN801, whose
     disjoint-slot0 `memory_map:` has no slot1/scratch region (alp-sdk#1069 /
     #1413) — setting any of the three values explicitly is a build-time
-    `OrchestratorError`. `ConfiguratorView.tsx:1111` still renders
-    `boot.swap_algorithm || "scratch"` and persists a non-scratch pick;
+    `OrchestratorError`. The Configurator's own `|| "scratch"` default was
     **deliberately NOT fixed in the re-vendor** — different file, different test
-    surface, no coupling to the schema hashes. Tracked by #658, which also
-    records that which shipped targets are single-slot has not been counted.
+    surface, no coupling to the schema hashes — and was removed separately in
+    #658: `SWAP_ALGORITHM_CHOICES` now offers `(SDK default)` first and the
+    absent key renders as absent, gated by
+    `test/configurator.swapAlgorithmDefault.test.js`. Still open on #658:
+    offering only the values the resolved target accepts. That needs the
+    single-slot fact on the wire, and neither `alp presets` nor
+    `metadata/catalog.json` carries it — the count the issue asked for is
+    all six of `E1M-AEN301` / `E1M-AEN401` / `E1M-AEN501` / `E1M-AEN601` /
+    `E1M-AEN701` / `E1M-AEN801`, each declaring the same disjoint-slot0
+    `memory_map:` (`he_slot0` at `0x80010000`, `hp_slot0` at `0x802b0000`,
+    no `slot1`, no `scratch`).
   - **Top-level property set UNCHANGED** — the same 21 keys, still
     `additionalProperties: false` — so `BOARD_KEY_ORDER`
     (`packages/alp-core/src/board/models.ts`) needed no change and the C1

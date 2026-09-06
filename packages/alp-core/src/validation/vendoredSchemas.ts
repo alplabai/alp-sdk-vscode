@@ -40,8 +40,14 @@ export const VENDORED_SDK_TAG = "v0.16.0";
  *     `memory_map:` has no slot1/scratch region (#1069/#1413) -- setting ANY
  *     of the three values explicitly is a build-time `OrchestratorError`,
  *     because there is no partition for them to swap into. `ConfiguratorView`
- *     still shows `boot.swap_algorithm || "scratch"` and persists a non-scratch
- *     pick; that predates this bump and is tracked by #658, NOT fixed here.
+ *     no longer substitutes a default of its own: it renders the absent key as
+ *     `(SDK default)` and lets the SDK derive the mode
+ *     (`test/configurator.swapAlgorithmDefault.test.js` holds that from both
+ *     sides). What it still cannot do is offer only the values the target
+ *     accepts -- the derivation keys off the SoM's `memory_map:`, which no
+ *     wire into this extension carries -- so an explicit pick on a single-slot
+ *     target still meets the `OrchestratorError` at build time. Tracked
+ *     by #658.
  *
  * The five description-only edits, recorded because a reader diffing the
  * bytes will otherwise re-derive them:
