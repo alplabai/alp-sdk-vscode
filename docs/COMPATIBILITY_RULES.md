@@ -180,3 +180,80 @@ long as the consumed contracts hold. Record each assessed SDK release here.
       old diagnostics** until its next edit, save, or reopen. vscode-yaml
       consults the provider per validation pass and exposes no "revalidate now".
       Every other document picks up the new schema at once.
+
+- **alp-sdk v0.16.0 — compatible; both schemas re-vendored, one product change
+  required** (assessed 2026-09-06). Tag `v0.16.0`, commit
+  `eb96112ba7d1cc3b4084c985962ea31772177d74`. Both vendored schemas now track
+  this release; `packages/alp-core/src/validation/vendoredSchemas.ts` stays the
+  single source for the tag and both hashes
+  (board `1549c708…`, system-manifest `abbe4a44…`).
+  - `system-manifest-v1.schema.json` — **the one change that needed code.**
+    `helper_mcus[]`'s `required` moves from `["name","chip"]` to
+    `["name","chip","flash_policy"]`, and gains `flash_policy`
+    (`enum ["customer","factory","recovery_only"]`) plus an unenumerated
+    `update_channel`. The schema is explicit that there is **no
+    absent-means-`customer` default**, and that the keys are independent — "a
+    consumer must not read one key's presence as excluding another's".
+    v0.16.0 ships 11 SoM presets; the 10 that declare a helper all declare
+    `flash_policy: recovery_only` (E1M-NX9101 declares `helper_firmware: []`).
+    Enforcement is tan's, and this extension **discloses without filtering**.
+    `packages/alp-core/src/flash/consent.ts` attaches the policy to the helper's
+    entry as a verbatim note and still lists it under "will be programmed";
+    only the `--core`/`--helper` scope ever moves an entry to `skipped`.
+    An unrecognised value is quoted as itself, never folded into the absent case.
+
+    **Why not filter — the divergence that makes it unsafe.** A first cut moved
+    every non-`customer` helper into "Skipped, NOT written", reasoning that tan
+    would decline it anyway. That is a PREDICTION of `helper_flash_gate`
+    (`python/tan/core/flash_plan.py`, tan-cli#611) and it is WRONG for the
+    absent case at the pinned tan (`SUPPORTED_CLI_VERSION = "0.6.0"`,
+    `src/alpCli/service.ts:98`): `if not policy:` returns a skip only when a
+    method AND a channel are both declared, else dispatch continues. Every
+    V2N/V2M manifest emitted by alp-sdk <= v0.15.0 is exactly that shape —
+    upstream's own v0.15.0 golden `rpmsg-v2n.system-manifest.snap` carries
+    `{name: gd32_bridge, chip: gd32g553, flash_method: swd_probe,
+    flash_args: {interface: cmsis-dap, target: gd32g553, base: '0x08000000'}}`
+    with no `flash_policy` and no `update_channel`. The consent screen would
+    have printed "Skipped, NOT written" over a real SWD write to `0x08000000`,
+    which is `consent.ts`'s own rule (a) inverted: over-listing costs a line,
+    under-listing is a device programmed without consent.
+    The **root** property set is unchanged (the same eight keys), so the
+    read-only Memory-tab tripwire in `test/memoryRegions.readOnly.test.js` still
+    passes: alp-sdk's schema-only `memory` root key is on an unmerged branch,
+    not on this tag.
+  - `board.schema.json` — six edits, five of them description text. The
+    structural one: `boot.swap_algorithm` **loses its `"default": "scratch"`**.
+    There is now no fixed schema default (the SDK derives it from the target's
+    real slot layout), and on a single-slot target — E1M-AEN801, whose
+    disjoint-slot0 `memory_map:` has no slot1/scratch region (alp-sdk#1069 /
+    #1413) — setting any of the three values explicitly is a build-time
+    `OrchestratorError`. `ConfiguratorView.tsx:1111` still renders
+    `boot.swap_algorithm || "scratch"` and persists a non-scratch pick;
+    **deliberately NOT fixed in the re-vendor** — different file, different test
+    surface, no coupling to the schema hashes. Tracked by #658, which also
+    records that which shipped targets are single-slot has not been counted.
+  - **Top-level property set UNCHANGED** — the same 21 keys, still
+    `additionalProperties: false` — so `BOARD_KEY_ORDER`
+    (`packages/alp-core/src/board/models.ts`) needed no change and the C1
+    round-trip data-loss gate is unaffected.
+  - **Every `$ref` is still `#/$defs/...`** (board.schema.json; the manifest
+    schema carries none), so `schemaSafety.ts`'s `^#`-only acceptance keeps
+    serving an SDK's own copy instead of silently falling every customer back to
+    the bundled one.
+  - SoM catalogue — **unchanged at 11 SKUs**, same list as v0.15.0.
+  - Kconfig catalogue — both vendored artefacts regenerated; the symbol sets did
+    **not** move (`src/lsp/generated/kconfig-metadata.json` stays 222 symbols and
+    changed only its `submoduleRev`; `test/fixtures/alp-kconfig-symbols.txt`
+    stays 350 and is byte-identical).
+  - Fixtures — `test/fixtures/system-manifest.aen801.yaml` was replaced with a
+    byte-exact copy of upstream's own governed golden
+    `tests/fixtures/emit-snapshots/rpmsg-aen.system-manifest.snap`. The file it
+    replaced was **not** a real emit despite three tests calling it one: a
+    v0.7.0 E1M-AEN701 emit with `sku`/`silicon` string-substituted (`eb2d77d6`),
+    still carrying `machine: e1m-aen701-a32`.
+  - New gate — `test/systemManifest.fixtures.schemaConformance.test.js`. Nothing
+    previously validated a fixture against the vendored schema, which is why a
+    fixture missing a REQUIRED key stayed green through the whole suite. It is a
+    required-key presence check only (no types, enums, or
+    `additionalProperties`); verified to fail on the pre-v0.16.0 fixture and
+    pass on the replacement.
