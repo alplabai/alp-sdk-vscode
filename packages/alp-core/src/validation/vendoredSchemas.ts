@@ -19,57 +19,96 @@
  */
 
 /** The alp-sdk tag `schemas/*.json` were vendored from. */
-export const VENDORED_SDK_TAG = "v0.15.0";
+export const VENDORED_SDK_TAG = "v0.16.0";
 
 /**
  * sha256 of `schemas/board.schema.json` over its LF-normalized bytes.
  *
- * board.schema.json moves for real at the v0.15.0 bump, in two ways that
- * change what the editor accepts:
- *  1. `som.sku`'s pattern widens from
- *     `^E1M-(AEN[3-8]01|V2N10[12]|V2M10[12]|NX9[0-9]{3})$` to
- *     `^E1M-(AEN[3-8][0-9]{2}|V2N[0-9]{3}|V2M[0-9]{3}|NX9[0-9]{3})$`.
- *     NO shipped preset uses a widened tail yet -- v0.15.0 carries the same 11
- *     as v0.14.0 (E1M-AEN301/401/501/601/701/801, E1M-NX9101, E1M-V2M101/102,
- *     E1M-V2N101/102) -- so this only stops the editor pre-rejecting a SKU the
- *     PLM has allocated but the SDK has not yet shipped a preset for. The
- *     schema's own new wording: "The config tail is a per-configuration
- *     increment allocated by the PLM; not every value in range has a shipped
- *     preset."
- *  2. `storage[].raw` (the legacy `fs: raw` alias) is GONE, and storage items
- *     are `additionalProperties: false`, so a board.yaml carrying `raw: true`
- *     is now rejected. Upstream's stated intent, not an oversight -- v0.15.0's
- *     `scripts/alp_orchestrate/loader.py` deleted the normalising branch and
- *     says so: "The legacy `raw: true` alias is gone: `board.schema.json` no
- *     longer declares the property and sets `additionalProperties: false` on
- *     storage items, so a board carrying it is rejected at validation rather
- *     than normalised here. Measured before removal: zero tracked `board.yaml`
- *     files used it."
+ * The v0.16.0 bump moves this file in six places, five of them description
+ * text. The TOP-LEVEL PROPERTY SET IS UNCHANGED -- the same 21 keys as
+ * v0.15.0, still `additionalProperties: false` -- so `BOARD_KEY_ORDER`
+ * (`packages/alp-core/src/board/models.ts`) has nothing new to absorb and the
+ * C1 round-trip data-loss gate is unaffected. Every `$ref` is still
+ * `#/$defs/...`, so `schemaSafety.ts`'s `^#`-only acceptance still takes the
+ * SDK's own copy rather than silently falling back to this one.
+ *
+ * The ONE structural change, and the only one that changes what a written
+ * board.yaml means:
+ *  1. `boot.swap_algorithm` LOSES its `"default": "scratch"`. There is now no
+ *     fixed schema default: the SDK derives it from the target's real slot
+ *     layout, and on a SINGLE-SLOT target -- E1M-AEN801, whose disjoint-slot0
+ *     `memory_map:` has no slot1/scratch region (#1069/#1413) -- setting ANY
+ *     of the three values explicitly is a build-time `OrchestratorError`,
+ *     because there is no partition for them to swap into. `ConfiguratorView`
+ *     still shows `boot.swap_algorithm || "scratch"` and persists a non-scratch
+ *     pick; that predates this bump and is tracked by #658, NOT fixed here.
+ *
+ * The five description-only edits, recorded because a reader diffing the
+ * bytes will otherwise re-derive them:
+ *  2. `boot.sim_console` drops the `RENODE_MODE=real` naming (same behaviour).
+ *  3. `boot.modules` keys may now ALSO be Zephyr log modules the SDK wires
+ *     (`i2c`, `spi`, `gpio`, `adc`, `net_tcp`, ...), not only `alp_*` module
+ *     names; the emitted `CONFIG_<MODULE>_LOG_LEVEL_<LEVEL>=y` is live only
+ *     where that choice symbol exists and is downgraded to a hint comment
+ *     otherwise, so the fragment always configures.
+ *  4. `storage[].flash_device`: a `memory_map:` region marked
+ *     `carveout: false` is a partition INSIDE a flash-class node and is
+ *     refused as a target (#1484); and no target resolves to a genuinely
+ *     working Devicetree label today -- a region's label DEFAULTS to the
+ *     region name when the preset sets no `dt_label:` override (neither
+ *     `mram_main` nor `ocram_low` has one), and as of alp-sdk#1556 the
+ *     resolver blocks with a reason rather than decorating the fabricated
+ *     label. `on_module.ospi_memories:` keys are not yet gated the same way.
+ *  5. `ota.poll_interval` names its unit (SECONDS) and warns that
+ *     `provider: hawkbit` converts to `CONFIG_HAWKBIT_POLL_INTERVAL`, which
+ *     Zephyr declares in MINUTES with `range 1 43200` -- so a hawkbit
+ *     project's value must be a whole number of minutes between 60 s and
+ *     2592000 s, and anything else is refused at emit.
+ *  6. `models[].source` adds `.pte` (an ExecuTorch `torch.export` program):
+ *     it passes through for CPU, but no on-device ExecuTorch runtime backend
+ *     exists yet, so the blob is producible and not yet invocable (#1260).
  */
 export const BOARD_SCHEMA_SHA256 =
-  "f489eb9647776ed9dedc76be57323fa10715c15e2490cf161b1fd742b2f9193e";
+  "1549c70885a8eb184834baecb874084d239acde986050fdcf2d5173fd094d419";
 
 /**
  * sha256 of `schemas/system-manifest-v1.schema.json` over its LF-normalized
  * bytes.
  *
- * Moves for the first time since the v0.13.0 re-vendor (#328), and by
- * DESCRIPTION TEXT only: the emitter is now named as the `alp_orchestrate`
- * package (`python -m alp_orchestrate`) rather than
- * `scripts/alp_orchestrate.py` -- the ADR 0020 relocation reaching the
- * contract's own prose. No property changed.
+ * v0.16.0 moves ONE object, `helper_mcus[]`, and it is a REQUIREDNESS change,
+ * not prose:
+ *  - `required` goes from `["name", "chip"]` to
+ *    `["name", "chip", "flash_policy"]`.
+ *  - `flash_policy` is new: `enum ["customer", "factory", "recovery_only"]`,
+ *    stating WHO may invoke `flash_method` and WHEN. The schema's own wording
+ *    is explicit that there is no fallback -- "REQUIRED -- there is no
+ *    absent-means-`customer` default". `factory`: Alp Lab programs it in
+ *    production, never a customer flash target. `recovery_only`: Alp Lab
+ *    programs it in production and the customer may flash it ONLY to recover
+ *    a bricked device, with Alp Lab-supplied binaries.
+ *  - `update_channel` is new and deliberately UNENUMERATED here (the
+ *    SoM-preset schema owns the vocabulary, so a consumer tolerates a channel
+ *    added upstream). It is INDEPENDENT of `flash_policy`, and the array's
+ *    own description says so: each declared key "is projected here
+ *    independently ... a consumer must not read one key's presence as
+ *    excluding another's".
  *
- * The comment this replaced said "Unchanged from v0.11.0 -- byte-identical at
- * v0.13.0 and v0.14.0". That was FALSE, and inverted: upstream's
- * system-manifest schema moved at v0.12.0 (sha256 0a7ce139 -> ea7383b5), and
- * it is board.schema.json that was byte-identical v0.11.0..v0.13.0
- * (d9393ab0). So #328 moved this file for real and board.schema.json only by
- * label; #427 (v0.14.0) was the other way round. Verified by hashing both
- * schemas at all five tags -- do that before writing a claim like this, not
- * after.
+ * v0.16.0 ships 11 SoM presets. The 10 that declare a helper --
+ * E1M-AEN301/401/501/601/701/801, E1M-V2M101/102, E1M-V2N101/102 -- ALL declare
+ * `flash_policy: recovery_only`; E1M-NX9101 declares `helper_firmware: []` and
+ * so contributes no entry at all. `tan flash` is the enforcing gate and it holds: the policy is
+ * checked AHEAD of any `flash_method` presence
+ * (`python/tan/core/flash_plan.py::helper_flash_gate`, tan-cli#611). This
+ * extension's job is therefore disclosure, not enforcement -- see
+ * `packages/alp-core/src/flash/consent.ts`.
+ *
+ * The ROOT property set is unchanged (the same eight keys), so the
+ * read-only tripwire in `test/memoryRegions.readOnly.test.js` still passes:
+ * alp-sdk's schema-only `memory` root key is on an unmerged branch, not on
+ * this tag.
  */
 export const SYSTEM_MANIFEST_SCHEMA_SHA256 =
-  "be48d9159638968eb2cf42b0284b3c7ba9fe92f46bec3a8fdab8561c4d6dd59e";
+  "abbe4a444ed088642cd85335a68714f1092528f976f77b94b499763286386628";
 
 /** Which vendored schema a provenance comparison is about. */
 export type VendoredSchemaId = "board" | "systemManifest";
@@ -79,7 +118,7 @@ export type VendoredSchemaId = "board" | "systemManifest";
  *
  * `vendored` is relative to the extension install root; `sdk` is relative to a
  * resolved `<sdkRoot>`. Both files are present at every alp-sdk tag this
- * extension supports (verified v0.11.0..v0.15.0), but the reader still treats
+ * extension supports (verified v0.11.0..v0.16.0), but the reader still treats
  * a missing file as a normal outcome rather than an error -- a customer can
  * point `alpSdk.sdkPath` at any directory.
  */
