@@ -2,43 +2,62 @@ schema_version: 1
 generated_by: scripts/alp_orchestrate.py
 hw_info:
   sku: E1M-AEN801
-  som_hw_rev: r1
+  som_hw_rev: r2
   board_name: E1M-EVK
   board_hw_rev: r1
   silicon: alif:ensemble:e8
 slices:
 - core_id: a32_cluster
-  os: 'off'
-  app: alp-image-edge
-  machine: e1m-aen701-a32
+  os: yocto
+  app: ./linux
+  image: alp-image-edge
+  machine: e1m-aen801-a32
   toolchain: poky-glibc
   status: pending
+  flash_method: yocto_wic_to_sd_or_emmc
+  flash_args:
+    target: e1m-aen801-a32
 - core_id: m55_hp
   os: zephyr
-  app: ./src
-  board: alp_e1m_aen701_m55_hp
+  app: ./m55_hp
+  board: alp_e1m_aen801_m55_hp/ae822fa0e5597ls0/rtss_hp
   toolchain: arm-zephyr-eabi
   status: pending
   flash_method: zephyr_west_flash
   flash_args:
-    runner: openocd
+    jlink_flash_device: AE822FA0E5597LS0_M55_HE
+    expect_dpidr: '0x4C013477'
+    jlink_device: Cortex-M55
+    slot0_load_address: '0x802b0000'
 - core_id: m55_he
   os: zephyr
   app: alp-stock-shim
-  board: alp_e1m_aen701_m55_he
+  board: alp_e1m_aen801_m55_he/ae822fa0e5597ls0/rtss_he
   toolchain: arm-zephyr-eabi
   status: pending
   flash_method: zephyr_west_flash
   flash_args:
-    runner: openocd
-ipc: []
+    jlink_flash_device: AE822FA0E5597LS0_M55_HE
+    expect_dpidr: '0x4C013477'
+    jlink_device: Cortex-M55
+    slot0_load_address: '0x80010000'
+ipc:
+- name: alp_default_rpmsg
+  kind: rpmsg
+  endpoints:
+  - a32_cluster
+  - m55_hp
+  status: blocked
+  reason: memory_map.base is TBD for region 'mram_main' in SoM E1M-AEN801; this SoM
+    hasn't been HW-mapped yet so IPC carve-outs cannot be allocated.  Add a `memory_map:`
+    block to metadata/e1m_modules/E1M-AEN801.yaml (or per-region `base`) or remove
+    the matching ipc entry from board.yaml.
 helper_mcus:
 - name: cc3501e_otp
   chip: cc3501e
-  firmware_path: TBD
-  flash_method: TBD
-  flash_args: TBD
-  note: firmware_path TBD; populated when the upstream firmware release lands
+  firmware_path: firmware/cc3501e/prebuilt/cc3501e-v0.3.0.bin
+  flash_policy: recovery_only
+  update_channel: alp_ota_spi_otp
 boot_order: []
 
 # boot_order is empty -- add a `boot_order:` list to metadata/e1m_modules/E1M-AEN801.yaml when the
