@@ -130,25 +130,42 @@
 }
 
 /* ── Typography scale ───────────────────────────────────────────────────── */
-/* Anchored to the VS Code UI font size so webview text matches the workbench
- * and honours the user's editor font-size. Use these instead of hardcoded px
- * so panels read at native size, not sidebar density. */
+/*
+ * Anchored to `--vscode-font-size`, which is the WORKBENCH UI font size VS Code
+ * injects into every webview — NOT the editor font, which is a different
+ * variable (`--vscode-editor-font-size`) that nothing here reads. We inject no
+ * font variable of our own, so the host's value is the only input, and it is
+ * 13px on practically every install:
+ *
+ *   xs 11 · sm 12 · base 13 · md 14 · lg 16 · xl 20
+ *
+ * Raising `editor.fontSize` moves NONE of it. Window zoom does, but zoom scales
+ * the whole workbench, so it never changes the relationship between two tokens.
+ *
+ * The consequence when picking one: xs is not "one step down that grows again
+ * for readers who need it" — it is 11px, permanently. Text a person READS takes
+ * base; xs and sm are for chrome that is glanced at, not read.
+ */
 :root {
-  --font-size-xs: calc(
-    var(--vscode-font-size, 13px) - 2px
-  ); /* badges, micro-meta */
-  --font-size-sm: calc(
-    var(--vscode-font-size, 13px) - 1px
-  ); /* captions, mono paths */
-  --font-size-base: var(
-    --vscode-font-size,
-    13px
-  ); /* body, labels, descriptions */
-  --font-size-md: calc(var(--vscode-font-size, 13px) + 1px); /* sub-headers */
-  --font-size-lg: calc(
-    var(--vscode-font-size, 13px) + 3px
-  ); /* section headings */
-  --font-size-xl: calc(var(--vscode-font-size, 13px) + 7px); /* panel titles */
+  /* 11px. Chrome only — uppercase tracked badges and pills that carry their own
+   * background and weight. Never prose, values, hex, paths or reasons. */
+  --font-size-xs: calc(var(--vscode-font-size, 13px) - 2px);
+  /* 12px. Dense secondary chrome: meta rows, helper text beside a control.
+   * NOT the token for mono values, hex or paths — monospace is a FAMILY
+   * decision and is never on its own a reason to drop a size. */
+  --font-size-sm: calc(var(--vscode-font-size, 13px) - 1px);
+  /* 13px. The default for anything read rather than glanced at — body, labels,
+   * descriptions, and equally the hex addresses, region names, commands, paths,
+   * env values and diagnostic reasons a user has to read character by
+   * character. */
+  --font-size-base: var(--vscode-font-size, 13px);
+  /* 14px. Sub-headers inside a section. */
+  --font-size-md: calc(var(--vscode-font-size, 13px) + 1px);
+  /* 16px. Section headings. */
+  --font-size-lg: calc(var(--vscode-font-size, 13px) + 3px);
+  /* 20px. Panel titles — the ceiling. Nothing inside a panel may reach it, or
+   * the sub-heading starts reading as the title. */
+  --font-size-xl: calc(var(--vscode-font-size, 13px) + 7px);
 }
 
 /* ── Spacing scale ──────────────────────────────────────────────────────── */

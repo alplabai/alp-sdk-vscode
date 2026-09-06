@@ -10,9 +10,13 @@
   gap: var(--space-3);
 }
 
+/* This paragraph REPLACES the picture — it is the whole answer when nothing
+   resolved, two sentences saying so and where the reasons are listed. It is
+   read the way the map it stands in for would have been, so it takes the
+   panel's reading size rather than a caption's. */
 .empty {
   margin: 0;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
 }
 
@@ -23,13 +27,64 @@
   flex-wrap: wrap;
 }
 
+/* THE COLUMN SHRINKS; THE DRAWING DOES NOT. `flex: none` plus the default
+   `min-width: auto` used to floor this column at the SVG's intrinsic width,
+   which pushed the map off the side of a narrow editor column. Letting the
+   column collapse instead is not the fix either, and a `min-width` floor here
+   cannot be one: SVG type is drawn in viewBox USER UNITS, so a drawing that
+   fits itself to a smaller box takes every label down with it — in a narrow
+   column the axis addresses would render smaller than the 10px this change
+   raised them from, and the headline fix would silently undo itself.
+
+   So the column is free to shrink to nothing and the picture inside it keeps
+   1:1 and overflows. `.map`'s `flex-wrap` has by then put the row list on its
+   own line, and this column follows it down to the panel's width instead of
+   flooring at the drawing's and making the WHOLE panel scroll sideways. What
+   zeroes that floor is `overflow-x: auto`: a flex item whose computed overflow
+   in the relevant axis is anything but `visible` has its automatic minimum
+   size resolved to zero, so `min-width: auto` is already 0 here and the
+   `min-width: 0` below changes no layout. It is kept as belt and braces — it
+   is what would hold the shrink if the scrolling ever came off this box — not
+   as the mechanism. THE TRADE: a narrow column gets a horizontal scrollbar
+   under the chart. That is the price of the labels staying at reading size,
+   and the alternative — scaling — is precisely what made them unreadable.
+
+   Two things this depends on. `overflow-x: auto` computes `overflow-y` to
+   `auto` as well, which is harmless only because this column is auto-height
+   and never overflows vertically. And it works at all only while the svg is
+   allowed to keep its intrinsic width: see `.svg` in MemoryChart.module.css —
+   a `max-width: 100%` there caps the drawing at this box, so it scales again
+   and this container never has anything to scroll.
+
+   AND THIS COLUMN CLIPS, which `.svg`'s `overflow: visible` does not undo:
+   that declaration stops the SVG's own viewport cutting a label which outruns
+   the viewBox, and stops nothing here. `overflow-x: auto` makes this box a
+   scroll container, and a scroll container clips every descendant at its own
+   padding box — only the END edges stay reachable. Ink past the right edge
+   extends the scrollable area and can be scrolled to; ink past the top or the
+   left edge is cut, with no scroll position that reaches it. A label pushed
+   off those two edges is gone, not merely off-screen. */
 .mapSide {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
 }
 
+/* `overflow: hidden` is here to clip the pressed button's square background to
+   the row's radius, not to trim its labels: the box is `fit-content`, so it
+   grows with the type inside it and both labels still fit at reading size.
+   IT DOES TRIM ONE THING THAT IS NOT A BACKGROUND — the keyboard focus ring.
+   `src/styles.css` draws `:focus-visible` as a 1px outline at
+   `outline-offset: 1px`, and an outline paints OUTSIDE the border box, so
+   every run of the ring that follows an edge these buttons share with the row
+   falls in the clipped region: top, bottom, and the outer end. What survives
+   is the one vertical segment between the two buttons — a 1px sliver, which
+   is not a focus indicator. `.scaleBtn` pulls the whole ring back inside with
+   a negative offset below; if this `overflow` ever goes, that offset is what
+   has to be re-argued. */
 .scaleRow {
   display: flex;
   border: 1px solid var(--border-default);
@@ -45,13 +100,29 @@
   background: transparent;
   color: var(--text-secondary);
   font-family: inherit;
-  font-size: var(--font-size-xs);
+  /* Control text, at the size every other control in the webview uses
+     (`Button.module.css`): "True scale" / "Equalized" are words to read, not a
+     badge to glance at. */
+  font-size: var(--font-size-base);
   padding: var(--space-1) var(--space-2);
   cursor: pointer;
 }
 
 .scaleBtn:last-child {
   border-right: 0;
+}
+
+/* THE RING, INSET. The global rule in `src/styles.css` is
+   `outline: 1px solid var(--border-focus)` at `outline-offset: 1px`, which
+   paints the whole ring outside this button's border box — and that border box
+   IS `.scaleRow`'s padding box on three of its four sides, so the row's
+   `overflow: hidden` cuts all but a 1px sliver of it and keyboard focus stops
+   being visible on a two-button control that has no other focus signal. A
+   negative offset moves the same ring just inside the border box, where
+   nothing clips it. Only the offset is overridden: colour and width stay the
+   workbench's, so a high-contrast theme still gets its own ring. */
+.scaleBtn:focus-visible {
+  outline-offset: -1px;
 }
 
 .scaleBtn[aria-pressed="true"] {
@@ -87,12 +158,46 @@
   background: var(--surface-hover);
 }
 
+/* The extent's NAME — the identifier the whole row is about, and the label the
+   band beside it carries in the picture. It is not set below the values it
+   heads: a row whose name reads smaller than its own address inverts itself,
+   and the reader finds the row by scanning names. The mono family and weight
+   600 are what separate a name from the values next to it; size is not
+   available for that job. */
 .rowName {
   font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   font-weight: 600;
 }
 
+/* ONE BOX FOR BOTH PILLS, and it has to be stated. The two shells sit side by
+   side on a `.row` that centres its items, so a visible height difference
+   between them reads as a mistake rather than as a rank — and the type
+   difference below is deliberate, so the boxes must not also disagree.
+
+   WHAT MADE THEM DISAGREE IS AN INHERITED RATIO. `src/styles.css` sets
+   `body { line-height: 1.5 }` UNITLESS, and a unitless value inherits as the
+   ratio, not as a computed length — so each pill multiplied its OWN size:
+   xs 11 × 1.5 = 16.5px against base 13 × 1.5 = 19.5px, a 3px gap under equal
+   padding (both are flex items of `.row`, so that padding really is height).
+   Padding cannot close it, because padding only ADDS: `.status`'s bare line
+   box, 19.5px, already exceeds `.kind`'s padded one at 16.5 + 2 = 18.5px, so
+   no padding on `.status` reaches DOWN to `.kind`, and padding `.kind` up
+   instead means a hand-tuned 1.5px keyed to the 2px between the two tokens.
+
+   Both therefore take the same line box, given as a LENGTH — a unitless ratio
+   is the exact thing that opened the gap and is what would re-open it — and
+   derived from the base token so it still follows the workbench font. Their
+   vertical padding is equal below; keep it that way. */
+.kind,
+.status {
+  line-height: calc(var(--font-size-base) * 1.2);
+}
+
+/* Stays small on purpose, next to a `.status` that does not: the kind is the
+   category ("carve-out"), the status is the verdict. Reading the row as
+   category-then-verdict is the whole point of the size difference — which is a
+   difference in TYPE only, the boxes around them being evened above. */
 .kind {
   font-size: var(--font-size-xs);
   padding: 1px var(--space-2);
@@ -101,23 +206,36 @@
   color: var(--text-secondary);
 }
 
+/* The map's hex bases, read digit by digit and compared against each other:
+   0x80000000 and 0x800b0000 differ in one place. Mono is a FAMILY decision —
+   it buys the column alignment that makes that comparison possible — and it is
+   not a licence to set the one value on the row nobody may misread smaller
+   than the prose around it. */
 .addr {
   font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-base);
   color: var(--text-primary);
 }
 
+/* Sizes, region, filesystem and cores: values from the manifest, read the same
+   way the address is. `.rowSize` also carries the "· tan size" branch, where
+   the number came from a different measurement than the extent. */
 .rowSize,
 .rowMeta {
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
   display: flex;
   gap: var(--space-3);
   flex-wrap: wrap;
 }
 
+/* `entry.status` verbatim from the emitter — "pending", "blocked",
+   "unresolved". The pill shell is chrome; the word inside it is the verdict on
+   whether the extent exists, so the TYPE takes the reading size while the shell
+   stays a pill. What keeps that from also making it a TALLER pill than `.kind`
+   is the shared line box above — the padding and radius here are `.kind`'s. */
 .status {
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-base);
   font-weight: 600;
   padding: 1px var(--space-2);
   border-radius: var(--radius-full);
@@ -136,19 +254,26 @@
   gap: var(--space-2);
 }
 
+/* md (14px): a sub-heading, one rung above the 13px rows it heads and one rung
+   below the panel's own `.title`, which is lg (16px) in
+   BuildPlanView.module.css. At base it was the exact size of the list beneath
+   it, which is a rung spent for nothing — weight and colour were left carrying
+   a rank that size is the only signal for. */
 .unresolvedTitle {
   margin: 0;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
   font-weight: 600;
   color: var(--text-section-header);
 }
 
 /* Full width on its own line, wrapping rather than truncating: the reason
-   names the file and the field to change, and a clipped one names neither. */
+   names the file and the field to change, and a clipped one names neither.
+   Set at reading size for the same reason — this is correctness text, and the
+   habit of setting mono small loses to a sentence that must not be misread. */
 .reason {
   flex-basis: 100%;
   font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
   white-space: pre-wrap;
 }
@@ -165,9 +290,13 @@
   background: color-mix(in srgb, var(--status-err) 10%, transparent);
 }
 
+/* md, like `.unresolvedTitle` and for the same reason: a rung above the rows
+   it heads, a rung below the panel's lg title. The error colour and the tinted
+   bordered box carry the alarm; size is what says this line is the heading OF
+   the box rather than the first entry IN it. */
 .conflictsTitle {
   margin: 0;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
   font-weight: 600;
   color: var(--status-err);
 }
@@ -188,17 +317,24 @@
   gap: var(--space-2);
 }
 
+/* What went wrong with the pair named beside it ("share addresses", "covers an
+   image load address") — a diagnostic sentence, not a tag. */
 .conflictKind {
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
 }
 
 /* One line under the chart, where four paragraphs used to be. The rest of that
    context now lives in the Notes tab: the map is a reading surface, not an
-   essay with a picture in it. */
+   essay with a picture in it.
+   That one line is still prose, and it is the key to the drawing — what a band
+   is, what a line is, what the colours group by, or that the scale has been
+   thrown away. A reader who cannot decode the picture cannot use it, so this
+   is set at reading size like any other sentence; `max-width: 62ch` is what
+   holds the measure. */
 .legend {
   margin: 0;
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
   max-width: 62ch;
 }

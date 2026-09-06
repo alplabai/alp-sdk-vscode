@@ -13,16 +13,24 @@
   gap: var(--space-1);
 }
 
+/* This tab is nothing but prose — it exists so the map does not have to carry
+   four paragraphs — so it is set at reading size, not caption size. */
 .note p {
   margin: 0;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
   line-height: 1.5;
 }
 
+/* md (14px): one rung above the 13px paragraph each h4 heads, and one rung
+   below the panel's own title, which is lg (16px) — `.title` in
+   BuildPlanView.module.css, a different `.title` from this one. Set at base
+   these headings were the exact size of their own prose, which made weight and
+   colour do the whole job of saying "heading" and cost the tab its only
+   structure: four notes with nothing above them but a tab strip. */
 .title {
   margin: 0;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
   font-weight: 600;
   color: var(--text-primary);
 }
