@@ -223,6 +223,23 @@ function SystemManifestSection({
         <ul className={styles.manifestSlices}>
           {manifest.slices.map((s) => {
             const active = s.os !== "off";
+            // What this slice builds, by the first of the five fields the
+            // manifest supplies, and undefined when it supplies none of them.
+            // The "—" is appended per consumer rather than to the chain: a
+            // sentinel is a DISPLAY fallback, and feeding it to `title` too
+            // would grow the row a native tooltip whose entire content is an
+            // em-dash, which discloses nothing and reads as a bug.
+            //
+            // Hoisted because it has TWO consumers: at --font-size-base the
+            // glyphs are ~18% wider than the xs they were, so ~15% fewer
+            // characters of an absolute `build_dir` survive `.manifestTarget`'s
+            // ellipsis (nowrap + overflow hidden inside `flex: 1 1 auto;
+            // min-width: 0`), and the `title` is the only place the path stays
+            // whole — the same reason `.boardYaml` carries one. One const,
+            // because a tooltip that has drifted from the text under it is
+            // worse than no tooltip.
+            const target =
+              s.build_dir ?? s.board ?? s.machine ?? s.image ?? s.app;
             return (
               <li key={s.core_id} className={styles.manifestSlice}>
                 <span className={styles.coreId}>{s.core_id}</span>
@@ -235,13 +252,11 @@ function SystemManifestSection({
                 {s.flash_method && (
                   <span className={styles.manifestFlash}>{s.flash_method}</span>
                 )}
-                <code className={styles.manifestTarget}>
-                  {s.build_dir ??
-                    s.board ??
-                    s.machine ??
-                    s.image ??
-                    s.app ??
-                    "—"}
+                <code
+                  className={styles.manifestTarget}
+                  title={target ?? undefined}
+                >
+                  {target ?? "—"}
                 </code>
                 <span className={styles.manifestActions}>
                   {active && isReady(s.flash_method) && (

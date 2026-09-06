@@ -14,8 +14,17 @@
   gap: var(--space-3);
 }
 
+/* lg (16px), not xl (20px): this is a full editor-tab panel — `buildPlanPanel.ts`
+ * calls `createWebviewPanel` — so the title has to outrank 13px body text. It
+ * stops at lg because the field above it is already taken: four other full-tab
+ * panels (Dependencies, SetupFlow, NewProjectFlow, ExistingProjectFlow) hardcode
+ * an untokenised 18px title, and ModelsView's `.title` is ALREADY xl (20px) on
+ * its own editor tab (`src/models/panel.ts`). So the field is Build Plan 16,
+ * that cluster 18, Models 20 — lg keeps this panel below both. Tokenising the
+ * 18px cluster and reconciling it with Models' xl is the follow-up, not this
+ * file's business. */
 .title {
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-lg);
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
@@ -31,14 +40,29 @@
 .subtitle code,
 .cmd {
   font-family: var(--text-mono);
-  color: var(--text-mono, var(--text-primary));
+  /* `--text-mono` is a FONT STACK (tokens.css), not a colour. `color:
+   * var(--text-mono, …)` therefore handed `color` a family list — invalid, so
+   * it silently fell back to the inherited colour and the fallback arm never
+   * ran. The mono decision belongs to `font-family`, above; colour is primary.
+   * That MOVES `.cmd` a shade, so say it: what it inherited was `.root`'s
+   * --vscode-editor-foreground, and --text-primary is --vscode-foreground —
+   * two different theme keys. The workbench one is the right one here, since
+   * the command line is this panel's own text and not editor content.
+   * `.subtitle code` matches no markup today (the subtitle is one sentence
+   * with no <code> in it), so `.cmd` is the only rendering this rule moves. */
+  color: var(--text-primary);
 }
 
-/* Paths (board.yaml, generated artefacts) are chrome — UI font, not editor mono. */
+/* A FAMILY call, not a size one: these paths take the UI font rather than the
+ * editor mono face, because they are read as prose inside a panel and not as
+ * code inside an editor. Neither of them is chrome — `.boardYaml` and
+ * `.fileRow` are both base, and the type-scale gate lists them as primary
+ * reading matter. Colour is a third axis and is not decided here either: the
+ * board.yaml path takes it from `.boardYaml` below, and a generated path from
+ * the `.fileToggle` button it sits in. */
 .boardYaml code,
 .fileList code {
   font-family: var(--vscode-font-family, system-ui, sans-serif);
-  color: var(--text-mono, var(--text-primary));
 }
 
 .skeletons {
@@ -70,9 +94,20 @@
   color: var(--text-secondary);
 }
 
+/* THE COLOUR MOVED, from secondary to primary — a real visual change, not the
+ * old behaviour written out. The <code> inside carried `color:
+ * var(--text-mono, var(--text-primary))`, which is invalid at computed-value
+ * time (`--text-mono` is a FONT STACK, and an invalid value on an inherited
+ * property computes to `inherit`), so the path took this element's
+ * --text-secondary and the primary fallback arm never ran. Now that the path
+ * is read at base it is provenance — the file a person opens to change
+ * anything the panel is showing — so primary is the honest colour for it.
+ * It is declared here rather than on the <code> because the two are the same
+ * text: this <div> wraps exactly one <code> holding the whole path, and a
+ * colour on the inner one would read as a second, narrower decision. */
 .boardYaml {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -88,7 +123,10 @@
   align-items: flex-start;
   gap: var(--space-2);
   margin: calc(-1 * var(--space-2)) 0 0;
-  font-size: var(--font-size-sm);
+  /* Says why Build is unavailable. Prose carrying a risk is never the panel's
+   * small text — a warning nobody bothers to read is a warning that did not
+   * happen. */
+  font-size: var(--font-size-base);
   line-height: 1.45;
   color: var(--status-warn);
 }
@@ -166,7 +204,7 @@
 .sliceMeta {
   display: flex;
   gap: var(--space-3);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
 }
 
@@ -184,7 +222,7 @@
 .envRow {
   display: flex;
   gap: var(--space-2);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   font-family: var(--vscode-font-family, system-ui, sans-serif);
 }
 
@@ -206,6 +244,9 @@
   gap: var(--space-2);
 }
 
+/* Stays at sm while the text beneath it moved to base: uppercase + 0.04em
+   tracking + weight 600 is chrome, like the badges, and a section label set at
+   body size shouts instead of labelling. */
 .sectionTitle {
   font-size: var(--font-size-sm);
   font-weight: 600;
@@ -225,10 +266,15 @@
 }
 
 .fileRow {
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
 }
 
 .fileToggle {
+  /* `.fileToggle` is a <button>, and a button does not inherit font: without
+   * this, `.fileRow`'s size never reached `.filePath` and the path rendered at
+   * the UA's own button default. Changing the number above alone fixes
+   * nothing. */
+  font: inherit;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -241,6 +287,12 @@
   color: var(--text-secondary);
 }
 
+/* The row's only affordance, and it reads as one only while the resting
+ * colour differs from this one. `.filePath` declares no colour of its own: it
+ * inherits `.fileToggle`'s --text-secondary above, and that is what leaves
+ * this rule somewhere to travel to. Pinning a generated path to
+ * --text-primary at rest, the way the board.yaml path is pinned above where
+ * nothing hovers, would make this a dead rule. */
 .fileToggle:hover .filePath {
   color: var(--text-primary);
 }
@@ -265,15 +317,26 @@
 .fileContent {
   margin: var(--space-1) 0 var(--space-2) var(--space-4);
   padding: var(--space-2) var(--space-3);
-  max-height: 220px;
+  /* 240px, not the old 220px: the preview shows the same ~12 lines it always
+   * did: 220 / (12px * 1.45) matches 240 / (13px * 1.45). Shrinking the visible
+   * line count is not the trade this size bump was asking for. */
+  max-height: 240px;
   overflow: auto;
-  font-size: var(--font-size-sm);
+  /* Not a proportional-text fix: the UA stylesheet's `pre { font-family:
+   * monospace }` beats inheritance from body, so this <pre> (BuildPlanView.tsx)
+   * always had *a* mono face. What it did not have was OUR mono face — the
+   * `--text-mono` rule above targets `.subtitle code, .cmd` and never reached
+   * here, leaving the preview on whatever generic the browser picks. Naming the
+   * token puts generated KConfig / overlay text on the same stack as `.cmd`
+   * instead of letting it drift. */
+  font-family: var(--text-mono);
+  font-size: var(--font-size-base);
   line-height: 1.45;
   white-space: pre;
   border-radius: var(--radius-sm, 2px);
   background: var(--surface-input, var(--surface-hover));
   border: 1px solid var(--border-default);
-  color: var(--text-mono, var(--text-primary));
+  color: var(--text-primary);
 }
 
 .warnings {
@@ -289,7 +352,7 @@
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
 }
 
@@ -337,6 +400,9 @@
    the age is the fact this side can always support. */
 .manifestAge {
   margin-left: var(--space-2);
+  /* Kept at xs deliberately: this rides the badge on the `.sectionTitle` line,
+     so it is badge-adjacent micro-meta. Raising it would leave the age reading
+     larger than the heading it sits inside. */
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
@@ -344,12 +410,12 @@
 /* Never only a badge — the sentence saying WHY, in the warning colour so it
    is not read as one more muted note. */
 .manifestStaleNote {
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   color: var(--status-warn);
 }
 
 .manifestNote {
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
 }
 
@@ -369,8 +435,27 @@
   gap: var(--space-2);
 }
 
+/* base, matching MemoryRegions' `.status`: the two are the same construct — a
+   color-mix pill, weight 600, `1px var(--space-2)`, radius-full, neither
+   uppercase nor tracked — and both render a status word verbatim from the
+   manifest. The pill is chrome; the word inside it is the verdict on the slice.
+   Identical constructs do not get opposite calls in one diff.
+
+   NO SHARED LINE BOX HERE, unlike MemoryRegions' `.kind`/`.status` pair, and
+   the difference is arithmetic rather than taste. `styles.css` sets
+   `body { line-height: 1.5 }` UNITLESS, so it inherits as a RATIO and every
+   element multiplies its own size: xs is 11 × 1.5 = 16.5px and base is
+   13 × 1.5 = 19.5px. There both pills pad `1px`, so that whole 3px ratio gap
+   lands on the shells — 18.5px against 21.5px — which on a row that centres
+   its items reads as a mistake, and that file closes it by stating a
+   line-height as a LENGTH so both pills share one box. Here `.backend` pads
+   `2px` against this rule's `1px`, which claws back 2px of the 3: 20.5px
+   against 21.5px. One pixel on a centred row is under the threshold that
+   comment sets, so evening these two would be ceremony rather than
+   consistency. That makes both paddings load-bearing — move either one and
+   this pair needs the shared line box after all. */
 .manifestStatus {
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-base);
   font-weight: 600;
   padding: 1px var(--space-2);
   border-radius: var(--radius-full, 9999px);
@@ -388,13 +473,13 @@
 
 .manifestFlash {
   font-family: var(--font-family-mono, monospace);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
 }
 
 .manifestTarget {
   font-family: var(--font-family-mono, monospace);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
   flex: 1 1 auto;
   min-width: 0;
@@ -419,7 +504,7 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-1) var(--space-3);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
   padding-left: var(--space-3);
 }
@@ -451,8 +536,16 @@
   color: var(--status-err);
 }
 
+/* A control, not a badge: `Button.module.css` and the Configurator chips both
+   sit at base, and Flash is the one thing on this row you click. */
 .sliceBtn {
-  font-size: var(--font-size-xs);
+  /* A <button> inherits no font and this webview ships no global button reset
+     (`src/styles.css` has no `button` rule at all) — the same trap `.fileToggle`
+     needs `font: inherit` for. Without this the size below moves while the
+     family stays the UA default. `.tab` and MemoryRegions' `.scaleBtn` say the
+     same thing for the same reason. */
+  font-family: inherit;
+  font-size: var(--font-size-base);
   font-weight: 600;
   padding: 2px var(--space-2);
   border: 1px solid
@@ -477,6 +570,9 @@
   margin-top: var(--space-2);
 }
 
+/* Chrome, and it stays chrome: `.manifestSub` is a flat flex row with no
+   padding-left, so the chips it labels are not indented under it. Raising this
+   would flatten a hierarchy level rather than add one. */
 .manifestSubTitle {
   font-size: var(--font-size-xs);
   font-weight: 600;
@@ -485,8 +581,17 @@
   color: var(--text-secondary);
 }
 
+/* base, not xs — the tint does not make it chrome. It sets a background and
+   nothing else: no text-transform, no letter-spacing, no font-weight, so it
+   fails all three tests for the label register that `.backend`,
+   `.manifestBadge` and `.manifestSubTitle` pass. What it carries is verbatim
+   manifest data: `link.name`, `link.kind`, the endpoint pair, `link.status`
+   and `link.reason` for IPC, and `mcu.name` + `mcu.chip` for a helper MCU.
+   `mcu.chip` is a PART NUMBER, and a part number misread by one character is
+   different silicon. The mono family and the tinted shell stay — those are
+   what make it read as a chip. */
 .manifestChip {
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-base);
   font-family: var(--font-family-mono, monospace);
   padding: 1px var(--space-2);
   border-radius: var(--radius-sm, 2px);
@@ -512,7 +617,7 @@
   background: transparent;
   color: var(--text-secondary);
   font-family: inherit;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   padding: var(--space-1) var(--space-3);
   cursor: pointer;
 }
