@@ -191,6 +191,11 @@
         "category": "Alp"
       },
       {
+        "command": "alp.openSerialMonitor",
+        "title": "Alp: Open serial monitor",
+        "category": "Alp"
+      },
+      {
         "command": "alp.westAlpImage",
         "title": "Alp: Build image (assemble image bundle)",
         "category": "Alp"
