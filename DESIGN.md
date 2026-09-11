@@ -54,7 +54,7 @@ typography:
     letterSpacing: "0.04em"
   code:
     fontFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, 'Cascadia Code', 'Liberation Mono', 'Courier New', monospace"
-    fontSize: "calc(var(--vscode-font-size, 13px) - 1px)"
+    fontSize: "var(--vscode-font-size, 13px)"
 rounded:
   sm: "2px"
   md: "3px"
@@ -296,11 +296,14 @@ the largest text in the system is seven pixels bigger than the smallest.
   `--prose-max` (90ch), not by pixels.
 - **Label** (600, `-1px` — 12px, letter-spacing 0.04em, uppercase): section
   labels and captions. Some panels also set it on monospace paths and hints
-  (`ModelsView`'s `.mono`/`.log`, `NewProjectFlowView`'s `.previewFilePath`) —
-  known, un-migrated exceptions, not the pattern to copy: the Build Plan
-  panel's type-scale gate holds a value read character by character, mono or
-  not, to `base` or above, and that is the standard for new work.
+  (`ModelsView`'s `.mono`/`.log`) — known, un-migrated exceptions, not the
+  pattern to copy: the Build Plan panel's type-scale gate holds a value read
+  character by character, mono or not, to `base` or above, and that is the
+  standard for new work.
 - **Micro** (`-2px` — 11px): badges and micro-metadata only.
+  `NewProjectFlowView`'s `.previewFilePath` belongs here, not in Label — a
+  monospace path read character by character, and a known, un-migrated
+  exception to that same standard.
 
 ### Named Rules
 

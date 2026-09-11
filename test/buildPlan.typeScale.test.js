@@ -509,8 +509,9 @@ const CHROME = [
     class: ".manifestSubTitle",
     why:
       "the LABEL register (uppercase, 0.04em tracked, weight 600) over the " +
-      "IPC-link / helper-MCU chips, the same register `.sectionTitle` and " +
-      "`.backend` are in — not a heading in the panel's four-rung ladder",
+      "IPC-link / helper-MCU chips, the same register `.sectionTitle` is " +
+      "in — not a heading in the panel's four-rung ladder. `.backend` sits " +
+      "a rung down at xs (Micro), not alongside it",
   },
   {
     file: "BuildPlanView.module.css",

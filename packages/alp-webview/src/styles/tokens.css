@@ -148,11 +148,15 @@
  * base; xs and sm are for chrome that is glanced at, not read.
  */
 :root {
-  /* 11px. Chrome only — uppercase tracked badges and pills that carry their own
-   * background and weight. Guidance, not a gate: prose, values, hex, paths and
-   * reasons should read at `base` or above. `NewProjectFlowView`'s
-   * `.previewFilePath` is a known exception outside this panel, left at `xs`
-   * as-is rather than migrated here. */
+  /* 11px. Chrome only — DESIGN.md's Micro register: badges and
+   * micro-metadata, not only the uppercase tracked pills that carry their own
+   * background and weight. Build Plan's `.kind` (a tinted pill with no
+   * uppercase, tracking or weight) and `.manifestAge` (no background,
+   * uppercase, or weight at all — plain text riding a section title's line)
+   * are both chrome at `xs` without fitting that narrower shape. Guidance,
+   * not a gate: prose, values, hex, paths and reasons should read at `base`
+   * or above. `NewProjectFlowView`'s `.previewFilePath` is a known exception
+   * outside this panel, left at `xs` as-is rather than migrated here. */
   --font-size-xs: calc(var(--vscode-font-size, 13px) - 2px);
   /* 12px. Dense secondary chrome: meta rows, helper text beside a control.
    * Guidance, not a gate: monospace is a FAMILY decision and is never on its

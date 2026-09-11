@@ -597,12 +597,14 @@
 }
 
 /* Chrome, and it stays chrome — a LABEL register (uppercase, 0.04em tracked,
-   weight 600), the same register `.backend`, `.manifestBadge` and
-   `.sectionTitle` are in. sm, not xs: DESIGN.md pins the Label register
-   itself at sm (12px, -1px from the workbench default — "section labels and
-   captions"), and `.sectionTitle` above already takes it; two labels in one
-   register should not disagree about its size. It stays a rung below the
-   base body text it sits over (`.manifestChip` and friends), so it does not
+   weight 600), the same register `.sectionTitle` is in. sm, not xs:
+   DESIGN.md pins the Label register itself at sm (12px, -1px from the
+   workbench default — "section labels and captions"), and `.sectionTitle`
+   above already takes it; two labels in one register should not disagree
+   about its size. `.backend` and `.manifestBadge` are a rung down at xs —
+   DESIGN.md's Micro register, badges and micro-metadata — not Label, so
+   they set no precedent here either way. It stays a rung below the base
+   body text it sits over (`.manifestChip` and friends), so it does not
    start reading as a heading — `.manifestSub`'s flat flex row with no
    padding-left is what keeps the chips it labels from looking indented under
    it, not the font size. */
