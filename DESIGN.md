@@ -162,8 +162,11 @@ shadow. Color appears almost nowhere except where something is reporting its
 state, and that scarcity is what makes a red border mean something.
 
 Density is workbench density, not marketing density. Type sizes are `calc()`
-offsets from `--vscode-font-size`, so a user who runs a 15px editor gets a 15px
-panel; nothing is pinned to a designer's 16px. Layout is intrinsic — the system
+offsets from `--vscode-font-size` — the workbench UI font size VS Code injects
+into every webview as a constant 13px, tied to no user setting; raising
+`editor.fontSize` moves none of it, since that setting feeds a different
+variable, `--vscode-editor-font-size`, that nothing here reads. Nothing is
+pinned to a designer's 16px either. Layout is intrinsic — the system
 ships zero width-based breakpoints and reflows through `auto-fit` grids
 instead. What this system rejects is equally definite: it is not a branded SaaS
 dashboard with a palette of its own, it is not Material or Fluent wearing a VS
@@ -217,8 +220,12 @@ in both directions, without a single override.
 
 - **Primary Text** (`{colors.text-primary}`): body copy, labels, values, and
   the fill color of the masked wordmark.
-- **Secondary Text** (`{colors.text-secondary}`): descriptions, hints, paths,
-  section labels, resting icon buttons. The workhorse of a dense readout.
+- **Secondary Text** (`{colors.text-secondary}`): descriptions, hints, most
+  paths, section labels, resting icon buttons — the workhorse of a dense
+  readout. Not every path: the Build Plan panel pins its board.yaml path to
+  `{colors.text-primary}` instead, because that path is the fact the panel
+  exists to report, not a caption beside it
+  (`BuildPlanView.module.css`'s `.boardYaml`).
 - **Panel Ground** (`{colors.surface-bg}`): the sidebar background, falling
   back to the editor background so a full-tab panel still sits on the right
   ground.
@@ -288,14 +295,25 @@ the largest text in the system is seven pixels bigger than the smallest.
   running text, labels, descriptions, and control text. Prose is capped at
   `--prose-max` (90ch), not by pixels.
 - **Label** (600, `-1px` — 12px, letter-spacing 0.04em, uppercase): section
-  labels and captions. Also the size for monospace paths and hints.
+  labels and captions. Some panels also set it on monospace paths and hints
+  (`ModelsView`'s `.mono`/`.log`, `NewProjectFlowView`'s `.previewFilePath`) —
+  known, un-migrated exceptions, not the pattern to copy: the Build Plan
+  panel's type-scale gate holds a value read character by character, mono or
+  not, to `base` or above, and that is the standard for new work.
 - **Micro** (`-2px` — 11px): badges and micro-metadata only.
 
 ### Named Rules
 
 **The Workbench Anchor Rule.** Every type size is a `calc()` offset from
-`--vscode-font-size`. No hardcoded px in type, ever. A user who raises their
-editor font size raises ours — that is the whole point of being a guest.
+`--vscode-font-size` — the workbench UI font size VS Code injects into every
+webview as a constant 13px, tied to no setting of the user's; `editor.fontSize`
+feeds a different variable, `--vscode-editor-font-size`, that this system never
+reads, so raising it moves nothing here. One literal px is sanctioned and named
+rather than silently made: `.apertureLabel`'s `9px`
+(`MemoryChart.module.css`) sits inside a 9-unit rotated bar (`APERTURE_W`)
+whose own width is the constraint, not reading size, and
+`test/buildPlan.typeScale.test.js`'s `SANCTIONED` list gates that the reason
+still holds.
 
 **The Uppercase Label Rule.** Uppercase plus letter-spacing is reserved for
 section labels (0.04em in shared layout, 0.7px in the Overview). Buttons,
