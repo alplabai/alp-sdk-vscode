@@ -11,7 +11,7 @@
 // `test/memoryRegions.readOnly.test.js`'s VIEW_FILES covers this file too.
 
 import type { MemoryRegion, MemorySpan } from "../../types";
-import { duplicatedNames } from "./regionWindow";
+import { duplicatedNames, type Window } from "./regionWindow";
 import { formatAddress, formatBytes } from "./format";
 import styles from "./MemoryRegionTable.module.css";
 
@@ -128,7 +128,7 @@ export function MemoryRegionTable({
   spans: MemorySpan[];
   /** The chart's own (possibly grown) window, or null when no chart drew
    *  one — with no window there is no "outside it" to report. */
-  window: { lo: number; hi: number } | null;
+  window: Window | null;
   selected: string | null;
   onSelect: (id: string) => void;
 }) {

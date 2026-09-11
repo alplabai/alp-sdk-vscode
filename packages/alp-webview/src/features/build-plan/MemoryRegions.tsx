@@ -34,9 +34,9 @@ import type {
   SliceSize,
 } from "../../types";
 import { formatAddress, formatBytes } from "./format";
-import { MemoryChart, budgetEnd, endOf, windowOf } from "./MemoryChart";
+import { MemoryChart } from "./MemoryChart";
 import { MemoryRegionTable } from "./MemoryRegionTable";
-import { growWindowOverRegions, resolvedRegions } from "./regionWindow";
+import { budgetEnd, chartWindowOf, endOf } from "./regionWindow";
 import styles from "./MemoryRegions.module.css";
 
 const KIND_LABEL: Record<MemorySpan["kind"], string> = {
@@ -231,10 +231,14 @@ export function MemoryRegions({
   if (!memory) return null;
   const budgetByCore = new Map(sizes.map((s) => [s.core_id, s]));
   const placed = memory.spans.filter((s) => s.base !== null);
-  const rawWindow = windowOf(placed, budgetByCore);
-  const chartWindow = rawWindow
-    ? growWindowOverRegions(rawWindow, resolvedRegions(memory.regions ?? []))
-    : null;
+  // Same call `MemoryChart` makes internally, so the window this table
+  // reports as "outside" and the one the chart actually draws can never
+  // disagree.
+  const chartWindow = chartWindowOf(
+    memory.spans,
+    budgetByCore,
+    memory.regions ?? [],
+  );
   const deviceRelative = memory.spans.filter((s) => s.base === null);
   const toggle = (id: string) => setSelected((cur) => (cur === id ? null : id));
 

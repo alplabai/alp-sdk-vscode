@@ -33,12 +33,15 @@ import type {
 import { formatAddress, formatBytes } from "./format";
 import styles from "./MemoryChart.module.css";
 import {
+  budgetEnd,
+  chartWindowOf,
   duplicatedNames,
-  growWindowOverRegions,
+  endOf,
   regionLabelLevels,
   regionsInWindow,
   resolvedRegions,
   type ResolvedRegion,
+  type Window,
 } from "./regionWindow";
 
 /**
@@ -181,57 +184,6 @@ const LINE_LABEL_DY = -5;
  * scale moves cannot be compared with yesterday's.
  */
 export const DETAIL_FACTOR = 22;
-
-export interface Window {
-  lo: number;
-  hi: number;
-}
-
-/** Where a span's end lies, or null when the manifest pinned no size. */
-export function endOf(span: MemorySpan): number | null {
-  if (span.base === null || span.sizeBytes === null) return null;
-  return span.base + span.sizeBytes;
-}
-
-/**
- * How far a slot image reaches, per `tan size`.
- *
- * The manifest pins where an image LOADS and says nothing about how much room
- * it has; `tan size` resolves that budget from SoM metadata and reports it as
- * `flash.total`. Measured on E1M-AEN801: 2.63 MiB for both M55 slices, which is
- * 2688 KiB — byte-for-byte the `he_slot0` / `hp_slot0` region size. So the
- * budget IS the slot. It is drawn dashed and labelled, never as a solid
- * manifest-pinned band: the base comes from the manifest and the extent from a
- * second tool, and a reader has to be able to tell which number came from where.
- */
-export function budgetEnd(
-  span: MemorySpan,
-  budget: SliceSize | undefined,
-): number | null {
-  if (span.kind !== "slot_image" || span.base === null) return null;
-  const total = budget?.flash.total;
-  return typeof total === "number" && total > 0 ? span.base + total : null;
-}
-
-/**
- * The window the map covers: the lowest pinned base to the highest reach.
- * Null when fewer than two distinct addresses are known — one point is not a
- * range, and a ruler drawn across nothing invites the reader to measure
- * distances that were never measured.
- */
-export function windowOf(
-  spans: MemorySpan[],
-  budgets: Map<string, SliceSize>,
-): Window | null {
-  const bases = spans.map((s) => s.base).filter((b): b is number => b !== null);
-  if (bases.length === 0) return null;
-  const ends = spans
-    .flatMap((s) => [endOf(s) ?? s.base, budgetEnd(s, budgets.get(s.label))])
-    .filter((e): e is number => e !== null);
-  const lo = Math.min(...bases);
-  const hi = Math.max(...ends);
-  return hi > lo ? { lo, hi } : null;
-}
 
 /**
  * Tick addresses for a window: aligned to a power of two, never to a power of
@@ -661,12 +613,13 @@ export function MemoryChart({
 }) {
   const placed = spans.filter((s) => s.base !== null);
   const resolved = resolvedRegions(regions);
-  const rawWindow = windowOf(placed, budgets);
-  if (!rawWindow) return null;
-  // Grow the spans/budgets window to a fixpoint over every resolved region
-  // that intersects or touches it. Regions never CREATE a window on their
-  // own — only widen one that already exists.
-  const win = growWindowOverRegions(rawWindow, resolved);
+  // Grown to a fixpoint over every resolved region that intersects or
+  // touches the spans' own window — computed once in `chartWindowOf`, the
+  // same call `MemoryRegions.tsx` makes for the table's "outside this
+  // map's window" note, so the two can never disagree about where the
+  // window ends.
+  const win = chartWindowOf(spans, budgets, regions);
+  if (!win) return null;
 
   // The top 1/DETAIL_FACTOR of the window, magnified by exactly that factor
   // because it is drawn at the same height.

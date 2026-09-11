@@ -3,10 +3,67 @@
 // The memory-region window helpers (#484 phase 2): pure address and pixel
 // arithmetic, no React and no CSS import, so a table (MemoryRegionTable.tsx)
 // and the chart (MemoryChart.tsx) both pull from one place rather than
-// drifting apart with two copies of the same rule.
+// drifting apart with two copies of the same rule. `Window`, `endOf`,
+// `budgetEnd` and `windowOf` live here for the same reason: both
+// `MemoryRegions.tsx` and `MemoryChart.tsx` need the window a manifest's
+// spans cover, and `chartWindowOf` below is the one place that also grows
+// it over resolved regions — the table's "outside this map's window" note
+// and the chart's own drawn window read the identical computation, so the
+// two can never drift the way two copies of the same three steps
+// eventually do.
 
-import type { MemoryRegion } from "../../types";
-import type { Window } from "./MemoryChart";
+import type { MemoryRegion, MemorySpan, SliceSize } from "../../types";
+
+export interface Window {
+  lo: number;
+  hi: number;
+}
+
+/** Where a span's end lies, or null when the manifest pinned no size. */
+export function endOf(span: MemorySpan): number | null {
+  if (span.base === null || span.sizeBytes === null) return null;
+  return span.base + span.sizeBytes;
+}
+
+/**
+ * How far a slot image reaches, per `tan size`.
+ *
+ * The manifest pins where an image LOADS and says nothing about how much room
+ * it has; `tan size` resolves that budget from SoM metadata and reports it as
+ * `flash.total`. Measured on E1M-AEN801: 2.63 MiB for both M55 slices, which is
+ * 2688 KiB — byte-for-byte the `he_slot0` / `hp_slot0` region size. So the
+ * budget IS the slot. It is drawn dashed and labelled, never as a solid
+ * manifest-pinned band: the base comes from the manifest and the extent from a
+ * second tool, and a reader has to be able to tell which number came from where.
+ */
+export function budgetEnd(
+  span: MemorySpan,
+  budget: SliceSize | undefined,
+): number | null {
+  if (span.kind !== "slot_image" || span.base === null) return null;
+  const total = budget?.flash.total;
+  return typeof total === "number" && total > 0 ? span.base + total : null;
+}
+
+/**
+ * The window the map covers: the lowest pinned base to the highest reach.
+ * Null when fewer than two distinct addresses are known — one point is not a
+ * range, and a ruler drawn across nothing invites the reader to measure
+ * distances that were never measured.
+ */
+export function windowOf(
+  spans: MemorySpan[],
+  budgets: Map<string, SliceSize>,
+): Window | null {
+  const bases = spans.map((s) => s.base).filter((b): b is number => b !== null);
+  if (bases.length === 0) return null;
+  const ends = spans
+    .flatMap((s) => [endOf(s) ?? s.base, budgetEnd(s, budgets.get(s.label))])
+    .filter((e): e is number => e !== null);
+  const lo = Math.min(...bases);
+  const hi = Math.max(...ends);
+  return hi > lo ? { lo, hi } : null;
+}
 
 /** A region's own resolved extent, paired with the row it came from — the
  *  shape both the window-growth rule and a rail's frame-drawing want, so
@@ -60,6 +117,31 @@ export function growWindowOverRegions(
     }
   }
   return { lo, hi };
+}
+
+/**
+ * The single window computation both the chart and the table draw from:
+ * the placed spans' own window (`windowOf`, on the `base !== null` subset),
+ * grown over every region `resolvedRegions` resolves for this SoM. Null
+ * when the spans alone pin no window — regions never CREATE one, only
+ * widen one that already exists.
+ *
+ * Called once per render from each of `MemoryChart.tsx` and
+ * `MemoryRegions.tsx` rather than each doing its own `windowOf` +
+ * `resolvedRegions` + `growWindowOverRegions` in sequence: two copies of
+ * the same three steps are exactly how the drawn window and the region
+ * table's "outside this map's window" note would drift apart the moment
+ * either copy was touched without the other.
+ */
+export function chartWindowOf(
+  spans: MemorySpan[],
+  budgets: Map<string, SliceSize>,
+  regions: MemoryRegion[],
+): Window | null {
+  const placed = spans.filter((s) => s.base !== null);
+  const rawWindow = windowOf(placed, budgets);
+  if (!rawWindow) return null;
+  return growWindowOverRegions(rawWindow, resolvedRegions(regions));
 }
 
 /** The resolved regions that actually intersect a window — what a rail
