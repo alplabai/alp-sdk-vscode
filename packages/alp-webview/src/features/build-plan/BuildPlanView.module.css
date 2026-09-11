@@ -344,8 +344,9 @@
 .fileContent {
   margin: var(--space-1) 0 var(--space-2) var(--space-4);
   padding: var(--space-2) var(--space-3);
-  /* 240px holds ~12 lines of base text at line-height 1.45:
-   * 240 / (13px * 1.45) ≈ 12.7. */
+  /* 240px is a border-box height; less 4px of padding and a 1px border
+   * top and bottom, it holds ~12 lines of base text at line-height 1.45:
+   * 230 / (13px * 1.45) ≈ 12.2. */
   max-height: 240px;
   overflow: auto;
   /* Not a proportional-text fix: the UA stylesheet's `pre { font-family:

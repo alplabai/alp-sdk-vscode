@@ -160,14 +160,14 @@
 }
 
 /* The extent's own name, read straight off the picture — so it takes the
-   panel's reading size, like every other name in this view.
-   THE RAIL DID NOT GROW WITH IT. At base a name holds ~18 glyphs in the 143
-   units it has to run in, against ~23 at 10px, and every name this manifest
-   actually produces is shorter than either. A longer one spills into white
-   space and then overprints its neighbour rather than being cut — that ink is
-   still inside the viewBox, and the scroll container around this drawing loses
-   only what falls off the box's inline-start edge. The arithmetic, the goldens
-   it was checked against, and why buying glyphs nobody has spent costs
+   panel's reading size, like every other name in this view. THE RAIL IS 148
+   UNITS WIDE (RAIL_W, MemoryChart.tsx). A band label starting at `x + 5` holds
+   ~18 glyphs at base in the 143 units it has to run in, and every name this
+   manifest actually produces is shorter than that. A longer one spills into
+   white space and then overprints its neighbour rather than being cut — that
+   ink is still inside the viewBox, and the scroll container around this drawing
+   loses only what falls off the box's inline-start edge. The arithmetic, the
+   goldens it was checked against, and why buying glyphs nobody has spent costs
    horizontal scrolling all live with the constants the numbers come from: the
    `W` docblock in MemoryChart.tsx. */
 .markerLabel,
@@ -182,16 +182,16 @@
 }
 
 /* An address, compared digit by digit against a linker map — reading matter,
-   not chrome, so it is base and the drawing was widened to hold it.
-   The arithmetic, so the widening is not folklore: `formatAddress` pads to
-   eight hex digits, so a label is at least 10 glyphs, and a mono glyph advances
+   not chrome, so it is base and the drawing was widened to hold it. The
+   arithmetic, so the widening is not folklore: `formatAddress` pads to eight
+   hex digits, so a label is at least 10 glyphs, and a mono glyph advances
    ~0.6em, so the run is ~6x the font size. The left labels are anchored `end`
    at RAIL_X - 8, which is 88 units from the edge of the viewBox: the 88-unit
-   gutter holds a 10-glyph address up to ~14.6px, clearing base (13px).
-   AT LEAST 10 is doing work in that sentence: the pad
-   is a floor, not a width, so an address past 2^32 is wider — and past 2^36 it
-   outruns the gutter and is CLIPPED, unreachably. The `W` docblock in
-   MemoryChart.tsx carries that case and why no scrollbar gets to it. */
+   gutter holds a 10-glyph address up to ~14.6px, clearing base (13px). AT LEAST
+   10 is doing work in that sentence: the pad is a floor, not a width, so an
+   address past 2^32 is wider — and past 2^36 it outruns the gutter and is
+   CLIPPED, unreachably. The `W` docblock in MemoryChart.tsx carries that case
+   and why no scrollbar gets to it. */
 .tickLabel {
   fill: var(--text-secondary);
   font-size: var(--font-size-base);
