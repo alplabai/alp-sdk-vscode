@@ -1,0 +1,123 @@
+/* SPDX-License-Identifier: Apache-2.0
+ *
+ * The SoM's own region table (#484 phase 2) — read the same way the span
+ * list above it is: mono for hex, reading size throughout, a hairline
+ * around the selected row. Grouped by authority, never by kind, because
+ * "can I write here" is the axis this tab exists to answer. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* md, one rung above the base rows it heads and one below the panel's own
+ * title — the same treatment MemoryRegions.module.css gives
+ * .unresolvedTitle and .conflictsTitle. */
+.title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--text-section-header);
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.row[data-selected] {
+  border-color: var(--border-focus);
+  background: var(--surface-hover);
+}
+
+.rowName {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+
+/* The write-authority label — the axis this table is grouped by. Colour
+ * only distinguishes "locked" from the rest; never the six-colour chart
+ * series, which stays with the spans it distinguishes. */
+.authority {
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+}
+
+.authority[data-class="locked"] {
+  color: var(--text-primary);
+}
+
+/* customer_image vs. customer_runtime: the label text already says which
+ * is which, but the chart's backdrop frame ALSO tells them apart by
+ * stroke pattern (dashed vs. solid) — this italic gives the table the
+ * same non-colour distinction rather than relying on the reader to parse
+ * the label's own words every time (#484 §2's "stay visually distinct"). */
+.authority[data-class="customer_image"] {
+  font-style: italic;
+}
+
+/* The region's class column (flash / ram / "class not proven") — named
+ * `.regionClass`, never `.kind`, because the Build Plan panel's type-scale
+ * gate (test/buildPlan.typeScale.test.js) matches its CHROME allowlist by
+ * FINAL CLASS across every panel module, and `.kind` is already on that
+ * allowlist (MemoryRegions.module.css's own carve-out/partition/slot-image
+ * chip) at xs/sm — this table's own reading-size column would collide
+ * with that entry and fail "chrome stays below the reading size" the
+ * moment both modules are walked together. */
+.regionClass {
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+}
+
+.addr {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+}
+
+.rowSize,
+.rowMeta {
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+}
+
+.outsideNote {
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.reason {
+  flex-basis: 100%;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+.footerNote {
+  margin: 0;
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+}
+
+.footerNote code {
+  font-family: var(--font-family-mono);
+}

@@ -678,6 +678,12 @@ const SUB_HEADINGS = [
     heads: [".note p"],
     why: "the <h4> over each note section, in a tab that is nothing but prose",
   },
+  {
+    file: "MemoryRegionTable.module.css",
+    selector: ".title",
+    heads: [".rowName", ".reason"],
+    why: "'SoM regions (N)' — the heading over the SoM's own region table",
+  },
 ];
 
 /**
