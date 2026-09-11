@@ -19,6 +19,7 @@
 // reason its own header gives.
 
 import { useState } from "react";
+import type { ReactNode } from "react";
 import type {
   MemoryConflict,
   MemorySpan,
@@ -102,36 +103,70 @@ function SpanRow({
   );
 }
 
-/** Overlapping extents, stated before the picture rather than under it. */
-function Conflicts({ conflicts }: { conflicts: MemoryConflict[] }) {
-  if (conflicts.length === 0) return null;
+/** `from – to` as an address range, or a single address when they're equal.
+ *  Shared by `Conflicts`' absolute-address branch and `OutsideRegionNotice`,
+ *  which has no device-relative branch to choose between — `outside_region`
+ *  findings never carry a `device`. */
+function formatExtent(from: number, to: number): string {
+  return from === to
+    ? formatAddress(from)
+    : `${formatAddress(from)} – ${formatAddress(to)}`;
+}
+
+/**
+ * The DOM skeleton `Conflicts` and `OutsideRegionNotice` share: a
+ * `role="alert"` block with a pluralised heading and one row per finding.
+ * Heading text and row content are supplied by the caller so each keeps its
+ * own wording — only the structure is shared, never the framing.
+ */
+function FindingList({
+  findings,
+  heading,
+  row,
+}: {
+  findings: MemoryConflict[];
+  heading: (count: number) => string;
+  row: (finding: MemoryConflict) => ReactNode;
+}) {
+  if (findings.length === 0) return null;
   return (
     <div className={styles.conflicts} role="alert">
-      <p className={styles.conflictsTitle}>
-        {conflicts.length === 1
-          ? "One extent lands on another"
-          : `${conflicts.length} extents land on others`}
-      </p>
+      <p className={styles.conflictsTitle}>{heading(findings.length)}</p>
       <ul className={styles.conflictList}>
-        {conflicts.map((c) => (
-          <li key={c.id} className={styles.conflictRow}>
-            <span className={styles.rowName}>
-              {c.first} · {c.second}
-            </span>
-            <span className={styles.conflictKind}>
-              {CONFLICT_TITLE[c.kind]}
-            </span>
-            <code className={styles.addr}>
-              {c.device !== null
-                ? `+${formatBytes(c.from)} – +${formatBytes(c.to)} in ${c.device}`
-                : c.from === c.to
-                  ? formatAddress(c.from)
-                  : `${formatAddress(c.from)} – ${formatAddress(c.to)}`}
-            </code>
+        {findings.map((f) => (
+          <li key={f.id} className={styles.conflictRow}>
+            {row(f)}
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+/** Overlapping extents, stated before the picture rather than under it. */
+function Conflicts({ conflicts }: { conflicts: MemoryConflict[] }) {
+  return (
+    <FindingList
+      findings={conflicts}
+      heading={(count) =>
+        count === 1
+          ? "One extent lands on another"
+          : `${count} extents land on others`
+      }
+      row={(c) => (
+        <>
+          <span className={styles.rowName}>
+            {c.first} · {c.second}
+          </span>
+          <span className={styles.conflictKind}>{CONFLICT_TITLE[c.kind]}</span>
+          <code className={styles.addr}>
+            {c.device !== null
+              ? `+${formatBytes(c.from)} – +${formatBytes(c.to)} in ${c.device}`
+              : formatExtent(c.from, c.to)}
+          </code>
+        </>
+      )}
+    />
   );
 }
 
@@ -146,29 +181,23 @@ function Conflicts({ conflicts }: { conflicts: MemoryConflict[] }) {
  * false: nothing else occupies the space this carve-out spilled into.
  */
 function OutsideRegionNotice({ findings }: { findings: MemoryConflict[] }) {
-  if (findings.length === 0) return null;
   return (
-    <div className={styles.conflicts} role="alert">
-      <p className={styles.conflictsTitle}>
-        {findings.length === 1
+    <FindingList
+      findings={findings}
+      heading={(count) =>
+        count === 1
           ? "The manifest's own numbers disagree"
-          : `${findings.length} extents disagree with the region they name`}
-      </p>
-      <ul className={styles.conflictList}>
-        {findings.map((f) => (
-          <li key={f.id} className={styles.conflictRow}>
-            <span className={styles.rowName}>
-              {f.first}&rsquo;s extent is not inside region {f.second}
-            </span>
-            <code className={styles.addr}>
-              {f.from === f.to
-                ? formatAddress(f.from)
-                : `${formatAddress(f.from)} – ${formatAddress(f.to)}`}
-            </code>
-          </li>
-        ))}
-      </ul>
-    </div>
+          : `${count} extents disagree with the region they name`
+      }
+      row={(f) => (
+        <>
+          <span className={styles.rowName}>
+            {f.first}&rsquo;s extent is not inside region {f.second}
+          </span>
+          <code className={styles.addr}>{formatExtent(f.from, f.to)}</code>
+        </>
+      )}
+    />
   );
 }
 
