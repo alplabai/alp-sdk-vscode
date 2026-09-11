@@ -567,3 +567,170 @@ test("[RED PROBE] parseSystemManifest reads the vendored rpmsg-aen fixture's mem
   const manifest = parseSystemManifest(text);
   assert.equal(manifest.memory.length, 7);
 });
+
+test("authorityClassOf covers the full table, including absent under both sources and an unrecognised string", () => {
+  const {
+    authorityClassOf,
+  } = require("../packages/alp-core/dist/systemManifest/memoryView.js");
+  const cases = [
+    ["customer_runtime", "som_preset", "customer_runtime"],
+    ["customer_image", "som_preset", "customer_image"],
+    ["vendor_image", "som_preset", "locked"],
+    ["secure_enclave", "som_preset", "locked"],
+    ["none", "som_preset", "reserved"],
+    ["composite", "som_preset", "composite"],
+    [null, "som_preset", "unstated"],
+    [null, "soc_derived", "unstated"],
+    ["quantum_flux", "som_preset", "unstated"],
+    // Fail-CLOSED means an inherited Object.prototype key must not leak
+    // through as a truthy lookup result — these two would return the
+    // Object constructor / Object.prototype itself from a plain object
+    // literal indexed by bracket notation, which is not null/undefined and
+    // so would defeat a `?? "unstated"` fallback silently.
+    ["constructor", "som_preset", "unstated"],
+    ["__proto__", "som_preset", "unstated"],
+  ];
+  for (const [writeAuthority, source, want] of cases) {
+    assert.equal(
+      authorityClassOf(writeAuthority, source),
+      want,
+      `authorityClassOf(${writeAuthority}, ${source})`,
+    );
+  }
+});
+
+test("rpmsg-aen: the SoM region table narrows to seven rows, mram_main unresolved", () => {
+  const text = fs.readFileSync(
+    path.join(__dirname, "fixtures", "system-manifest.rpmsg-aen.memory.yaml"),
+    "utf8",
+  );
+  const manifest = parseSystemManifest(text);
+  const view = buildMemoryView(manifest);
+
+  assert.deepEqual(
+    view.regions.map((r) => r.base),
+    [
+      2147483648,
+      2147549184,
+      2150301696,
+      2153054208,
+      2153119744,
+      2153218048,
+      null,
+    ],
+  );
+  const mram = view.regions.find((r) => r.name === "mram_main");
+  assert.deepEqual(
+    { base: mram.base, sizeBytes: mram.sizeBytes, status: mram.status },
+    { base: null, sizeBytes: 5767168, status: "unresolved" },
+  );
+  // Verbatim and in full (spec #484 §1's `reason` contract) — not a
+  // substring match, which would still pass if the narrower silently
+  // truncated or mangled the rest of the sentence.
+  assert.equal(
+    mram.reason,
+    "Region 'mram_main' declares `base: TBD`, a placeholder, not an " +
+      "address, so no extent can be resolved and no class derived. Its " +
+      "size resolves, so only the address is missing. Declare `base:` " +
+      "in this SoM preset's `memory_map:` to resolve it.",
+  );
+
+  // Regions never feed spans/apertures/conflicts.
+  const bare = buildMemoryView({ ...manifest, memory: undefined });
+  assert.deepEqual(view.spans, bare.spans);
+  assert.deepEqual(view.apertures, bare.apertures);
+  assert.deepEqual(view.conflicts, bare.conflicts);
+});
+
+test("rpmsg-v2n: three soc_derived regions, unstated authority, no conflicts", () => {
+  const text = fs.readFileSync(
+    path.join(__dirname, "fixtures", "system-manifest.rpmsg-v2n.memory.yaml"),
+    "utf8",
+  );
+  const view = buildMemoryView(parseSystemManifest(text));
+
+  assert.deepEqual(
+    view.regions.map((r) => [r.name, r.writeAuthority, r.authorityClass]),
+    [
+      ["ddr_main", null, "unstated"],
+      ["ocram_low", null, "unstated"],
+      ["m33_tcm", null, "unstated"],
+    ],
+  );
+  assert.deepEqual(view.conflicts, []);
+});
+
+test("a duplicated region name is kept as two rows", () => {
+  const manifest = blockedSample();
+  manifest.memory = [
+    {
+      name: "dup",
+      source: "som_preset",
+      kind: "flash",
+      status: "ok",
+      base: 1,
+      size_bytes: 2,
+    },
+    {
+      name: "dup",
+      source: "som_preset",
+      kind: "flash",
+      status: "ok",
+      base: 3,
+      size_bytes: 4,
+    },
+  ];
+  assert.equal(buildMemoryView(manifest).regions.length, 2);
+});
+
+test("a region row with no text name is dropped whole", () => {
+  const manifest = blockedSample();
+  manifest.memory = [
+    {
+      source: "som_preset",
+      kind: "flash",
+      status: "ok",
+      base: 1,
+      size_bytes: 2,
+    },
+    null,
+    42,
+  ];
+  assert.deepEqual(buildMemoryView(manifest).regions, undefined);
+});
+
+test("a quoted-hex base in the region pane is a producer deviation and is dropped, never coerced", () => {
+  const manifest = blockedSample();
+  manifest.memory = [
+    {
+      name: "hexy",
+      source: "som_preset",
+      kind: "flash",
+      status: "ok",
+      base: "0x80000000",
+      size_bytes: 65536,
+    },
+  ];
+  assert.equal(buildMemoryView(manifest).regions[0].base, null);
+});
+
+test("an unrecognised status is never drawn, even when the row also carries a base", () => {
+  const manifest = blockedSample();
+  manifest.memory = [
+    {
+      name: "degraded_region",
+      source: "som_preset",
+      kind: "flash",
+      status: "degraded", // not "ok" — the only status this narrower draws
+      base: 0x80000000,
+      size_bytes: 65536,
+    },
+  ];
+  const region = buildMemoryView(manifest).regions[0];
+  assert.equal(region.status, "degraded");
+  assert.equal(
+    region.base,
+    null,
+    'base is kept only when status is exactly "ok" — an unrecognised status must not surface a base the UI would then draw',
+  );
+});

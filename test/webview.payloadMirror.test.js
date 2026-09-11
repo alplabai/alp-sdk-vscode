@@ -117,6 +117,7 @@ const MODELS = [
   { mirror: "MemoryAperture", file: MEMORY_REL },
   { mirror: "MemoryConflict", file: MEMORY_REL },
   { mirror: "MemoryView", file: MEMORY_REL },
+  { mirror: "MemoryRegion", file: MEMORY_REL },
 
   // ── board.yaml ──
   { mirror: "BoardConfig", file: BOARD_REL },
@@ -316,6 +317,7 @@ const ALIASES = [
   { mirror: "SliceSizeStatus", file: MANIFEST_REL },
   { mirror: "HelperFlashPolicy", file: MANIFEST_REL },
   { mirror: "MemorySpanKind", file: MEMORY_REL },
+  { mirror: "MemoryAuthorityClass", file: MEMORY_REL },
   { mirror: "MemoryConflictKind", file: MEMORY_REL },
   { mirror: "ManifestFreshness", file: STALENESS_REL },
   { mirror: "DependencyStatus", file: PLANNER_REL },

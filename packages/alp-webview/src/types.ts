@@ -868,13 +868,17 @@ export interface MemorySpan {
   id: string;
   kind: MemorySpanKind;
   label: string;
-  /** Absolute base, or null. A partition is ALWAYS null: its `offset_kib` is
-   *  device-relative and the device's own base is in the SoM region table,
-   *  which system-manifest-v1 does not carry (alp-sdk#1365). */
+  /** Absolute base, or null. A partition is ALWAYS null: its `offset_kib`
+   *  is device-relative, and the device's own base is a SEPARATE mirrored
+   *  type (`MemoryRegion`, below) that this field never joins in — a
+   *  reader wanting it joins `MemorySpan.device` to a `MemoryRegion.name`
+   *  by hand, the way `MemoryRegionTable` does. */
   base: number | null;
   deviceOffset: number | null;
-  /** Null when a base is pinned but no size is — the normal state of a slot
-   *  image, whose capacity is a SoM budget `tan size` reports separately. */
+  /** Null when a base is pinned but no size is — the normal state of a
+   *  slot image: this SPAN itself never carries one. A same-named
+   *  `MemoryRegion` row may separately resolve that slot's own extent as a
+   *  region, listed in the region table and never joined to this span. */
   sizeBytes: number | null;
   /** `carve_out_region`: the SoM region the resolver allocated from. */
   region: string | null;
@@ -906,6 +910,42 @@ export interface MemoryAperture {
   hullEnd: number | null;
 }
 
+/** Mirrors `@alp-sdk/core/systemManifest/memoryView`'s open unions. */
+export type MemoryRegionSource = "som_preset" | "soc_derived" | (string & {});
+export type MemoryRegionKind =
+  | "flash"
+  | "ram"
+  | "unclassified"
+  | "unresolved"
+  | (string & {});
+export type MemoryRegionStatus = "ok" | "unresolved" | (string & {});
+
+/** Derived host-side by `authorityClassOf`; a CLOSED union the UI's
+ *  authority tint and grouping must exhaust. */
+export type MemoryAuthorityClass =
+  | "customer_runtime"
+  | "customer_image"
+  | "locked"
+  | "reserved"
+  | "composite"
+  | "unstated";
+
+/** One row of the SoM's own region table (#484 phase 2), present only from
+ *  a producer new enough to resolve one. */
+export interface MemoryRegion {
+  id: string;
+  name: string;
+  source: MemoryRegionSource;
+  kind: MemoryRegionKind;
+  status: MemoryRegionStatus;
+  base: number | null;
+  sizeBytes: number | null;
+  writeAuthority: string | null;
+  authorityClass: MemoryAuthorityClass;
+  cores: string[];
+  reason: string | null;
+}
+
 export type MemoryConflictKind =
   | "overlap"
   | "covers_load_address"
@@ -926,6 +966,9 @@ export interface MemoryView {
   spans: MemorySpan[];
   unresolved: MemoryUnresolved[];
   apertures: MemoryAperture[];
+  /** Omitted — never an empty array — when the manifest carries no
+   *  memory[] pane, or it resolves no regions for this SoM. */
+  regions?: MemoryRegion[];
   /** Computed here, not read: the allocator compares carve-outs only against
    *  carve-outs in the same region, so nothing upstream looks at these pairs. */
   conflicts: MemoryConflict[];
