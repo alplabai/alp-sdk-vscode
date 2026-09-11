@@ -36,39 +36,70 @@
    column the axis addresses would render smaller than the 10px this change
    raised them from, and the headline fix would silently undo itself.
 
-   So the column is free to shrink to nothing and the picture inside it keeps
-   1:1 and overflows. `.map`'s `flex-wrap` has by then put the row list on its
-   own line, and this column follows it down to the panel's width instead of
-   flooring at the drawing's and making the WHOLE panel scroll sideways. What
-   zeroes that floor is `overflow-x: auto`: a flex item whose computed overflow
-   in the relevant axis is anything but `visible` has its automatic minimum
-   size resolved to zero, so `min-width: auto` is already 0 here and the
-   `min-width: 0` below changes no layout. It is kept as belt and braces — it
-   is what would hold the shrink if the scrolling ever came off this box — not
-   as the mechanism. THE TRADE: a narrow column gets a horizontal scrollbar
-   under the chart. That is the price of the labels staying at reading size,
-   and the alternative — scaling — is precisely what made them unreadable.
+   So the column is free to shrink to nothing, and the picture inside it keeps
+   1:1 and overflows — into `.chartScroll` below, not into this box. `.map`'s
+   `flex-wrap` has by then put the row list on its own line, and this column
+   follows it down to the panel's width instead of flooring at the drawing's
+   and making the WHOLE panel scroll sideways. `min-width: 0` is what zeroes
+   that floor: it is an explicit value, not `auto`, so it wins outright and
+   needs no `overflow` on THIS element to take effect — contrast `.chartScroll`
+   below, which has no SVG of its own to floor against and instead resolves
+   the same problem through overflow, the way this element used to.
 
-   Two things this depends on. `overflow-x: auto` computes `overflow-y` to
-   `auto` as well, which is harmless only because this column is auto-height
-   and never overflows vertically. And it works at all only while the svg is
-   allowed to keep its intrinsic width: see `.svg` in MemoryChart.module.css —
-   a `max-width: 100%` there caps the drawing at this box, so it scales again
-   and this container never has anything to scroll.
-
-   AND THIS COLUMN CLIPS, which `.svg`'s `overflow: visible` does not undo:
-   that declaration stops the SVG's own viewport cutting a label which outruns
-   the viewBox, and stops nothing here. `overflow-x: auto` makes this box a
-   scroll container, and a scroll container clips every descendant at its own
-   padding box — only the END edges stay reachable. Ink past the right edge
-   extends the scrollable area and can be scrolled to; ink past the top or the
-   left edge is cut, with no scroll position that reaches it. A label pushed
-   off those two edges is gone, not merely off-screen. */
+   THE SCROLLER USED TO BE THIS WHOLE COLUMN, not just the chart. `overflow-x:
+   auto` sat here directly, and it worked — the drawing scrolled — but it
+   scrolled "True scale" / "Equalized" and the one-line legend right along with
+   it: reading a band near the drawing's right edge meant scrolling the toggle
+   out of view above and clipping the legend below against this column's own
+   edge. `.chartScroll` narrows the scroll container to just the chart, so the
+   toggle stays reachable and the legend stays whole at every scroll position
+   — they are the scroller's siblings now, not its content. */
 .mapSide {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* THE CHART'S OWN SCROLLER, wrapping only `<MemoryChart>` (MemoryRegions.tsx)
+   — not the scale toggle above it, not the legend below. `flex: none` keeps
+   this box from being squashed in HEIGHT by `.mapSide`'s column layout, the
+   same guarantee `.svg`'s own `flex: none` (MemoryChart.module.css) gave
+   itself directly back when the SVG was `.mapSide`'s immediate flex child;
+   now the SVG's parent is this box instead, so the guarantee has to be
+   restated here or a squashed height would rescale the drawing's type exactly
+   as the paragraph above describes.
+
+   `min-width: 0` repeats that same paragraph's reasoning one level down: this
+   is the box that actually holds the wide SVG, so it is what must stop
+   insisting on the SVG's full intrinsic width once `.mapSide` hands it less.
+   `overflow-x: auto` is the other half of the mechanism `.mapSide` used to
+   supply — a flex item whose computed overflow is not `visible` resolves its
+   automatic minimum size to zero, so this box can render narrower than the
+   SVG and scroll rather than force `.mapSide` wide; `min-width: 0` is belt and
+   braces, and is what would still hold the shrink if that overflow value ever
+   changed.
+
+   Two things this inherits from the mechanism it replaces. `overflow-x: auto`
+   computes `overflow-y` to `auto` too, harmless only because this box is
+   auto-height and the chart never overflows vertically. And it works at all
+   only while the svg is allowed to keep its intrinsic width: see `.svg` in
+   MemoryChart.module.css — a `max-width: 100%` there caps the drawing at this
+   box, so it scales again and this container never has anything to scroll.
+
+   AND THIS BOX CLIPS, which `.svg`'s `overflow: visible` does not undo: that
+   declaration stops the SVG's own viewport cutting a label which outruns the
+   viewBox, and stops nothing here. `overflow-x: auto` makes this box a scroll
+   container, and a scroll container clips every descendant at its own padding
+   box — only the END edges stay reachable. Ink past the right edge extends
+   the scrollable area and can be scrolled to; ink past the top or the left
+   edge is cut, with no scroll position that reaches it. A label pushed off
+   those two edges is gone, not merely off-screen. Confined here rather than
+   left on `.mapSide`, that clipping can no longer touch the toggle or the
+   legend — they are outside the box that scrolls. */
+.chartScroll {
+  flex: none;
   min-width: 0;
   overflow-x: auto;
 }

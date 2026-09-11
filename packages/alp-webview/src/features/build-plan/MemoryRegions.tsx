@@ -177,14 +177,16 @@ export function MemoryRegions({
                   Equalized
                 </button>
               </div>
-              <MemoryChart
-                spans={memory.spans}
-                apertures={memory.apertures}
-                budgets={budgetByCore}
-                equalized={equalized}
-                selected={selected}
-                onSelect={toggle}
-              />
+              <div className={styles.chartScroll}>
+                <MemoryChart
+                  spans={memory.spans}
+                  apertures={memory.apertures}
+                  budgets={budgetByCore}
+                  equalized={equalized}
+                  selected={selected}
+                  onSelect={toggle}
+                />
+              </div>
               <p className={styles.legend}>
                 {equalized
                   ? "Not to scale — every entry given equal height."
