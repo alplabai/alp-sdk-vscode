@@ -485,3 +485,85 @@ test("names each aperture with what landed in it, never with its own extent", ()
     ],
   );
 });
+
+// ---------------------------------------------------------------------------
+// The SoM region table (#484 phase 2) — memory[]
+//
+// Fixture provenance: test/fixtures/system-manifest.rpmsg-{aen,v2n}.memory.yaml
+// are byte copies of alp-sdk's own emit-snapshot goldens
+// (tests/fixtures/emit-snapshots/rpmsg-{aen,v2n}.system-manifest.snap) at
+// alp-sdk commit 20fec7a7e9ea0479e5a9241edc75c6a8354d0fd0, written with
+// `git show <commit>:<path> > <target>` — see Task 1 Step 1.
+// ---------------------------------------------------------------------------
+
+test("an absent memory[] pane produces no `regions` key on the view", () => {
+  // This fixture predates alp-sdk#2030's memory[] pane.
+  const text = fs.readFileSync(
+    path.join(__dirname, "fixtures", "system-manifest.rpmsg-v2n.snap.yaml"),
+    "utf8",
+  );
+  const view = buildMemoryView(parseSystemManifest(text));
+  assert.equal(
+    "regions" in view,
+    false,
+    "buildMemoryView must not invent a regions key for a producer that never sent one",
+  );
+});
+
+test("the aen801 absent-case baseline also produces no `regions` key", () => {
+  // The OTHER absent baseline named in the spec (#484 §5) — a second real
+  // fixture that also carries no `memory[]` key, so the same guard is
+  // checked against a manifest shaped differently than rpmsg-v2n's.
+  const text = fs.readFileSync(
+    path.join(__dirname, "fixtures", "system-manifest.aen801.yaml"),
+    "utf8",
+  );
+  const view = buildMemoryView(parseSystemManifest(text));
+  assert.equal("regions" in view, false);
+});
+
+test("memory: [] is treated the same as an absent pane", () => {
+  const manifest = blockedSample();
+  manifest.memory = [];
+  const view = buildMemoryView(manifest);
+  assert.equal("regions" in view, false);
+});
+
+test("an absent memory[] pane produces exactly the pre-#484-phase-2 view shape", () => {
+  // NOTE this does NOT compare buildMemoryView(manifest) against
+  // buildMemoryView({ ...manifest, memory: undefined }) — for these two
+  // fixtures `parseSystemManifest` already returns `memory: undefined`
+  // (neither fixture has a `memory:` key), so that comparison would be
+  // f(x) === f(x) and could not fail under any implementation. Instead,
+  // pin the actual field SET the view carries for an absent pane: it must
+  // be exactly the five pre-#484-phase-2 fields, with no `regions` key
+  // added by mistake and nothing else quietly dropped either.
+  for (const fixture of [
+    "system-manifest.aen801.yaml",
+    "system-manifest.rpmsg-v2n.snap.yaml",
+  ]) {
+    const text = fs.readFileSync(
+      path.join(__dirname, "fixtures", fixture),
+      "utf8",
+    );
+    const view = buildMemoryView(parseSystemManifest(text));
+    assert.deepEqual(
+      Object.keys(view).sort(),
+      ["apertures", "conflicts", "sku", "spans", "unresolved"],
+      fixture,
+    );
+  }
+});
+
+test("[RED PROBE] parseSystemManifest reads the vendored rpmsg-aen fixture's memory[] pane, seven rows", () => {
+  // Unlike the four invariance guards above, this genuinely fails before
+  // Steps 4-5 below: `SystemManifest` has no `memory` field yet and
+  // `parseSystemManifest` does not read one, so `manifest.memory` is
+  // `undefined` and `.length` throws. See Step 3.
+  const text = fs.readFileSync(
+    path.join(__dirname, "fixtures", "system-manifest.rpmsg-aen.memory.yaml"),
+    "utf8",
+  );
+  const manifest = parseSystemManifest(text);
+  assert.equal(manifest.memory.length, 7);
+});

@@ -231,6 +231,12 @@ const KNOWN_UNMIRRORED = {
   "ManifestSlice.recipe?":
     "The bitbake recipe packaging an app-only Yocto slice. The manifest table " +
     "renders app/image; the recipe is a build-internal name with no column.",
+  "SystemManifest.memory?":
+    "The raw memory[] rows are not rendered directly. Only the DERIVED " +
+    "MemoryView.regions (built by buildMemoryView: authority-classified, " +
+    "narrowed field for field, joined to spans/apertures by name) reaches " +
+    "the webview — mirroring the raw pane too would give one screen two " +
+    "shapes of the same data to disagree about.",
 
   // ── board.yaml ──
   // The five below are safe for a reason the CoreEntry ones do not share: the
