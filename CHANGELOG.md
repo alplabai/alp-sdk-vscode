@@ -2,18 +2,26 @@
 
 ## Unreleased
 
-- **The Build Plan panel's memory map now reads at the panel's own base
-  size, not a rung below it (#484).** Hex addresses, region names, footprint
-  numbers and resolver reasons — plus the chart's axis, band and hover
-  labels — used to render at 10px or 11px, sizes no reader setting moves;
-  all of it now holds base (13px at the workbench default), and the panel
-  title takes `xl`, the size every other full-tab panel's title takes. In a
-  narrow column the chart keeps its drawing at 1:1 and scrolls horizontally
-  on its own instead of shrinking its labels back down — before, the whole
-  panel scrolled sideways as one ~572px-wide strip inside a 420px column,
-  and none of it ever scaled down. The scale toggle's pressed button also
-  now draws a visible focus ring in every state; it used to disappear into
-  its own pressed background.
+- **The Build Plan panel now reads at its own base size, not a rung below it
+  (#484).** Slice and manifest rows, env values, generated-file paths and
+  previews, warnings, notes, and the memory map's own rows and chart labels
+  all now hold base — the constant 13px VS Code injects into every webview.
+  Before, those rows sat at 12px or 11px, and the chart's axis, band and
+  hover labels sat at 10px; region names specifically were 12px in the row
+  list and 10px as chart band labels, never 11px. The panel title moved
+  from `md` (14px) to `xl` (20px), the size `ModelsView`'s own title
+  already takes; four other full-tab panels (Dependencies, SetupFlow,
+  NewProjectFlow, ExistingProjectFlow) still hardcode an untokenised 18px
+  title of their own. In a narrow column the chart now keeps its drawing at
+  1:1 and only the chart scrolls horizontally; before, the whole panel
+  scrolled sideways as one ~572px-wide strip inside a 420px column. The
+  scale toggle's two buttons now draw a visible focus ring in both the
+  pressed and the unpressed state — in the shipped CSS neither one did: the
+  row's `overflow: hidden` clipped the ring VS Code draws outside each
+  button's own border box down to an unusable 1px sliver, and the pressed
+  button's ring colour also matched the fill it sat on. None of this fixes
+  a regression in a released version — the memory map itself shipped after
+  `0.6.0` with no CHANGELOG entry of its own; this is its first.
 
 ## 0.6.0
 
