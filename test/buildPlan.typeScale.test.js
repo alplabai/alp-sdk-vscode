@@ -231,9 +231,15 @@ const RULES = FILES.flatMap((f) =>
  * The `font` shorthand's optional leading components — style, variant,
  * weight, stretch — that can appear before the mandatory size when there is
  * no `/<line-height>` to isolate it with instead. Not exhaustive CSS
- * grammar: just the keywords (plus a bare numeric weight, matched
- * separately) that have actually shown up in this panel's own rules ahead
- * of the size.
+ * grammar: just the keywords CSS allows there (plus a bare numeric weight,
+ * matched separately) — none of which this panel's own rules actually use
+ * ahead of the size today; the only `font` shorthand here is `.fileToggle`'s
+ * `font: inherit` (BuildPlanView.module.css), a whole-value keyword
+ * `isolateSize` below returns on before this set is ever consulted.
+ *
+ * `oblique` takes an optional trailing `<angle>` (`oblique 14deg`) that this
+ * set does not represent and `isolateSize`'s loop does not special-case —
+ * out of scope, since no rule in this panel uses it.
  */
 const FONT_LEADING_KEYWORDS = new Set([
   "normal",
@@ -288,7 +294,7 @@ function isolateSize(property, value) {
   ) {
     i++;
   }
-  return tokens[i] ?? trimmed;
+  return tokens[i];
 }
 
 /**
