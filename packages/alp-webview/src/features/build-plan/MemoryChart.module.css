@@ -1,16 +1,44 @@
 /* SPDX-License-Identifier: Apache-2.0
  *
  * The memory map's paint. Geometry lives in the SVG's viewBox, not here — this
- * file sets colour, stroke and type only, so no layout rule can collapse the
- * drawing the way a flex-basis once collapsed its predecessor. Every colour is
- * a declared token: the chart sits beside a slice list in the same panel, and a
- * band that borrowed a raw hex would be the one element that stops agreeing
- * with the editor theme. */
+ * file sets colour, stroke and type, plus the one box rule that keeps the
+ * drawing from being SCALED, which is a type decision wearing a layout rule's
+ * clothes (`.svg`, below). No layout rule can collapse the drawing the way a
+ * flex-basis once collapsed its predecessor. Every colour is a declared token:
+ * the chart sits beside a slice list in the same panel, and a band that
+ * borrowed a raw hex would be the one element that stops agreeing with the
+ * editor theme. */
 
+/* SVG font-size is in viewBox USER UNITS, so a drawing scaled to fit its
+   column scales its type by the same factor. `.mapSide` is
+   `flex: 0 1 auto; min-width: 0` (MemoryRegions.module.css) and can shrink
+   below the drawing's own width, so a `max-width: 100%` cap would draw this
+   578-unit map at ~0.69x in a 420px-wide panel (the chart column measures
+   396px there), rendering a 13px address at ~8.9px — below base, and
+   invisible to the type-scale gate, because the stylesheet would still say
+   `base`. So `max-width: none` is stated rather than deleted, the box keeps
+   the width and height the <svg>'s own attributes give it, and
+   `.chartScroll` scrolls instead.
+
+   `.svg` sits in a plain block box (`.chartScroll`, MemoryRegions.module.css)
+   and carries no `flex` property of its own — a `flex` value stated here
+   would be inert, since only a flex item reads one. The SQUASHED-HEIGHT
+   guard lives one level up instead: `flex: none` on `.chartScroll` — the
+   flex item in `.mapSide`'s column — stops a height-constrained column
+   squashing it into a short vertical scroller.
+
+   `overflow: visible` stops the SVG VIEWPORT from clipping, and nothing
+   more: `.chartScroll` (MemoryRegions.module.css), which wraps this SVG
+   directly, is `overflow-x: auto`, which makes it a scroll container, and a
+   scroll container clips its descendants' ink at its own padding box
+   regardless. Ink
+   past the right edge of that box is at least reachable by scrolling; ink past
+   the LEFT edge is not in the scrollable overflow region at all, so it is
+   simply gone. Nothing drawn today reaches either edge — the `W` docblock in
+   MemoryChart.tsx carries the address width that would. */
 .svg {
   display: block;
-  max-width: 100%;
-  height: auto;
+  max-width: none;
   overflow: visible;
   font-family: var(--font-family-mono);
 }
@@ -131,10 +159,21 @@
   fill: var(--chart-6);
 }
 
+/* The extent's own name, read straight off the picture — so it takes the
+   panel's reading size, like every other name in this view. THE RAIL IS 148
+   UNITS WIDE (RAIL_W, MemoryChart.tsx). A band label starting at `x + 5` holds
+   ~18 glyphs at base in the 143 units it has to run in, and every name this
+   manifest actually produces is shorter than that. A longer one spills into
+   white space and then overprints its neighbour rather than being cut — that
+   ink is still inside the viewBox, and the scroll container around this drawing
+   loses only what falls off the box's inline-start edge. The arithmetic, the
+   goldens it was checked against, and why buying glyphs nobody has spent costs
+   horizontal scrolling all live with the constants the numbers come from: the
+   `W` docblock in MemoryChart.tsx. */
 .markerLabel,
 .bandLabel {
   fill: var(--text-primary);
-  font-size: 10px;
+  font-size: var(--font-size-base);
 }
 
 .tick {
@@ -142,14 +181,39 @@
   stroke-width: 1;
 }
 
+/* An address, compared digit by digit against a linker map — reading matter,
+   not chrome, so it is base and the drawing was widened to hold it. The
+   arithmetic, so the widening is not folklore: `formatAddress` pads to eight
+   hex digits, so a label is at least 10 glyphs, and a mono glyph advances
+   ~0.6em, so the run is ~6x the font size. The left labels are anchored `end`
+   at RAIL_X - 8, which is 88 units from the edge of the viewBox: the 88-unit
+   gutter holds a 10-glyph address up to ~14.6px, clearing base (13px). AT LEAST
+   10 is doing work in that sentence: the pad is a floor, not a width, so an
+   address past 2^32 is wider — and past 2^36 it outruns the gutter and is
+   CLIPPED, unreachably. The `W` docblock in MemoryChart.tsx carries that case
+   and why no scrollbar gets to it. */
 .tickLabel {
   fill: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--font-size-base);
 }
 
+/* Which ruler this is. "true scale" vs "not to scale" is the difference
+   between a distance the reader may measure off the picture and one they may
+   not, so it is read, not decoration. Centred on a 148-unit rail: the caption
+   the E1M-AEN801 window produces (`22× top 256.0 KiB`, 17 glyphs) runs ~133
+   units at base and lands inside its own rail with ~7 to spare each side.
+   THERE IS NO WIDEST ONE. `formatBytes` (format.ts) has no branch above MiB
+   and does not truncate, so the string grows a glyph — ~7.8 units at base —
+   per extra integer digit: 10 GiB prints `10240.00 MiB`. It first outruns the
+   rail at 19 glyphs, which takes `1000.00 MiB` in the slot and so a window of
+   ~21.5 GiB; a 32-bit map never gets there, since even a full 4 GiB window
+   over DETAIL_FACTOR reads `186.18 MiB` — 18 glyphs, ~140 units, still inside.
+   Past the rail it hangs into white space: nothing else is drawn at CAPTION_Y,
+   and centred at 392 it would reach neither the left rail's own `true scale`
+   (which ends ~209) nor the right edge of the box until ~47 glyphs. */
 .caption {
   fill: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--font-size-base);
 }
 
 /* The band the detail rail magnifies, marked on the rail it came from. */
@@ -173,6 +237,12 @@
   stroke-width: 1;
 }
 
+/* THE ONE PIXEL SIZE LEFT, and not an oversight: do not tokenise it. This
+   label is drawn `rotate(-90)` down the middle of its own bar, and that bar is
+   APERTURE_W = 9 user units wide (MemoryChart.tsx). For a rotated label the
+   font size IS the bar's width, so raising it to base would push the glyphs out
+   both sides of the aperture they name. This number moves when APERTURE_W
+   moves, and not before. */
 .apertureLabel {
   fill: var(--accent);
   font-size: 9px;
@@ -197,10 +267,17 @@
   stroke-dasharray: 2 2;
 }
 
+/* The live address readout: the number the reader came for. It is anchored
+   `end` at `x + width - 5` with 148 units of rail behind it, and a 10-glyph
+   address at base runs ~78 of them, so base fits with room to spare. */
 .hoverLabel {
   fill: var(--text-primary);
-  font-size: 10px;
+  font-size: var(--font-size-base);
   paint-order: stroke;
   stroke: var(--surface-bg);
-  stroke-width: 3px;
+  /* The halo has to grow with the glyphs it lifts off the bands behind them,
+     so it is stated in em, not px: 0.3em scales the stroke with the text at
+     whatever size register it is read in, rather than binding it to one
+     fixed px value. */
+  stroke-width: 0.3em;
 }

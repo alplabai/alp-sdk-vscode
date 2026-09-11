@@ -28,18 +28,135 @@ import type { MemoryAperture, MemorySpan, SliceSize } from "../../types";
 import { formatAddress, formatBytes } from "./format";
 import styles from "./MemoryChart.module.css";
 
-/** The drawing, in viewBox units. Fixed: the box is the contract. */
-const W = 560;
+/**
+ * The drawing, in viewBox units. Fixed: the box is the contract.
+ *
+ * RAIL_X IS A GUTTER, NOT A MARGIN. The left axis labels are anchored `end` at
+ * `RAIL_X - 8`, and an address is at least 10 mono glyphs at ~0.6em each, so
+ * the gutter has to be at least 6x the tick label's font size. At the panel's
+ * reading size (`--font-size-base`, 13px — a constant VS Code injects into
+ * every webview, tied to no setting) that floor is 78 units.
+ *
+ * AT LEAST 10, because the pad in `formatAddress` is a FLOOR: it pads to eight
+ * hex digits and does not truncate to them, so an address past 2^32 prints 11
+ * glyphs (~86 units — still inside the gutter) and one past 2^36 prints 12
+ * (~94 — not, overrunning the box's left edge by ~6). THE TWELFTH IS CLIPPED,
+ * and silently. `.svg` sets `overflow: visible`, but that only stops the SVG
+ * VIEWPORT from clipping: `.chartScroll` (MemoryRegions.module.css), which
+ * wraps this SVG directly, is `overflow-x: auto`, which makes it a scroll
+ * container, and a scroll container clips its descendants' ink at its own
+ * padding box whatever the svg says. Worse, ink past the INLINE-START edge is
+ * not in the scrollable overflow region either, so no scrollbar reaches it:
+ * such a label would lose most of the leading `0` of its `0x`, on the one
+ * screen whose digits are read one at a time. (Ink past the opposite edge IS
+ * scrollable, which is why a long band label below is only overprinted.) It
+ * cannot arise on what this panel resolves today — MRAM and OCRAM bases come
+ * back as 0x0…/0x8…, all ten glyphs — and a 64-bit A-core map is where it
+ * would; widening the gutter is that change's job, not this one's.
+ *
+ * RAIL_X is 96, an 88-unit gutter (good to ~14.6px) that clears the 78-unit
+ * floor above with margin. APERTURE_X, DETAIL_X and W are literals, not
+ * expressions of RAIL_X — move RAIL_X and all three must move with it
+ * by hand — and together they set the gaps to the right of the rail: 6
+ * units from the rail's right edge to the first aperture bar, a 68-unit
+ * strip that holds three bars at `APERTURE_W + 14` pitch, and 104 units
+ * for the right-hand labels to run into.
+ *
+ * RAIL_W AND DETAIL_W ARE 148, and the names that run inside them are why that
+ * width is a decision and not an oversight. A band label starts at `x + 5` and
+ * runs inward over the remaining 143 units, which at base holds ~18 glyphs, one
+ * more than the longest name in the SDK's own emitted goldens: the default
+ * carve-out `alp_default_rpmsg`, 17 glyphs and ~133 units, which stops ~10
+ * units short of the rail's edge; the core ids and partition names beside it
+ * are shorter still. Past the rail's edge there is white space before anything
+ * (6 units to the aperture strip, 8 to the right-hand addresses), and all of it
+ * is still INSIDE the viewBox — the clipping above happens at the BOX's edge,
+ * not the rail's — so an 18-glyph name has margin, a 19-glyph one spills into
+ * that white, and a 20-glyph one overprints the aperture bar rather than being
+ * cut — true on the LEFT rail, whose neighbour to the right is that bar. The
+ * right (detail) rail runs the same 148-unit-wide label, but has no aperture
+ * bar beside it; its 20-glyph label instead runs into the right-hand addresses:
+ * `DETAIL_X + 5` plus 20 glyphs at ~7.8 units each ends at 479, and axis labels
+ * on that side start at `DETAIL_X + DETAIL_W + 8` = 474 — 5 units of overprint
+ * onto the addresses themselves, not the white beside them. Widening the rails
+ * to buy glyphs nobody has spent is not free either: the drawing renders at its
+ * intrinsic size and its column scrolls, so every unit added to W is a unit of
+ * horizontal scrolling for everyone.
+ */
+const W = 578;
 const H = 300;
 const PLOT_TOP = 18;
 const PLOT_BOTTOM = 258;
-const RAIL_X = 78;
+const RAIL_X = 96;
 const RAIL_W = 148;
-const APERTURE_X = 232;
+const APERTURE_X = 250;
 const APERTURE_W = 9;
-const DETAIL_X = 300;
+const DETAIL_X = 318;
 const DETAIL_W = 148;
 const CAPTION_Y = 282;
+
+/**
+ * The vertical room one tick label claims around its own middle baseline: a
+ * generated mark closer than this to a window END is dropped rather than drawn.
+ *
+ * PINNED BY HAND, and it cannot be otherwise. The size it guards is
+ * `.tickLabel`'s `var(--font-size-base)` — a custom property the webview's
+ * stylesheet resolves against VS Code's own `--vscode-font-size`, which no
+ * constant in this module can see. Reading it here would mean
+ * `getComputedStyle` on a mounted <text> node: a layout read on every render,
+ * answering nothing on the first paint, to serve a filter that runs before
+ * there is a node to measure. So it is fitted instead — base is 13px, a
+ * constant VS Code ties to no setting (not `editor.fontSize`, which feeds
+ * `--vscode-editor-font-size` instead) — an address label's ink is ~0.7em ≈ 9
+ * units of that (hex digits carry no descender), and 14 leaves ~5 units of
+ * white between two marks.
+ *
+ * REVISIT IT WHENEVER `.tickLabel`'s TOKEN MOVES: nothing here follows the
+ * token and no gate reddens when it changes. Erring high is safe — it only
+ * drops generated marks that would have crowded a window end, and the two ends
+ * themselves are never dropped. Erring low is not: two addresses print through
+ * each other, on the one screen whose numbers are read digit by digit. On the
+ * line-box model (~1.1x the font size) 14 stops covering a label once base
+ * resolves past ~12.7px, so it is already fitted to the ink rather than to the
+ * box. BAND_LABEL_DY and LINE_LABEL_DY below are pinned separately, at the
+ * same base size, and do not move when this constant is revised — revise all
+ * three together by hand.
+ */
+const TICK_LABEL_H = 14;
+
+/**
+ * Where a label's baseline sits relative to the edge it names.
+ *
+ * PINNED, not computed, fitted by hand to 13px text. No formula ties either
+ * one to TICK_LABEL_H or to anything else in this module — revise all three
+ * (this pair plus TICK_LABEL_H above) together by hand, and only together.
+ *
+ *  - BAND_LABEL_DY (15) drops the baseline INSIDE the band: it clears a
+ *    capital's ~9.5-unit ascent by ~5.5.
+ *  - LINE_LABEL_DY (-5) lifts it ABOVE a rule — the marker's line, and the
+ *    hover readout's, which is the same case — by a descender (~0.18em, ~2.3
+ *    units) plus a gap, so a `p` in a name never touches the line it belongs
+ *    to.
+ *
+ * A band shorter than its own label still overflows it, and the overflow is
+ * not cut: an SVG shape clips nothing drawn after it, and the spill stays well
+ * inside the viewBox, where nothing is lost — the scroll container described
+ * above takes only what falls off the BOX's inline-start edge. That is the
+ * same trade the rails make horizontally — a name printed over its neighbour
+ * is ugly, a name cut short is a different name.
+ *
+ * THE LIMITS THIS BUYS, at base (13px labels): in equalized mode a band's own
+ * height must clear BAND_LABEL_DY plus a descender (~17.3 units) to keep the
+ * label's own descender inside the band it names, which holds up to 12 spans
+ * in the window; past 19 spans the gap between two bands' baselines drops
+ * below one label's own ink height and neighbouring labels print through
+ * each other. In true-scale mode the same offset bites at the window's low
+ * end instead: a band 1-3 units tall sitting at the very bottom still takes
+ * the full BAND_LABEL_DY drop, which pushes a label of 4 or more glyphs
+ * 1.1-2.1 units into the "true scale" caption text below the rail.
+ */
+const BAND_LABEL_DY = 15;
+const LINE_LABEL_DY = -5;
 
 /**
  * Magnification of the detail rail, and so the fraction of the window it covers.
@@ -216,8 +333,8 @@ function Rail({
             (addr) =>
               addr === win.lo ||
               addr === win.hi ||
-              (Math.abs(y(addr) - y(win.hi)) >= 11 &&
-                Math.abs(y(addr) - y(win.lo)) >= 11),
+              (Math.abs(y(addr) - y(win.hi)) >= TICK_LABEL_H &&
+                Math.abs(y(addr) - y(win.lo)) >= TICK_LABEL_H),
           )
           .map((addr) => (
             <g key={`tick-${addr}`}>
@@ -269,7 +386,7 @@ function Rail({
                 className={styles.bandLabel}
                 data-series={series.get(seriesKey(s)) ?? 1}
                 x={x + 5}
-                y={top + 12}
+                y={top + BAND_LABEL_DY}
               >
                 {s.label}
               </text>
@@ -325,7 +442,7 @@ function Rail({
                 className={isMarker ? styles.markerLabel : styles.bandLabel}
                 data-series={series.get(seriesKey(s)) ?? 1}
                 x={x + 5}
-                y={isMarker ? top - 4 : top + 12}
+                y={isMarker ? top + LINE_LABEL_DY : top + BAND_LABEL_DY}
               >
                 {s.label}
               </text>
@@ -362,7 +479,7 @@ function Rail({
           <text
             className={styles.hoverLabel}
             x={x + width - 5}
-            y={y(hover) - 4}
+            y={y(hover) + LINE_LABEL_DY}
             textAnchor="end"
           >
             {formatAddress(Math.floor(hover))}
