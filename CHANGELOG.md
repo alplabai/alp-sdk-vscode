@@ -4,24 +4,27 @@
 
 - **The Build Plan panel now reads at its own base size, not a rung below it
   (#484).** Slice and manifest rows, env values, generated-file paths and
-  previews, warnings, notes, and the memory map's own rows and chart labels
-  all now hold base — the constant 13px VS Code injects into every webview.
-  Before, those rows sat at 12px or 11px, and the chart's axis, band and
-  hover labels sat at 10px; region names specifically were 12px in the row
-  list and 10px as chart band labels, never 11px. The panel title moved
-  from `md` (14px) to `xl` (20px), the size `ModelsView`'s own title
-  already takes; four other full-tab panels (Dependencies, SetupFlow,
-  NewProjectFlow, ExistingProjectFlow) still hardcode an untokenised 18px
-  title of their own. In a narrow column the chart now keeps its drawing at
-  1:1 and only the chart scrolls horizontally; before, the whole panel
-  scrolled sideways as one ~572px-wide strip inside a 420px column. The
-  scale toggle's two buttons now draw a visible focus ring in both the
-  pressed and the unpressed state — in the shipped CSS neither one did: the
-  row's `overflow: hidden` clipped the ring VS Code draws outside each
-  button's own border box down to an unusable 1px sliver, and the pressed
-  button's ring colour also matched the fill it sat on. None of this fixes
-  a regression in a released version — the memory map itself shipped after
-  `0.6.0` with no CHANGELOG entry of its own; this is its first.
+  previews, warnings, notes, the memory map's own rows, and the chart's axis,
+  band, marker, hover and caption labels all now hold base — the constant
+  13px VS Code injects into every webview. Before, those rows sat at 12px or
+  11px and those chart labels at 10px; region names were 12px in the row list
+  and 10px as chart band labels. Aperture names stay 9px, the width of the bar
+  they run down. The panel title moved from `md` (14px) to `xl` (20px), the
+  size `ModelsView`'s own title already takes; four other full-tab panels
+  (Dependencies, SetupFlow, NewProjectFlow, ExistingProjectFlow) still
+  hardcode an untokenised 18px title of their own. In a narrow column the
+  drawing still renders at 1:1, but now only the chart scrolls horizontally;
+  before, the whole panel scrolled sideways as one ~572px-wide strip inside a
+  420px column. The scale toggle's two buttons now draw a visible focus ring
+  in both the pressed and the unpressed state. Before, neither one did: the
+  panel's own `:focus-visible` rule (a 1px focusBorder outline at
+  `outline-offset: 1px`) draws outside each button, and the row's
+  `overflow: hidden` clipped all of it except the 1px edge the two buttons
+  share. For the pressed button that edge fell on its neighbour as a lone 1px
+  line; for the unpressed button it fell inside the pressed fill, the same
+  focusBorder colour, and vanished. None of this fixes a regression in a
+  released version — the memory map itself landed after `0.6.0` with no
+  CHANGELOG entry of its own; this is its first.
 
 ## 0.6.0
 

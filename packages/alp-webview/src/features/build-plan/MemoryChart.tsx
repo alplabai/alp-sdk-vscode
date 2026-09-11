@@ -56,32 +56,32 @@ import styles from "./MemoryChart.module.css";
  *
  * RAIL_X is 96, an 88-unit gutter (good to ~14.6px) that clears the 78-unit
  * floor above with margin. APERTURE_X, DETAIL_X and W are offset from it by
- * the same fixed amounts, so every gap to the right of the rail is the one
- * it always was: 6 units from the rail's right edge to the first aperture
- * bar, a 68-unit strip that holds three bars at `APERTURE_W + 14` pitch, and
- * 104 units for the right-hand labels to run into.
+ * the same fixed amounts, so the gaps to the right of the rail are fixed: 6
+ * units from the rail's right edge to the first aperture bar, a 68-unit strip
+ * that holds three bars at `APERTURE_W + 14` pitch, and 104 units for the
+ * right-hand labels to run into.
  *
- * RAIL_W AND DETAIL_W DID NOT MOVE, and the names that run inside them are why
- * that is a decision and not an oversight. A band label starts at `x + 5` and
- * runs inward over the remaining 143 units, which at base holds ~18 glyphs
- * where 10px held ~23 — a real loss of capacity, spent on nothing so far: the
- * longest name in the SDK's own emitted goldens is the default carve-out
- * `alp_default_rpmsg`, 17 glyphs and ~133 units, which stops ~10 units short
- * of the rail's edge; the core ids and partition names beside it are shorter
- * still. Past the rail's edge there is white space before anything (6 units to
- * the aperture strip, 8 to the right-hand addresses), and all of it is still
- * INSIDE the viewBox — the clipping above happens at the BOX's edge, not the
- * rail's — so an 18-glyph name has margin, a 19-glyph one spills into that
- * white, and a 20-glyph one overprints the aperture bar rather than being cut
- * — true on the LEFT rail, whose neighbour to the right is that bar. The
- * right (detail) rail runs the same 148-unit-wide label, but has no aperture
- * bar beside it; its 20-glyph label instead runs into the right-hand
- * addresses: `DETAIL_X + 5` plus 20 glyphs at ~7.8 units each ends at 479,
- * and axis labels on that side start at `DETAIL_X + DETAIL_W + 8` = 474 — 5
- * units of overprint onto the addresses themselves, not the white beside them.
- * Widening the rails to buy glyphs nobody has spent is not free either: the
- * drawing now renders at its intrinsic size and its column scrolls, so every
- * unit added to W is a unit of horizontal scrolling for everyone.
+ * RAIL_W AND DETAIL_W ARE 148, and the names that run inside them are why
+ * that width is a decision and not an oversight. A band label starts at
+ * `x + 5` and runs inward over the remaining 143 units, which at base holds
+ * ~18 glyphs, spent on nothing so far: the longest name in the SDK's own
+ * emitted goldens is the default carve-out `alp_default_rpmsg`, 17 glyphs and
+ * ~133 units, which stops ~10 units short of the rail's edge; the core ids
+ * and partition names beside it are shorter still. Past the rail's edge
+ * there is white space before anything (6 units to the aperture strip, 8 to
+ * the right-hand addresses), and all of it is still INSIDE the viewBox — the
+ * clipping above happens at the BOX's edge, not the rail's — so an 18-glyph
+ * name has margin, a 19-glyph one spills into that white, and a 20-glyph one
+ * overprints the aperture bar rather than being cut — true on the LEFT rail,
+ * whose neighbour to the right is that bar. The right (detail) rail runs the
+ * same 148-unit-wide label, but has no aperture bar beside it; its 20-glyph
+ * label instead runs into the right-hand addresses: `DETAIL_X + 5` plus 20
+ * glyphs at ~7.8 units each ends at 479, and axis labels on that side start
+ * at `DETAIL_X + DETAIL_W + 8` = 474 — 5 units of overprint onto the
+ * addresses themselves, not the white beside them. Widening the rails to buy
+ * glyphs nobody has spent is not free either: the drawing renders at its
+ * intrinsic size and its column scrolls, so every unit added to W is a unit
+ * of horizontal scrolling for everyone.
  */
 const W = 578;
 const H = 300;
@@ -109,8 +109,7 @@ const CAPTION_Y = 282;
  * constant VS Code ties to no setting (not `editor.fontSize`, which feeds
  * `--vscode-editor-font-size` instead) — an address label's ink is ~0.7em ≈ 9
  * units of that (hex digits carry no descender), and 14 leaves ~5 units of
- * white between two
- * marks. It was 11 while these labels were 10px.
+ * white between two marks.
  *
  * REVISIT IT WHENEVER `.tickLabel`'s TOKEN MOVES: nothing here follows the
  * token and no gate reddens when it changes. Erring high is safe — it only

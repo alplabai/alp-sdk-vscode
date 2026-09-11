@@ -9,20 +9,16 @@
  * borrowed a raw hex would be the one element that stops agreeing with the
  * editor theme. */
 
-/* THE DRAWING HOLDS ITS INTRINSIC SIZE, and that is a TYPE rule, not a layout
-   preference. An SVG's font-size is in viewBox USER UNITS, so a box scaled to
-   fit its column scales the type inside it by the same factor — which is why
-   `max-width: 100%` had to come off HERE, in the change that made the column
-   shrinkable. It WOULD now draw this 578-unit map at ~0.73x in a 420px column,
-   rendering a 13px address at ~9.5px — well under base — and invisible to
-   every gate, because the stylesheet would still say `base`. The cap never
-   bound before, because `.mapSide` was `flex: none` with the default
-   `min-width: auto` and so floored at the drawing's own width; now that it
-   is `flex: 0 1 auto; min-width: 0`
-   (MemoryRegions.module.css), a percentage finally has a shrinking box to
-   resolve against. So the box keeps the width and height the <svg>'s own
-   attributes give it and the column scrolls instead, and `max-width: none` is
-   stated rather than deleted so that capping it again has to be deliberate.
+/* SVG font-size is in viewBox USER UNITS, so a drawing scaled to fit its
+   column scales its type by the same factor. `.mapSide` is
+   `flex: 0 1 auto; min-width: 0` (MemoryRegions.module.css) and can shrink
+   below the drawing's own width, so a `max-width: 100%` cap would draw this
+   578-unit map at ~0.69x in a 420px-wide panel (the chart column measures
+   396px there), rendering a 13px address at ~8.9px — below base, and
+   invisible to the type-scale gate, because the stylesheet would still say
+   `base`. So `max-width: none` is stated rather than deleted, the box keeps
+   the width and height the <svg>'s own attributes give it, and
+   `.chartScroll` scrolls instead.
 
    `.svg` sits in a plain block box (`.chartScroll`, MemoryRegions.module.css)
    and carries no `flex` property of its own — a `flex` value stated here
@@ -191,8 +187,8 @@
    eight hex digits, so a label is at least 10 glyphs, and a mono glyph advances
    ~0.6em, so the run is ~6x the font size. The left labels are anchored `end`
    at RAIL_X - 8, which is 88 units from the edge of the viewBox: the 88-unit
-   gutter holds a 10-glyph address up to ~14.6px, clearing base (13px at the
-   workbench default). AT LEAST 10 is doing work in that sentence: the pad
+   gutter holds a 10-glyph address up to ~14.6px, clearing base (13px).
+   AT LEAST 10 is doing work in that sentence: the pad
    is a floor, not a width, so an address past 2^32 is wider — and past 2^36 it
    outruns the gutter and is CLIPPED, unreachably. The `W` docblock in
    MemoryChart.tsx carries that case and why no scrollbar gets to it. */

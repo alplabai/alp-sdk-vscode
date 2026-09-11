@@ -72,8 +72,9 @@
 .fileList code {
   font-family: var(--vscode-font-family, system-ui, sans-serif);
   /* VS Code's default webview stylesheet (prepended ahead of this one) sets
-   * `code { color: var(--vscode-textPreformat-foreground) }`, which beats
-   * inheritance on specificity alone. Without `inherit` here, the board.yaml
+   * `code { color: var(--vscode-textPreformat-foreground) }`, which, as a
+   * rule on the <code> element itself, beats any colour the element would
+   * otherwise inherit. Without `inherit` here, the board.yaml
    * path loses `.boardYaml`'s --text-primary and a RESTING generated path
    * loses `.fileToggle`'s --text-secondary, both rendering in
    * textPreformat.foreground instead — near-invisible against its own
@@ -343,9 +344,8 @@
 .fileContent {
   margin: var(--space-1) 0 var(--space-2) var(--space-4);
   padding: var(--space-2) var(--space-3);
-  /* 240px holds the same ~12 lines this preview has always shown at base
-   * type: 240 / (13px * 1.45) matches 220 / (12px * 1.45), so the taller box
-   * tracks the larger type rather than showing more or fewer lines. */
+  /* 240px holds ~12 lines of base text at line-height 1.45:
+   * 240 / (13px * 1.45) ≈ 12.7. */
   max-height: 240px;
   overflow: auto;
   /* Not a proportional-text fix: the UA stylesheet's `pre { font-family:

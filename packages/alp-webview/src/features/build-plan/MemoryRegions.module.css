@@ -33,8 +33,8 @@
    column collapse instead is not the fix either, and a `min-width` floor here
    cannot be one: SVG type is drawn in viewBox USER UNITS, so a drawing that
    fits itself to a smaller box takes every label down with it — in a narrow
-   column the axis addresses would render smaller than the 10px this change
-   raised them from, and the headline fix would silently undo itself.
+   column the axis addresses would render below base, and the headline fix
+   would silently undo itself.
 
    So the column is free to shrink to nothing, and the picture inside it keeps
    1:1 and overflows — into `.chartScroll` below, not into this box. `.map`'s
@@ -92,7 +92,8 @@
    `align-self` on this box would size it to its own content instead — the
    SVG's 578px — with or without a `min-width` stated.
 
-   Two things this inherits from the mechanism it replaces. `overflow-x: auto`
+   Two consequences of scrolling here rather than in the panel:
+   `overflow-x: auto`
    computes `overflow-y` to `auto` too, harmless only because this box is
    auto-height and the chart never overflows vertically. And it works at all
    only while the svg is allowed to keep its intrinsic width: see `.svg` in
