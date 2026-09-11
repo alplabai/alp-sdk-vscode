@@ -24,9 +24,9 @@
  * Four other full-tab panels (Dependencies, SetupFlow, NewProjectFlow,
  * ExistingProjectFlow) still hardcode an untokenised 18px title instead of
  * naming a token at all; tokenising that cluster is a follow-up, not this
- * file's business — the hierarchy gate below floors at `>= lg` rather than
- * pinning an equality on xl, so it does not assume this is the only panel
- * title size in the product. */
+ * file's business — the hierarchy gate in test/buildPlan.typeScale.test.js
+ * floors at `>= lg` rather than pinning an equality on xl, so it does not
+ * assume this is the only panel title size in the product. */
 .title {
   font-size: var(--font-size-xl);
   font-weight: 600;
@@ -60,13 +60,25 @@
 /* A FAMILY call, not a size one: these paths take the UI font rather than the
  * editor mono face, because they are read as prose inside a panel and not as
  * code inside an editor. Neither of them is chrome — `.boardYaml` and
- * `.fileRow` are both base, and the type-scale gate lists them as primary
- * reading matter. Colour is a third axis and is not decided here either: the
- * board.yaml path takes it from `.boardYaml` below, and a generated path from
- * the `.fileToggle` button it sits in. */
+ * `.fileRow` are both base, and neither's final class is on the type-scale
+ * gate's CHROME allowlist (test/buildPlan.typeScale.test.js). Colour is a
+ * third axis and is decided elsewhere — the board.yaml path's is
+ * `.boardYaml` below, a generated path's is whatever `.fileToggle` (default
+ * or `:hover`) is currently showing; `color: inherit` below only forwards
+ * that decision past the host's own `code` colour, it does not make one of
+ * its own. */
 .boardYaml code,
 .fileList code {
   font-family: var(--vscode-font-family, system-ui, sans-serif);
+  /* VS Code's default webview stylesheet (prepended ahead of this one) sets
+   * `code { color: var(--vscode-textPreformat-foreground) }`, and neither
+   * `.boardYaml` nor `.fileList` set `color` on this element to beat it — so
+   * without this, the board.yaml path renders in textPreformat.foreground
+   * (near-invisible against the panel background in High Contrast Light)
+   * instead of `.boardYaml`'s --text-primary, and a generated path never
+   * picks up `.fileToggle:hover .filePath`'s colour either. `inherit` hands
+   * both back to the colour the surrounding element already decided on. */
+  color: inherit;
 }
 
 .skeletons {
@@ -106,9 +118,19 @@
  * --text-secondary and the primary fallback arm never ran. Now that the path
  * is read at base it is provenance — the file a person opens to change
  * anything the panel is showing — so primary is the honest colour for it.
- * It is declared here rather than on the <code> because the two are the same
- * text: this <div> wraps exactly one <code> holding the whole path, and a
- * colour on the inner one would read as a second, narrower decision. */
+ *
+ * Removing that invalid declaration was not the whole fix. VS Code's own
+ * default webview stylesheet (prepended ahead of this file) also sets
+ * `code { color: var(--vscode-textPreformat-foreground) }`, and a rule that
+ * targets the <code> element directly beats inheritance from this div no
+ * matter what this div's own colour computes to. `.boardYaml code,
+ * .fileList code` (above) has to assert `color: inherit` right back, or this
+ * rule's primary never reaches the text it is meant to colour.
+ *
+ * It is still declared here rather than on the <code>, because the two are
+ * the same text: this <div> wraps exactly one <code> holding the whole path,
+ * and `inherit` on the inner element only forwards this decision — it is not
+ * a second, narrower one. */
 .boardYaml {
   font-size: var(--font-size-base);
   color: var(--text-primary);
