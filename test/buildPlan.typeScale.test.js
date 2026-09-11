@@ -31,41 +31,44 @@
 // literals were five declarations out of the ~35 sites this panel was fixed
 // in. Every other one named a token and was simply the wrong token — `xs` on a
 // hex base, `xs` on the reason a carve-out did not resolve, `sm` on the warning
-// that says why Build is unavailable. So this file gates BOTH halves:
+// that says why Build is unavailable. So this file gates on THREE things:
 //
-//   (a) THE LITERAL ARM. No `font-size` in the panel writes a bare length. The
-//       one survivor is allowlisted BY NAME WITH ITS REASON below, and a
-//       companion test re-derives that reason from the geometry it claims, so
-//       the carve-out cannot outlive the fact that justified it.
+//   (a) THE TOKEN ARM. Every `font-size` (and every `font` shorthand's size
+//       component) must be written EXACTLY as `var(--font-size-<tier>)`, or be
+//       the keyword `inherit` — nothing else passes. This affirmatively lists
+//       what is ALLOWED rather than enumerating what is forbidden, because a
+//       denylist of bad shapes always has one more shape than the list: a
+//       keyword (`x-small`), a unit nobody enumerated (`1.4ex`, `0.8vw`), a
+//       `calc()` that reads as "names the base token" to a scan that only
+//       pattern-matches for the substring while actually rendering smaller
+//       (`calc(var(--font-size-base) * 0.8)`), or a `var()` fallback that
+//       quietly stops being "exactly" the token. The one exception is named
+//       and reasoned about below (SANCTIONED), never silently skipped.
 //
-//   (b) THE TIER ARM. The classes that render primary content — the text a
-//       user READS rather than glances at — never sit below
-//       `var(--font-size-base)`. Each entry carries WHY it is primary, and the
-//       failure message prints it, so someone moving one back down reads the
-//       argument instead of just a red test.
+//   (b) THE COVERAGE ARM. Every declaration that DOES name a real tier must
+//       sit at `var(--font-size-base)` or above — UNLESS its selector's FINAL
+//       CLASS is on the CHROME allowlist below, each entry carrying why it is
+//       small on purpose. This walks every rule in every `*.module.css` under
+//       this directory, not a hand-maintained list of "selectors that render
+//       primary content": a positive list needs one entry per selector AND per
+//       variant of that selector, and says nothing about a module that does
+//       not exist yet — which is exactly how a new selector (`.row .addr`), a
+//       brand-new file, or an existing chrome class mutated to a keyword could
+//       all ship unseen. CHROME is the only list left, and it is small,
+//       reasoned, and matched by class rather than by exact selector string.
 //
-//   (c) THE SUB-HEADING ARM. The panel has four rungs — lg title, md
-//       sub-heading, base body, xs chrome — and only the middle one cannot be
-//       held by (b), because `>= base` is satisfied by exactly the mistake it
-//       needs to catch: a sub-heading left at the size of the list underneath
-//       it. So sub-headings are graded against the body they actually head.
+//   (c) THE SUB-HEADING ARM. The panel has four rungs — xl title, md
+//       sub-heading, base body, xs/sm chrome — and only the middle one cannot
+//       be held by (b), because `>= base` is satisfied by exactly the mistake
+//       it needs to catch: a sub-heading left at the size of the list
+//       underneath it. So sub-headings are graded against the body they
+//       actually head, and a separate hierarchy check holds the ceiling: that
+//       nothing in the panel reaches the panel's own title.
 //
-// Chrome is deliberately NOT in the tier list, and it is two different shapes,
-// so it is named as two rather than as one wrong generalisation. The LABEL
-// register — uppercase, 0.04em tracked, weight 600 — is `.backend`,
-// `.manifestBadge` and `.manifestSubTitle` at xs, and `.sectionTitle` at sm.
-// The other two carry none of those three properties and are small for reasons
-// of their own: `.kind` is xs so that `.status` beside it, at base, reads as
-// the verdict while it reads as the category, and `.manifestAge` is xs because
-// it rides the badge on a `.sectionTitle` line and must not out-read the
-// heading it sits inside. A gate that reddened any of them would be a gate
-// someone deletes — after which the readable text drifts back down.
-//
-// `.manifestStatus` is NOT chrome and IS in the tier list. It is the same
-// construct as MemoryRegions' `.status` — a color-mix pill, weight 600,
-// `1px var(--space-2)`, radius-full, neither uppercase nor tracked — wrapped
-// around a status word taken verbatim from the manifest. The pill is the
-// chrome; the word inside it is the verdict.
+// CHROME is not a second coverage list. It exists to name the selectors that
+// are small ON PURPOSE and say why, and its own test asserts each one is still
+// real and still below reading size — growing it to cover every rule in the
+// panel would be the same failure as (b) growing to swallow chrome.
 //
 // Source text, not a rendered DOM: jsdom performs no layout and the webview
 // bundle is IIFE-formatted for the webview's non-module script tag, so there is
@@ -139,39 +142,6 @@ function withoutComments(text) {
 }
 
 /**
- * Remove every `var(...)` call, counting parens so a nested fallback comes out
- * whole. `/var\([^()]*\)/` would stop at the first inner `(` and leave the
- * fallback's literal standing — reporting the rule being FOLLOWED.
- */
-function stripVarCalls(value) {
-  let out = "";
-  let i = 0;
-  while (i < value.length) {
-    // CSS keywords are case-insensitive: `VAR(--font-size-base)` is tokenised.
-    const at = value.toLowerCase().indexOf("var(", i);
-    if (at === -1) {
-      out += value.slice(i);
-      break;
-    }
-    out += value.slice(i, at);
-    let depth = 0;
-    let j = at + 3;
-    for (; j < value.length; j++) {
-      if (value[j] === "(") depth++;
-      else if (value[j] === ")") {
-        depth--;
-        if (depth === 0) {
-          j++;
-          break;
-        }
-      }
-    }
-    i = j;
-  }
-  return out;
-}
-
-/**
  * `font-size`, and the `font` shorthand — which carries a size too, so a gate
  * that knew only the long form could be walked straight around with
  * `font: 600 11px/1.4 monospace`. The lookbehind is what keeps `font-size`
@@ -197,7 +167,7 @@ const lineOf = (text, index) => text.slice(0, index).split("\n").length;
  * Every type-setting declaration in a stylesheet, as
  * `{ selector, property, value, line }` — one entry PER SELECTOR, so
  * `.markerLabel, .bandLabel { … }` is reported under both names and either can
- * be named in the tier list below.
+ * be named in the CHROME allowlist below.
  *
  * The rule pattern is flat (`selector { body }` with no `{}` inside). These
  * four files carry no `@media` and no nesting; were one added, its inner rules
@@ -227,44 +197,102 @@ const RULES = FILES.flatMap((f) =>
   typeRulesIn(f.text).map((r) => ({ ...r, file: f.name })),
 );
 
-/** The `--font-size-*` token a value names, or null when it names none. */
-function tokenOf(value) {
-  const m = value.match(/var\(\s*(--font-size-[a-z]+)/i);
-  return m ? m[1].toLowerCase() : null;
+/* ── Grading a font-size value ────────────────────────────────────────────
+ * The core of the redesign: instead of asking "does this value contain a bad
+ * shape we thought to look for", these ask "is this value written EXACTLY
+ * one of the two shapes the scale allows". Anything else is invalid by
+ * construction, so a keyword, an unenumerated unit, a calc(), or a fallback
+ * never needs its own denylist entry to be caught.
+ */
+
+/**
+ * Isolates the piece of a declaration's value that actually sets the
+ * font-size. For a `font-size` declaration that is the whole value. For the
+ * `font` shorthand it is buried behind optional style / variant / weight
+ * tokens and a trailing family, with an optional `/<line-height>` glued
+ * directly onto the size (`size/line-height family`) — so `.fileToggle`'s
+ * `font: inherit` (a keyword covering the WHOLE shorthand) and a
+ * `font: var(--font-size-base)/19px var(--text-mono)` both need grading on
+ * their SIZE, not on their family or their line-height. Reading a `/19px`
+ * line-height AS a font-size is exactly how a legitimately token-sized
+ * shorthand could fail this file's own check.
+ *
+ * Deliberately narrow rather than a general shorthand parser: the only two
+ * shapes this file has ever needed to grade are the whole-value keyword and
+ * "size/line-height family", so that is all it handles.
+ */
+function isolateSize(property, value) {
+  const trimmed = value.trim();
+  if (property !== "font") return trimmed;
+  if (trimmed.toLowerCase() === "inherit") return trimmed;
+  const slash = trimmed.indexOf("/");
+  if (slash === -1) return trimmed;
+  return trimmed.slice(0, slash).trim().split(/\s+/).pop();
 }
 
 /**
- * What is wrong with a type value, or null when nothing is.
- *
- * Two ways to leave the scale, and the second is the sneakier: a `var()` that
- * names a token which is not a SIZE token ships a font the scale does not
- * contain while wearing a token's clothes.
+ * Grades a rule's font-size value against the scale. The ONLY things that
+ * pass are a token named EXACTLY `var(--font-size-<tier>)` and the `inherit`
+ * keyword — no `calc()`, no `var()` fallback, no other custom property, no
+ * CSS keyword size (`x-small`), no other CSS unit (`1.4ex`, `0.8vw`, `90%`).
  */
-function untokenisedType(value) {
-  for (const ref of value.matchAll(/var\(\s*(--[a-z0-9-]+)/gi)) {
-    if (!/^--font-size-/i.test(ref[1])) {
-      return {
-        kind: "a token that is not a size token",
-        text: `var(${ref[1]})`,
-      };
-    }
+function gradeFontSize(rule) {
+  const size = isolateSize(rule.property, rule.value);
+  if (size.toLowerCase() === "inherit") return { kind: "inherit" };
+  const m = /^var\(\s*(--font-size-[a-z]+)\s*\)$/i.exec(size);
+  if (m) {
+    const tier = SCALE.indexOf(m[1].toLowerCase());
+    if (tier !== -1) return { kind: "token", tier };
   }
-  const remainder = stripVarCalls(value)
-    .replace(/!\s*important/gi, " ")
-    .trim();
-  // Absolute units AND the relative ones: `0.9em` under-sizes exactly as
-  // permanently as `11px` does, since the parent it is relative to is itself
-  // pinned to the workbench's 13px. Keywords (`inherit`, and the `font:
-  // inherit` on `.fileToggle` that makes a <button> take its row's size) carry
-  // no length and are left alone.
-  const literal = remainder.match(
-    /-?(?:\d+\.?\d*|\.\d+)\s*(?:px|pt|pc|in|cm|mm|q|rem|em|%)/i,
-  );
-  return literal ? { kind: "a bare length", text: literal[0].trim() } : null;
+  return { kind: "invalid", text: size };
+}
+
+/**
+ * What is wrong with a rejected value, in words — used only for the failure
+ * message. The pass/fail decision itself lives entirely in `gradeFontSize`'s
+ * one regex; this never gates anything on its own.
+ */
+function describeInvalid(text) {
+  if (/^calc\(/i.test(text)) {
+    return (
+      "an arithmetic expression, not one of the scale's tokens named " +
+      "exactly — it may render on-scale today, but neither a reader nor a " +
+      "scan that only pattern-matches for a token's name can tell that " +
+      "without evaluating it"
+    );
+  }
+  const varRef = /^var\(\s*(--[a-z0-9-]+)/i.exec(text);
+  if (varRef) {
+    return /^--font-size-/i.test(varRef[1])
+      ? "a var() naming a size token, but not written as exactly " +
+          "`var(--font-size-<tier>)` — a fallback length or stray text " +
+          "keeps it from matching the scale exactly"
+      : `a token that is not a size token: var(${varRef[1]})`;
+  }
+  return `\`${text}\` — not one of the scale's six tokens or \`inherit\``;
+}
+
+/**
+ * The right-most class named in a selector — `.row .addr` grades as
+ * `.addr`, and `.manifestStatus[data-status="ok"]` grades as
+ * `.manifestStatus`. This is what lets the CHROME allowlist below match a new
+ * selector variant (a descendant combinator, a hover scope, an attribute
+ * modifier) by class name instead of needing one entry per exact selector
+ * string.
+ *
+ * A selector whose right-most compound has no class of its own (`.note p`)
+ * falls back to the last class named anywhere in the string. That case does
+ * not arise for any selector below reading size in this panel today; a
+ * genuine future need to distinguish it is a reason to revisit this
+ * function, not to route around it here.
+ */
+function finalClassOf(selector) {
+  const classes = selector.match(/\.[A-Za-z_-][\w-]*/g);
+  return classes ? classes[classes.length - 1] : null;
 }
 
 // ---------------------------------------------------------------------------
-// (a) The literal arm
+// (a) The token arm
 // ---------------------------------------------------------------------------
 //
 // The carve-out is a NAMED entry carrying its reason, never a silent skip: the
@@ -296,30 +324,34 @@ const isSanctioned = (rule) =>
       s.value === rule.value,
   );
 
-test("no font-size in the Build Plan panel writes a bare length", () => {
+test("every font-size in the Build Plan panel names a scale token, `inherit`, or the sanctioned literal", () => {
   const offenders = [];
   for (const rule of RULES) {
-    const problem = untokenisedType(rule.value);
-    if (!problem) continue;
+    const grade = gradeFontSize(rule);
+    if (grade.kind !== "invalid") continue;
     if (isSanctioned(rule)) continue;
     offenders.push(
       `  ${rule.file}:${rule.line}  ${rule.selector} { ${rule.property}: ` +
-        `${rule.value} }  — ${problem.kind}: ${problem.text}`,
+        `${rule.value} }  — ${describeInvalid(grade.text)}`,
     );
   }
 
   assert.deepEqual(
     offenders.sort(),
     [],
-    "these declarations set type with a raw length instead of naming a " +
-      "--font-size-* token. This is how `font-size: 10px` shipped on the " +
-      "memory chart's axis addresses and hover readout: every existing gate " +
-      "checks tokens that ARE named, so a rule that names none is invisible " +
-      "to all of them. A literal is also permanent — the scale is anchored to " +
-      "the WORKBENCH font size (--vscode-font-size), so nothing the reader " +
-      "can change moves it. If a size really is pinned by geometry rather " +
-      "than by the type scale, add it to SANCTIONED above WITH the fact that " +
-      "pins it, the way .apertureLabel names APERTURE_W.",
+    "these declarations set type with something other than an exact " +
+      "--font-size-* token or `inherit`: a raw length, a keyword, a unit the " +
+      "scale never anchors to the workbench font, or a calc() a scan cannot " +
+      "verify by pattern-matching alone. This is how `font-size: 10px` " +
+      "shipped on the memory chart's axis addresses and hover readout, and " +
+      "how a keyword or an unenumerated unit (`x-small`, `0.8vw`) could pass " +
+      "any check keyed on a denylist of known-bad shapes instead of an " +
+      "allowlist of the two good ones. A literal or keyword is also " +
+      "permanent — the scale is anchored to the WORKBENCH font size " +
+      "(--vscode-font-size), so nothing the reader can change moves it. If " +
+      "a size really is pinned by geometry rather than by the type scale, " +
+      "add it to SANCTIONED above WITH the fact that pins it, the way " +
+      ".apertureLabel names APERTURE_W.",
   );
 });
 
@@ -374,257 +406,140 @@ test("the one sanctioned pixel size is still the geometry that justifies it", ()
 });
 
 // ---------------------------------------------------------------------------
-// (b) The tier arm
+// (b) The coverage arm
 // ---------------------------------------------------------------------------
 //
-// Derived from the applied fix, selector by selector — not from a rule of
-// thumb. `why` is printed on failure: the point is that someone moving one of
-// these back down reads the argument, not a diff of two token names.
+// Every rule in every `*.module.css` under this directory is graded, not a
+// hand-picked list of "selectors that render primary content". A positive
+// list needs one entry per selector AND per variant of that selector (`.addr`
+// and a later `.row .addr` are two different exact strings), and it says
+// nothing at all about a module that does not exist yet. CHROME below is the
+// only list left, and it works the other way around: it names the selectors
+// that are SMALL ON PURPOSE, by final class rather than by exact string, so a
+// new selector inherits the same call its class already made.
 //
-// A note on what is ABSENT, and it is three things, each for its own reason.
-//
-// Mono is a FAMILY decision and never on its own a reason to drop a size,
-// which is why `.addr`, `.reason`, `.rowName`, `.manifestTarget`,
-// `.manifestFlash`, `.manifestChip` and `.fileContent` are all in this list
-// despite being monospace. A tinted shell is not a reason either:
-// `.manifestChip`, `.manifestStatus` and `.status` sit here with their
-// backgrounds intact, because a pill is a shell and the words inside one are
-// still read character by character.
-//
-// SUB-HEADINGS are not here. `.unresolvedTitle`, `.conflictsTitle` and
-// MemoryNotes' `.title` are md, which this arm's `>= base` could never pin —
-// base satisfies it, and base is exactly where all three sat before the fix.
-// They have their own arm below.
-//
-// CHROME is not here either, and the guard at the bottom of this file asserts
-// it stays out: a tier list that grew to cover every rule in the panel would
-// have stopped drawing the distinction it exists to draw.
+// SUB-HEADINGS are graded here too — `.unresolvedTitle`, `.conflictsTitle` and
+// MemoryNotes' `.title` are md, which trivially clears `>= base` — but
+// `>= base` could never have PINNED them there: base also satisfies it, and
+// base is exactly where all three sat before this panel was fixed. Their own
+// arm below grades them against the body they actually head instead.
 
-const PRIMARY = [
-  // ── BuildPlanView.module.css ──
+const CHROME = [
   {
-    file: "BuildPlanView.module.css",
-    selector: ".subtitle",
-    why: "the sentence explaining what the panel is showing",
+    class: ".backend",
+    why:
+      "an uppercase, 0.04em-tracked, weight-600 pill naming the slice's OS " +
+      "— a category, glanced at, and it shares its line with `.coreId`, " +
+      "which is the name being read",
   },
   {
-    file: "BuildPlanView.module.css",
-    selector: ".sku",
-    why: "the SoM part number this plan was resolved for — one character apart from a different module",
+    class: ".manifestBadge",
+    why:
+      "the uppercase tracked freshness badge — one recoloured word read as " +
+      "a state, not as a sentence",
   },
   {
-    file: "BuildPlanView.module.css",
-    selector: ".boardYaml",
-    why: "the path to the board.yaml this plan was read from, i.e. the file the user opens to change any of it",
+    class: ".manifestSubTitle",
+    why:
+      "the LABEL register (uppercase, 0.04em tracked, weight 600) over the " +
+      "IPC-link / helper-MCU chips, the same register `.sectionTitle` and " +
+      "`.backend` are in — not a heading in the panel's four-rung ladder",
   },
   {
-    file: "BuildPlanView.module.css",
-    selector: ".buildNote",
-    why: "the sentence saying WHY Build is unavailable and which cores have no command — a warning nobody bothers to read is a warning that did not happen",
+    class: ".sectionTitle",
+    why:
+      "uppercase + 0.04em + 600: a LABEL register, not a heading in this " +
+      "panel's four-rung ladder, and a label set at body size shouts " +
+      "instead of labelling",
   },
   {
-    file: "BuildPlanView.module.css",
-    selector: ".coreId",
-    why: "the core the slice builds for (m55_he vs m55_hp is one letter)",
+    class: ".kind",
+    why:
+      "small deliberately, and NOT because it is a tracked badge: it has a " +
+      "tinted background and nothing else — no uppercase, no " +
+      "letter-spacing, no weight. It is small so that `.status` beside it, " +
+      "at base, reads as the verdict while this reads as the category " +
+      "('carve-out')",
   },
   {
-    file: "BuildPlanView.module.css",
-    selector: ".cmd",
-    why: "the exact command line the panel says it will run — the user copies it into a terminal, so a misread flag is a wrong build",
-  },
-  {
-    file: "BuildPlanView.module.css",
-    selector: ".sliceMeta",
-    why: "the build directory the slice's artefacts land in",
-  },
-  {
-    file: "BuildPlanView.module.css",
-    selector: ".envRow",
-    why: "the environment the build runs with, key and value — an env value read wrong is a build nobody can reproduce",
-  },
-  {
-    file: "BuildPlanView.module.css",
-    selector: ".fileRow",
-    why: "the generated artefact's path; `.filePath` has no size of its own and inherits through this row (via `font: inherit` on the <button>)",
-  },
-  {
-    file: "BuildPlanView.module.css",
-    selector: ".fileContent",
-    why: "the generated KConfig / overlay text itself, in a <pre> — the whole reason the row expands",
-  },
-  {
-    file: "BuildPlanView.module.css",
-    selector: ".warning",
-    why: "an ALP warning: its code, the core it belongs to, and its message",
-  },
-  {
-    file: "BuildPlanView.module.css",
-    selector: ".manifestStaleNote",
-    why: "the sentence saying the manifest is stale and why — the reason every number under it may be describing an older build",
-  },
-  {
-    file: "BuildPlanView.module.css",
-    selector: ".manifestNote",
-    why: "the manifest / `tan size` error text, verbatim",
-  },
-  {
-    file: "BuildPlanView.module.css",
-    selector: ".manifestStatus",
-    why: "`s.status` verbatim from the manifest, on the same row as `.backend` — the same construct as MemoryRegions' `.status` (color-mix pill, weight 600, neither uppercase nor tracked), and identical constructs do not get opposite calls",
-  },
-  {
-    file: "BuildPlanView.module.css",
-    selector: ".manifestFlash",
-    why: "`flash_method` verbatim from the manifest — which channel a Flash actually writes over",
-  },
-  {
-    file: "BuildPlanView.module.css",
-    selector: ".manifestTarget",
-    why: "the slice's build_dir / board / machine / image / app, verbatim from the manifest",
-  },
-  {
-    file: "BuildPlanView.module.css",
-    selector: ".manifestDetail",
-    why: "why a slice ended the way it did, plus its footprint numbers and the path to its log (#331)",
-  },
-  {
-    file: "BuildPlanView.module.css",
-    selector: ".sliceBtn",
-    why: "the Flash control — the one thing on this row you click, and it writes to a board",
-  },
-  {
-    file: "BuildPlanView.module.css",
-    selector: ".manifestChip",
-    why: "an IPC link or a helper MCU, verbatim: `link.name`, `link.kind`, the endpoint pair, `link.status`/`link.reason`, and `mcu.name` + `mcu.chip` — a PART NUMBER, and a part number misread by one character is different silicon",
-  },
-  {
-    file: "BuildPlanView.module.css",
-    selector: ".tab",
-    why: "the strip that switches between Slices, Memory and Notes — a control, not a label",
-  },
-
-  // ── MemoryChart.module.css ──
-  {
-    file: "MemoryChart.module.css",
-    selector: ".tickLabel",
-    why: "the rail's axis addresses, eight hex digits from `formatAddress`, compared against a linker map",
-  },
-  {
-    file: "MemoryChart.module.css",
-    selector: ".bandLabel",
-    why: "the extent's own name, read straight off the picture",
-  },
-  {
-    file: "MemoryChart.module.css",
-    selector: ".markerLabel",
-    why: "the name of a base with no size — the same name as a band, drawn against a line instead of a block",
-  },
-  {
-    file: "MemoryChart.module.css",
-    selector: ".hoverLabel",
-    why: "the live address readout under the pointer: the number the reader opened the chart for",
-  },
-  {
-    file: "MemoryChart.module.css",
-    selector: ".caption",
-    why: "which ruler this is — 'true scale' vs 'not to scale' decides whether a distance may be measured off the picture at all",
-  },
-
-  // ── MemoryRegions.module.css ──
-  {
-    file: "MemoryRegions.module.css",
-    selector: ".empty",
-    why: "the paragraph that REPLACES the picture when this manifest pins no address — two sentences that are the whole answer, read the way the map they stand in for would have been",
-  },
-  {
-    file: "MemoryRegions.module.css",
-    selector: ".scaleBtn",
-    why: "the True scale / Equalized control that decides what the picture means",
-  },
-  {
-    file: "MemoryRegions.module.css",
-    selector: ".legend",
-    why: "the one line that decodes the drawing — what a band is, what a line is, what the colours group by, or that the scale has been thrown away; a reader who cannot decode the picture cannot use it",
-  },
-  {
-    file: "MemoryRegions.module.css",
-    selector: ".rowName",
-    why: "the extent's own name — the identifier the whole row is about and the label its band carries in the picture; a row whose name reads smaller than its own address inverts itself",
-  },
-  {
-    file: "MemoryRegions.module.css",
-    selector: ".addr",
-    why: "the extent's hex base and end — 0x80000000 and 0x800b0000 differ in one place",
-  },
-  {
-    file: "MemoryRegions.module.css",
-    selector: ".rowSize",
-    why: "the extent's size, including the `· tan size` branch where the number came from a different measurement than the extent",
-  },
-  {
-    file: "MemoryRegions.module.css",
-    selector: ".rowMeta",
-    why: "region, filesystem and the cores that share the extent",
-  },
-  {
-    file: "MemoryRegions.module.css",
-    selector: ".status",
-    why: "`entry.status` verbatim from the emitter (pending / blocked / unresolved) — the pill around it is chrome, the word inside it is the verdict on whether the extent exists",
-  },
-  {
-    file: "MemoryRegions.module.css",
-    selector: ".reason",
-    why: "why a declared extent did not resolve: it names the file and the field to change, and it is the only actionable half of that row",
-  },
-  {
-    file: "MemoryRegions.module.css",
-    selector: ".conflictKind",
-    why: "what went wrong with the pair named beside it ('share addresses', 'covers an image load address')",
-  },
-
-  // ── MemoryNotes.module.css ──
-  {
-    file: "MemoryNotes.module.css",
-    selector: ".note p",
-    why: "the Notes tab is nothing but prose — it exists so the map does not have to carry four paragraphs of it",
+    class: ".manifestAge",
+    why:
+      "rides the badge on the `.sectionTitle` line — raising it would " +
+      "leave the age reading larger than the heading it sits inside",
   },
 ];
 
-/** Every rule setting type for a selector, or [] when the selector sets none. */
-const rulesFor = (entry) =>
-  RULES.filter((r) => r.file === entry.file && r.selector === entry.selector);
-
-test("the panel's primary content is never set below the reading size", () => {
+test("nothing outside the chrome allowlist is set below the reading size", () => {
   const offenders = [];
-  for (const entry of PRIMARY) {
-    const rules = rulesFor(entry);
-    // A renamed selector is the way this arm goes quiet, so it is a failure,
-    // not a skip.
-    if (rules.length === 0) {
+  for (const rule of RULES) {
+    const grade = gradeFontSize(rule);
+    // Invalid values are arm (a)'s failure to report, not this one's, and
+    // `inherit` names no tier this arm can rank.
+    if (grade.kind !== "token") continue;
+    if (grade.tier >= BASE) continue;
+    const cls = finalClassOf(rule.selector);
+    if (CHROME.some((c) => c.class === cls)) continue;
+    offenders.push(
+      `  ${rule.file}:${rule.line}  ${rule.selector} { ${rule.property}: ` +
+        `${rule.value} } sits at ${SCALE[grade.tier]}, below ` +
+        `var(--font-size-base) (13px), and its final class ` +
+        `(${cls ?? "none"}) is not on the CHROME allowlist below.`,
+    );
+  }
+
+  assert.deepEqual(
+    offenders.sort(),
+    [],
+    "these declarations render text below the panel's reading size without " +
+      "being named on the CHROME allowlist. That was the whole complaint " +
+      "this panel was fixed for: the scale is anchored to the workbench " +
+      "font size, so a size below base is 11px or 12px permanently and no " +
+      "reader setting moves it. This check walks every selector in every " +
+      "`*.module.css` under this directory — a new selector variant " +
+      "(`.row .addr`), a brand new module, or an existing chrome class " +
+      "mutated to a smaller size are all covered the same way, unlike a " +
+      'hand-maintained list of "primary" selectors. Monospace does not ' +
+      "count as a reason to go smaller — the family buys column alignment, " +
+      "not a size — and neither does a tinted pill: the shell is the " +
+      "chrome, the word inside it is still read. If a class really is " +
+      "chrome — small on purpose, with a reason — add it to CHROME above, " +
+      "not here.",
+  );
+});
+
+test("chrome stays below the reading size", () => {
+  // This is where four of six of these entries used to be asserted — wedged
+  // inside "the type scan actually reads the panel" below, a test about
+  // whether the SCAN works, not about whether the PANEL still draws the
+  // distinction between what is read and what is glanced at. It gets its own
+  // name and now covers every entry, not four of six.
+  assert.ok(
+    CHROME.length > 0,
+    "the CHROME allowlist is empty — either restore its entries or delete " +
+      "the exemption from the coverage arm above",
+  );
+
+  const offenders = [];
+  for (const entry of CHROME) {
+    const matches = RULES.filter(
+      (r) => finalClassOf(r.selector) === entry.class,
+    );
+    if (matches.length === 0) {
       offenders.push(
-        `  ${entry.file}  ${entry.selector} sets no font-size at all — the ` +
-          `selector was renamed or the rule was dropped. Re-point this entry ` +
-          `at whatever renders it now; do not delete it. It carries: ` +
-          `${entry.why}.`,
+        `  CHROME names ${entry.class}, which no rule in the panel sets a ` +
+          `font-size on any more. It was exempted because: ${entry.why}. ` +
+          "Re-point or remove this entry rather than leaving it to forgive " +
+          "a class that no longer exists.",
       );
       continue;
     }
-    for (const rule of rules) {
-      const token = tokenOf(rule.value);
-      if (token === null) {
-        offenders.push(
-          `  ${entry.file}:${rule.line}  ${entry.selector} is set to ` +
-            `\`${rule.value}\`, which names no token at all. This is ` +
-            `${entry.why} — it takes var(--font-size-base).`,
-        );
-        continue;
-      }
-      const tier = SCALE.indexOf(token);
-      if (tier >= BASE) continue;
+    for (const rule of matches) {
+      const grade = gradeFontSize(rule);
+      if (grade.kind !== "token") continue; // graded (or exempted) elsewhere
+      if (grade.tier < BASE) continue;
       offenders.push(
-        `  ${entry.file}:${rule.line}  ${entry.selector} sits at ` +
-          `${token} (${token === "--font-size-xs" ? "11px" : "12px"}), below ` +
-          `var(--font-size-base) (13px). This is ${entry.why}.`,
+        `  ${rule.file}:${rule.line}  ${entry.class} is ${SCALE[grade.tier]}` +
+          `, no longer below the reading size. It is ${entry.why}.`,
       );
     }
   }
@@ -632,17 +547,11 @@ test("the panel's primary content is never set below the reading size", () => {
   assert.deepEqual(
     offenders.sort(),
     [],
-    "these classes render text a user READS — hex addresses, region names, " +
-      "commands, paths, env values, footprint numbers, status words and the " +
-      "reasons a thing did not resolve — and they have been set below the " +
-      "panel's reading size. That was the whole complaint this panel was " +
-      "fixed for: the scale is anchored to the workbench font size, so xs is " +
-      "11px permanently and no reader setting moves it. Monospace does not " +
-      "count as a reason to go smaller — the family buys column alignment, " +
-      "not a size — and neither does a tinted pill: the shell is the chrome, " +
-      "the word inside it is still read. What IS chrome is the label register " +
-      "(uppercase + 0.04em tracking + weight 600), which is correctly xs/sm " +
-      "and deliberately absent from this list.",
+    "a CHROME entry has either gone stale (names a class the panel no " +
+      "longer sets a font-size on) or grown back up to reading size (lost " +
+      "the distinction it was exempted to keep). If the allowlist has grown " +
+      "to cover every rule in the panel, it has stopped drawing the " +
+      "distinction it exists to draw.",
   );
 });
 
@@ -652,10 +561,10 @@ test("the panel's primary content is never set below the reading size", () => {
 //
 // The four rungs, and the middle one is the one that keeps collapsing:
 //
-//   panel title   lg    16px   `.title` (BuildPlanView)
+//   panel title   xl    20px   `.title` (BuildPlanView)
 //   sub-heading   md    14px   this list
-//   body / data   base  13px   the tier arm above
-//   chrome        xs    11px   the guard at the bottom of this file
+//   body / data   base  13px   the coverage arm above
+//   chrome        xs/sm 11-12px the CHROME allowlist above
 //
 // `>= base` cannot hold a sub-heading, because base is precisely the mistake:
 // all three of these sat AT the size of the list underneath them before this
@@ -664,7 +573,7 @@ test("the panel's primary content is never set below the reading size", () => {
 // the body it actually heads and demands it be STRICTLY larger.
 //
 // Only the lower edge is graded here. The ceiling — that no sub-heading
-// reaches the panel's own lg `.title` — is already held by the hierarchy test
+// reaches the panel's own xl `.title` — is already held by the hierarchy test
 // below, which ranks EVERY rule in the panel against that title, so restating
 // it per-entry would be a second gate on one fact.
 //
@@ -695,18 +604,16 @@ const SUB_HEADINGS = [
   },
 ];
 
-/** The tier a rule sits at, or -1 when its value names no size token. */
-const tierOf = (rule) => SCALE.indexOf(tokenOf(rule.value) ?? "");
-
 /**
- * The tiers a selector is set to in one file, with untokenised rules dropped:
- * a bare length cannot be RANKED, and it is already the literal arm's failure.
- * Reporting it twice would make one defect look like two.
+ * The tiers a selector is set to in one file, with anything that is not an
+ * exact scale token dropped: an invalid value cannot be RANKED, and it is
+ * already the token arm's failure to report.
  */
 const tiersOf = (file, selector) =>
   RULES.filter((r) => r.file === file && r.selector === selector)
-    .map(tierOf)
-    .filter((tier) => tier !== -1);
+    .map((r) => gradeFontSize(r))
+    .filter((g) => g.kind === "token")
+    .map((g) => g.tier);
 
 test("a sub-heading outranks the body it heads", () => {
   const offenders = [];
@@ -718,7 +625,7 @@ test("a sub-heading outranks the body it heads", () => {
     if (heading.length === 0) {
       offenders.push(
         `  ${entry.file}  ${entry.selector} sets no font-size the scale can ` +
-          `rank — renamed, dropped, or given a bare length. It is ${entry.why}; ` +
+          `rank — renamed, dropped, or given an invalid value. It is ${entry.why}; ` +
           `re-point this entry rather than deleting it.`,
       );
       continue;
@@ -748,13 +655,13 @@ test("a sub-heading outranks the body it heads", () => {
     offenders.sort(),
     [],
     "a sub-heading has stopped outranking the text under it. This panel has " +
-      "four rungs and three token steps between them — lg (16px) for the " +
+      "four rungs and three token steps between them — xl (20px) for the " +
       "panel title, md (14px) for a sub-heading inside it, base (13px) for " +
-      "everything a person reads, xs (11px) for chrome — so a sub-heading " +
-      "left at base is the same size as the list it introduces and asks " +
-      "weight and colour to carry a rank only size can signal. Fix it with " +
+      "everything a person reads, xs/sm for chrome — so a sub-heading left " +
+      "at base is the same size as the list it introduces and asks weight " +
+      "and colour to carry a rank only size can signal. Fix it with " +
       "var(--font-size-md): do not raise the body to restore the gap, and do " +
-      "not reach lg, which is the panel's own `.title`.",
+      "not reach the panel's own title.",
   );
 });
 
@@ -764,35 +671,45 @@ test("a sub-heading outranks the body it heads", () => {
 //
 // Inverting the hierarchy was the single most common error while this panel
 // was being resized: raise a sub-heading far enough and it starts reading as
-// the panel's title. `.title` is `lg` (16px) rather than `xl` (20px) on
-// purpose — four other full-tab panels (Dependencies, SetupFlow,
-// NewProjectFlow, ExistingProjectFlow) still hardcode an untokenised 18px
-// title, and xl here would make this the largest title in the product. That
-// choice is a floor here, not an equality, so tokenising that 18px cluster
-// later does not red this gate.
+// the panel's title. `.title` is DESIGN.md's Display size (xl, "panel titles
+// only, one per view"), matching ModelsView's own editor-tab title
+// (`src/models/panel.ts`) rather than sitting a rung below it. The floor below
+// is `>= lg` rather than an equality on xl specifically — this test's job is
+// that nothing else in the panel reaches the title, whatever tier the title
+// itself sits at, not that the title is pinned to one exact value forever.
 
 test("nothing inside the panel reaches the panel's own title", () => {
-  const title = RULES.find(
+  const titleRule = RULES.find(
     (r) => r.file === "BuildPlanView.module.css" && r.selector === ".title",
   );
   assert.ok(
-    title,
+    titleRule,
     "BuildPlanView.module.css must set a font-size on `.title` — it is the " +
       "reference every other size in the panel is ranked against",
   );
-  const titleTier = SCALE.indexOf(tokenOf(title.value) ?? "");
+  const titleGrade = gradeFontSize(titleRule);
+  assert.equal(
+    titleGrade.kind,
+    "token",
+    `the panel title is \`${titleRule.value}\` — it must be one of the ` +
+      "scale's own tokens, not a literal or a calc(), or nothing else in " +
+      "the panel can be ranked against it",
+  );
+  const titleTier = titleGrade.tier;
   assert.ok(
     titleTier >= SCALE.indexOf("--font-size-lg"),
-    `the panel title is ${title.value} — it has to outrank 13px body text by ` +
-      "more than a step or the panel reads as one flat wall of text",
+    `the panel title is ${titleRule.value} — it has to outrank 13px body ` +
+      "text by more than a step or the panel reads as one flat wall of text",
   );
 
-  const offenders = RULES.filter((r) => r !== title)
-    .filter((r) => SCALE.indexOf(tokenOf(r.value) ?? "") >= titleTier)
+  const offenders = RULES.filter((r) => r !== titleRule)
+    .map((r) => ({ rule: r, grade: gradeFontSize(r) }))
+    .filter(({ grade }) => grade.kind === "token" && grade.tier >= titleTier)
     .map(
-      (r) =>
-        `  ${r.file}:${r.line}  ${r.selector} { font-size: ${r.value} }  — ` +
-        `the panel title is ${title.value}`,
+      ({ rule, grade }) =>
+        `  ${rule.file}:${rule.line}  ${rule.selector} { font-size: ` +
+        `${rule.value} }  — the panel title is ${titleRule.value} ` +
+        `(${SCALE[grade.tier]} reaches or passes it)`,
     );
 
   assert.deepEqual(
@@ -813,11 +730,11 @@ test("nothing inside the panel reaches the panel's own title", () => {
 // The scan itself
 // ---------------------------------------------------------------------------
 //
-// A gate that reads nothing passes forever. These pin every way this one could
-// go quiet: no files, a rule pattern that matches nothing, an allowlist with
-// nothing real behind it, and a tier list so broad it has quietly become
-// "every rule in the panel" — at which point the chrome that is correctly
-// small has no protection from the next well-meaning sweep.
+// A gate that reads nothing passes forever. These pin the ways THIS scan
+// could go quiet: no files, a rule pattern that matches nothing, or an
+// allowlist with nothing real behind it. Whether CHROME itself still holds is
+// a separate concern with its own test above — this one is about the scan's
+// own health, not the panel's.
 
 test("the type scan actually reads the panel", () => {
   assert.ok(
@@ -833,7 +750,7 @@ test("the type scan actually reads the panel", () => {
       "broken and both arms are grading almost nothing",
   );
   assert.ok(
-    RULES.some((r) => tokenOf(r.value) !== null),
+    RULES.some((r) => gradeFontSize(r).kind === "token"),
     "no tokenised font-size was seen at all — the token pattern is broken",
   );
 
@@ -850,58 +767,113 @@ test("the type scan actually reads the panel", () => {
         "forgive something it was never written for.",
     );
   }
+});
 
-  // Chrome the tier list must NOT have swallowed. If any of these comes back
-  // at base, the panel lost the distinction between what is read and what is
-  // glanced at, and this gate would have been the thing that let it.
-  //
-  // Each carries its OWN reason, because they are not all small for the same
-  // one — three are the uppercase-tracked label register, and `.kind` is not
-  // uppercase, not tracked and not weighted. A shared "it is a tracked badge"
-  // message would have printed something the stylesheet does not say.
-  for (const [file, selector, why] of [
-    [
-      "BuildPlanView.module.css",
-      ".backend",
-      "an uppercase, 0.04em-tracked, weight-600 pill naming the slice's OS — a category, glanced at, and it shares its line with `.coreId`, which is the name being read",
-    ],
-    [
-      "BuildPlanView.module.css",
-      ".sectionTitle",
-      "uppercase + 0.04em + 600 at sm: a LABEL register, not a heading in this panel's four-rung ladder, and a label set at body size shouts instead of labelling",
-    ],
-    [
-      "BuildPlanView.module.css",
-      ".manifestBadge",
-      "the uppercase tracked freshness badge — one recoloured word read as a state, not as a sentence",
-    ],
-    [
-      "MemoryRegions.module.css",
-      ".kind",
-      "xs deliberately, and NOT because it is a tracked badge: it has a tinted background and nothing else — no uppercase, no letter-spacing, no weight. It is small so that `.status` beside it, at base, reads as the verdict while this reads as the category ('carve-out'). The size difference IS that rank, which is why the CSS evens the two pills' line box instead of letting the shells disagree too",
-    ],
+test("a token, a keyword, a calc, and a shorthand's size are graded correctly", () => {
+  assert.deepEqual(
+    gradeFontSize({ property: "font-size", value: "var(--font-size-base)" }),
+    { kind: "token", tier: BASE },
+    "a plain token must grade as that tier",
+  );
+  assert.deepEqual(
+    gradeFontSize({ property: "font-size", value: "VAR(--font-size-base)" }),
+    { kind: "token", tier: BASE },
+    "CSS keywords are case-insensitive — an uppercase VAR( is still a token",
+  );
+  assert.deepEqual(
+    gradeFontSize({ property: "font", value: "inherit" }),
+    { kind: "inherit" },
+    "`font: inherit` is how `.fileToggle` makes a <button> take its row's " +
+      "size instead of the UA's, and it must pass",
+  );
+
+  for (const bad of [
+    "calc(var(--font-size-base) * 0.8)",
+    "x-small",
+    "1.4ex",
+    "0.8vw",
+    "90%",
+    "10px",
+    "var(--font-size-base, 13px)",
+    "var(--space-4)",
   ]) {
-    const rule = RULES.find((r) => r.file === file && r.selector === selector);
-    assert.ok(
-      rule && SCALE.indexOf(tokenOf(rule.value) ?? "") < BASE,
-      `${file} ${selector} is no longer below the reading size. It is ${why}. ` +
-        "If the tier list has grown to cover every rule in the panel, it has " +
-        "stopped drawing the distinction it exists to draw.",
+    assert.equal(
+      gradeFontSize({ property: "font-size", value: bad }).kind,
+      "invalid",
+      `\`${bad}\` must not grade as a valid size — it is exactly the shape ` +
+        "of regression this arm exists to catch (arithmetic, a keyword, an " +
+        "unenumerated unit, a fallback that stops being 'exactly' the " +
+        "token, or a token that names something other than a size)",
     );
   }
 
-  // Every tier entry must resolve, or the list is a list of names for rules
-  // that no longer exist.
-  const unresolved = PRIMARY.filter((e) => rulesFor(e).length === 0);
+  assert.equal(
+    gradeFontSize({ property: "font", value: "600 11px/1.4 monospace" }).kind,
+    "invalid",
+    "the `font` shorthand carries a size, and a gate that knew only " +
+      "`font-size` could be walked straight around it",
+  );
   assert.deepEqual(
-    unresolved.map((e) => `${e.file} ${e.selector}`),
-    [],
-    "these tier-list entries match no rule — re-point them at whatever " +
-      "renders that text now",
+    gradeFontSize({
+      property: "font",
+      value: "var(--font-size-base)/19px var(--text-mono)",
+    }),
+    { kind: "token", tier: BASE },
+    "the size component is tokenised; the px AFTER THE SLASH is the " +
+      "shorthand's line-height, not its font-size, and must not be graded " +
+      "as one — that would fail a legitimately token-sized rule for a " +
+      "reason that has nothing to do with its size",
   );
 });
 
-test("a token, a literal, a shorthand and prose are told apart", () => {
+test("isolateSize strips a font shorthand's line-height and family, not its size", () => {
+  assert.equal(
+    isolateSize("font-size", "var(--font-size-base)"),
+    "var(--font-size-base)",
+    "font-size has no shorthand to unwrap",
+  );
+  assert.equal(
+    isolateSize("font", "inherit"),
+    "inherit",
+    "a CSS-wide keyword covers the whole shorthand, not just the size slot",
+  );
+  assert.equal(
+    isolateSize("font", "600 11px/1.4 monospace"),
+    "11px",
+    "the size is the token immediately before the slash, weight and style " +
+      "keywords stripped off",
+  );
+  assert.equal(
+    isolateSize("font", "var(--font-size-base)/19px var(--text-mono)"),
+    "var(--font-size-base)",
+    "the size is the token immediately before the slash even when the " +
+      "line-height and family both follow it",
+  );
+});
+
+test("finalClassOf matches the selector CHROME actually names", () => {
+  assert.equal(finalClassOf(".backend"), ".backend");
+  assert.equal(
+    finalClassOf(".row .addr"),
+    ".addr",
+    "a descendant-combinator variant of an existing selector must resolve " +
+      "to the same final class as the plain one",
+  );
+  assert.equal(
+    finalClassOf('.manifestStatus[data-status="ok"]'),
+    ".manifestStatus",
+    "an attribute selector must not be read as part of the class name, and " +
+      "the quoted value inside it must not be mistaken for one either",
+  );
+  assert.equal(
+    finalClassOf(".scaleBtn:last-child"),
+    ".scaleBtn",
+    "a pseudo-class is not a class selector and must not change which class " +
+      "is final",
+  );
+});
+
+test("a token, a comma list, a shorthand-family and prose are told apart", () => {
   const sizes = (css) =>
     typeRulesIn(css).map((r) => `${r.selector}=${r.value}`);
 
@@ -933,49 +905,4 @@ test("a token, a literal, a shorthand and prose are told apart", () => {
     ['.a[data-status="ok"]=var(--font-size-sm)'],
     "an attribute selector's quoted string must survive the comment strip",
   );
-
-  assert.equal(
-    untokenisedType("var(--font-size-base)"),
-    null,
-    "a token is the rule being followed",
-  );
-  assert.equal(
-    untokenisedType("var(--font-size-base, 13px)"),
-    null,
-    "a literal inside a var() fallback is the rule being followed too",
-  );
-  assert.equal(
-    untokenisedType("VAR(--font-size-base)"),
-    null,
-    "CSS keywords are case-insensitive — an uppercase VAR( is still a token",
-  );
-  assert.equal(
-    untokenisedType("inherit"),
-    null,
-    "`font: inherit` carries no length; it is how `.fileToggle` makes a " +
-      "<button> take its row's size instead of the UA's",
-  );
-  assert.equal(untokenisedType("10px").kind, "a bare length");
-  assert.equal(untokenisedType("0.9em").kind, "a bare length");
-  assert.equal(
-    untokenisedType("90%").kind,
-    "a bare length",
-    "a percentage under-sizes exactly as permanently as a px does — the " +
-      "parent it is relative to is itself pinned to the workbench's 13px",
-  );
-  assert.equal(
-    untokenisedType("600 11px/1.4 monospace").kind,
-    "a bare length",
-    "the `font` shorthand carries a size, and a gate that knew only " +
-      "`font-size` could be walked straight around it",
-  );
-  assert.equal(
-    untokenisedType("var(--space-4)").kind,
-    "a token that is not a size token",
-    "a var() naming a NON-size token ships a font the scale does not " +
-      "contain, wearing a token's clothes",
-  );
-
-  assert.equal(tokenOf("var(--font-size-xs)"), "--font-size-xs");
-  assert.equal(tokenOf("11px"), null);
 });
