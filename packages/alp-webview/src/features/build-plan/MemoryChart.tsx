@@ -24,7 +24,12 @@
 
 import { useState } from "react";
 import { scaleBand, scaleLinear } from "d3-scale";
-import type { MemoryAperture, MemorySpan, SliceSize } from "../../types";
+import type {
+  MemoryAperture,
+  MemoryRegion,
+  MemorySpan,
+  SliceSize,
+} from "../../types";
 import { formatAddress, formatBytes } from "./format";
 import styles from "./MemoryChart.module.css";
 
@@ -220,6 +225,88 @@ export function windowOf(
   return hi > lo ? { lo, hi } : null;
 }
 
+/** A region's own resolved extent, paired with the row it came from — the
+ *  shape both the window-growth rule and `Rail`'s frame-drawing want, so
+ *  neither re-derives `status === "ok"` + a positive size itself. */
+export interface ResolvedRegion {
+  region: MemoryRegion;
+  lo: number;
+  hi: number;
+}
+
+/** Every region that resolves an extent: `status: "ok"`, a base, and a
+ *  positive size. An unresolved, sizeless or zero-size region draws no
+ *  frame and cannot grow the window. */
+export function resolvedRegions(regions: MemoryRegion[]): ResolvedRegion[] {
+  const out: ResolvedRegion[] = [];
+  for (const region of regions) {
+    if (region.status !== "ok" || region.base === null) continue;
+    if (region.sizeBytes === null || region.sizeBytes <= 0) continue;
+    out.push({ region, lo: region.base, hi: region.base + region.sizeBytes });
+  }
+  return out;
+}
+
+/**
+ * Grows a window, to a FIXPOINT, over every resolved region that
+ * intersects or TOUCHES it — so a region ending exactly where the window
+ * begins (the normal adjacency of a region table, not a gap) still pulls
+ * the window's edge out to cover it, and the next region touching THAT new
+ * edge is pulled in too, and so on until nothing moves. A region that
+ * never intersects or touches the window through that whole process is
+ * left out on purpose — the region table then says it is outside it.
+ */
+export function growWindowOverRegions(
+  win: Window,
+  regions: ResolvedRegion[],
+): Window {
+  let { lo, hi } = win;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const r of regions) {
+      if (r.lo > hi || r.hi < lo) continue;
+      if (r.lo < lo) {
+        lo = r.lo;
+        changed = true;
+      }
+      if (r.hi > hi) {
+        hi = r.hi;
+        changed = true;
+      }
+    }
+  }
+  return { lo, hi };
+}
+
+/** The resolved regions that actually intersect a window — what a rail
+ *  draws a frame for. Strict intersection, not "touches": a region merely
+ *  adjacent to the window has nothing to show and would draw a
+ *  zero-height frame. */
+export function regionsInWindow(
+  win: Window,
+  regions: ResolvedRegion[],
+): ResolvedRegion[] {
+  return regions.filter((r) => r.lo < win.hi && r.hi > win.lo);
+}
+
+/** Names shared by two or more rows. Selecting a region row sets `selected`
+ *  to its id (`memory:<name>`) — for a duplicated name that id belongs to
+ *  every row sharing it, so a click could highlight all of them at once
+ *  unless the caller refuses the join. The single source of truth for that
+ *  refusal: `MemoryRegionTable.tsx` (Task 5) imports this instead of
+ *  keeping its own copy, so the chart frame, the aperture bar and the table
+ *  row all refuse the same names the same way. */
+export function duplicatedNames(regions: MemoryRegion[]): Set<string> {
+  const seen = new Set<string>();
+  const dupes = new Set<string>();
+  for (const region of regions) {
+    if (seen.has(region.name)) dupes.add(region.name);
+    seen.add(region.name);
+  }
+  return dupes;
+}
+
 /**
  * Tick addresses for a window: aligned to a power of two, never to a power of
  * ten.
@@ -281,6 +368,15 @@ interface RailProps {
   axis: "left" | "right";
   caption: string;
   series: Map<string, number>;
+  regions: ResolvedRegion[];
+  /** Null when nothing is selected, OR when the selected region's name is
+   *  shared by two or more rows — a duplicated name is refused here, not
+   *  just in the table, so a click on either duplicate row never
+   *  highlights both this frame and the aperture bar of the same name.
+   *  Distinct from `selected` (the raw id), which spans still match
+   *  directly — only a region frame/aperture match is name-based and so
+   *  is the one that needs this refusal. */
+  selectedRegionName: string | null;
 }
 
 /** One rail: frame, budgets, bands, markers, axis. */
@@ -288,6 +384,8 @@ function Rail({
   win,
   spans,
   budgets,
+  regions,
+  selectedRegionName,
   x,
   width,
   equalized,
@@ -364,6 +462,55 @@ function Rail({
         width={width}
         height={PLOT_BOTTOM - PLOT_TOP}
       />
+
+      {/* The SoM's own region table (#484 phase 2), behind every band the
+       *  manifest pins — a stroke tinted by authority class, never the
+       *  six-colour series palette, which stays with the spans.
+       *
+       *  LABEL ANCHOR: right-aligned at the rail's OWN right edge, never
+       *  `x + 5` — that is where a budget/band label's baseline already
+       *  sits (see below), and a region's own top routinely coincides with
+       *  a span or budget top (mcuboot's frame top IS the window's own
+       *  low edge; hp_slot0's frame top is exactly where its budget band
+       *  starts). Anchoring from the OPPOSITE edge means the two labels
+       *  only collide if BOTH read right to the rail's full width, which
+       *  neither does at this panel's reading size. */}
+      {!equalized &&
+        regions.map(({ region, lo, hi }, i) => {
+          const top = y(hi);
+          const height = Math.max(y(lo) - top, 1);
+          // Not `height >= TICK_LABEL_H` (14): a 14-19-unit-tall frame
+          // would pass that check yet still print its label ON or BELOW
+          // the frame's own bottom edge, because the label's baseline
+          // drops BAND_LABEL_DY (15) below the frame's top — see
+          // BAND_LABEL_DY's own docblock ("a band's own height must clear
+          // BAND_LABEL_DY plus a descender (~17.3 units)"). +3 rounds that
+          // ~2.3-unit descender up to a whole unit.
+          const labelFits = height >= BAND_LABEL_DY + 3;
+          return (
+            <g key={`region-${i}-${region.id}`}>
+              <rect
+                className={styles.regionFrame}
+                data-authority={region.authorityClass}
+                data-selected={selectedRegionName === region.name || undefined}
+                x={x}
+                y={top}
+                width={width}
+                height={height}
+              />
+              {labelFits && (
+                <text
+                  className={styles.regionLabel}
+                  x={x + width - 5}
+                  y={top + BAND_LABEL_DY}
+                  textAnchor="end"
+                >
+                  {region.name}
+                </text>
+              )}
+            </g>
+          );
+        })}
 
       {/* `tan size` budgets, behind everything the manifest pinned. */}
       {!equalized &&
@@ -502,19 +649,24 @@ function Rail({
 /**
  * One aperture as a bar beside the map — never as a band inside it.
  *
- * An aperture's own base and size are not in this contract; what is known is
- * which extents the resolver put inside it. So the bar spans the hull of its
- * members: "at least this much of it is in use", which is true, where a bar
- * drawn to a guessed extent would say how much is left, which nothing knows.
+ * An aperture's own base and size are never READ here, even though the
+ * contract can now carry them for a same-named row (the SoM region table,
+ * `regions` below): what this bar draws from is only which extents the
+ * resolver put inside it. So the bar still spans the hull of its members
+ * — "at least this much of it is in use", which is true, where a bar
+ * drawn to a guessed extent would say how much is left, which this
+ * function does not know and does not try to.
  */
 function ApertureBar({
   aperture,
   win,
   x,
+  selected,
 }: {
   aperture: MemoryAperture;
   win: Window;
   x: number;
+  selected: boolean;
 }) {
   if (aperture.hullBase === null || aperture.hullEnd === null) return null;
   const y = scaleLinear()
@@ -527,6 +679,7 @@ function ApertureBar({
     <g>
       <rect
         className={styles.apertureBar}
+        data-selected={selected || undefined}
         x={x}
         y={top}
         width={APERTURE_W}
@@ -549,6 +702,7 @@ export function MemoryChart({
   spans,
   apertures,
   budgets,
+  regions = [],
   equalized,
   selected,
   onSelect,
@@ -556,13 +710,25 @@ export function MemoryChart({
   spans: MemorySpan[];
   apertures: MemoryAperture[];
   budgets: Map<string, SliceSize>;
+  // OPTIONAL, defaulting to `[]` — not because a real caller ever omits it,
+  // but so THIS task's own `pnpm run typecheck` passes standalone. Task 5
+  // updates this component's only external call site
+  // (`MemoryRegions.tsx`) to pass a real array; making the prop required
+  // until then would report a missing-prop error at that call site for an
+  // entire task, which is not a state this plan asks anyone to tolerate.
+  regions?: MemoryRegion[];
   equalized: boolean;
   selected: string | null;
   onSelect: (id: string) => void;
 }) {
   const placed = spans.filter((s) => s.base !== null);
-  const win = windowOf(placed, budgets);
-  if (!win) return null;
+  const resolved = resolvedRegions(regions);
+  const rawWindow = windowOf(placed, budgets);
+  if (!rawWindow) return null;
+  // §4's window rule: grow the spans/budgets window to a fixpoint over
+  // every resolved region that intersects or touches it. Regions never
+  // CREATE a window on their own — only widen one that already exists.
+  const win = growWindowOverRegions(rawWindow, resolved);
 
   // The top 1/DETAIL_FACTOR of the window, magnified by exactly that factor
   // because it is drawn at the same height.
@@ -578,14 +744,35 @@ export function MemoryChart({
       budgetEnd(s, budgets.get(s.label)) ?? endOf(s) ?? (s.base as number);
     return reach > detail.lo;
   });
+  const regionsInDetail = regionsInWindow(detail, resolved);
   const regionApertures = apertures.filter(
     (a) => a.kind === "region" && a.hullBase !== null,
   );
+  const regionsInMain = regionsInWindow(win, resolved);
   const series = seriesIndex(placed);
   const y = scaleLinear()
     .domain([win.lo, win.hi])
     .range([PLOT_BOTTOM, PLOT_TOP])
     .clamp(true);
+
+  // A selected REGION (id `memory:<name>`) also highlights the aperture of
+  // the same name — a different id namespace (`region:<name>`), so this is
+  // a name match, not an id match. Refused (set to null) when that name is
+  // shared by two or more rows in the FULL region list (not just the
+  // resolved ones in `win`/`detail`) — the same join `duplicatedNames`
+  // refuses in the table, computed the same way here so the chart frame,
+  // this aperture highlight and the table row all refuse the identical set
+  // of names.
+  const rawSelectedRegionName =
+    selected !== null && selected.startsWith("memory:")
+      ? selected.slice("memory:".length)
+      : null;
+  const duplicatedRegionNames = duplicatedNames(regions);
+  const selectedRegionName =
+    rawSelectedRegionName !== null &&
+    duplicatedRegionNames.has(rawSelectedRegionName)
+      ? null
+      : rawSelectedRegionName;
 
   return (
     <svg
@@ -600,6 +787,8 @@ export function MemoryChart({
         win={win}
         spans={placed}
         budgets={budgets}
+        regions={regionsInMain}
+        selectedRegionName={selectedRegionName}
         x={RAIL_X}
         width={RAIL_W}
         equalized={equalized}
@@ -616,6 +805,7 @@ export function MemoryChart({
             key={a.id}
             aperture={a}
             win={win}
+            selected={selectedRegionName === a.name}
             x={APERTURE_X + i * (APERTURE_W + 14)}
           />
         ))}
@@ -652,6 +842,8 @@ export function MemoryChart({
             win={detail}
             spans={inDetail}
             budgets={budgets}
+            regions={regionsInDetail}
+            selectedRegionName={selectedRegionName}
             x={DETAIL_X}
             width={DETAIL_W}
             equalized={false}
