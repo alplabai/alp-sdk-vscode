@@ -50,13 +50,17 @@
 //       sit at `var(--font-size-base)` or above — UNLESS its selector's FINAL
 //       CLASS is on the CHROME allowlist below, each entry carrying why it is
 //       small on purpose. This walks every rule in every `*.module.css` under
-//       this directory, not a hand-maintained list of "selectors that render
-//       primary content": a positive list needs one entry per selector AND per
-//       variant of that selector, and says nothing about a module that does
-//       not exist yet — which is exactly how a new selector (`.row .addr`), a
-//       brand-new file, or an existing chrome class mutated to a keyword could
-//       all ship unseen. CHROME is the only list left, and it is small,
-//       reasoned, and matched by class rather than by exact selector string.
+//       this directory (recursively — a module in a subdirectory is gated the
+//       same as one beside these four), not a hand-maintained list of
+//       "selectors that render primary content": a positive list needs one
+//       entry per selector AND per variant of that selector, and says nothing
+//       about a module that does not exist yet — which is exactly how a new
+//       selector (`.row .addr`), a brand-new file, or an existing chrome class
+//       mutated to a keyword could all ship unseen. CHROME is the only list
+//       left, and it is small, reasoned, and matched by (file, final class)
+//       rather than by exact selector string — a CSS-module class name is
+//       scoped to its own file, so a class-only match would let a same-named
+//       class in an unrelated module inherit an exemption it never earned.
 //
 //   (c) THE SUB-HEADING ARM. The panel has four rungs — xl title, md
 //       sub-heading, base body, xs/sm chrome — and only the middle one cannot
@@ -90,16 +94,33 @@ const PANEL = path.join(
   "build-plan",
 );
 
-/** Every CSS module in the panel, as `{ name, text }`. Walked rather than
- * listed: a new module added beside these four is gated the day it lands. */
-const FILES = fs
-  .readdirSync(PANEL)
-  .filter((name) => name.endsWith(".module.css"))
-  .sort()
-  .map((name) => ({
-    name,
-    text: fs.readFileSync(path.join(PANEL, name), "utf8"),
-  }));
+/**
+ * Every CSS module in the panel, as `{ name, text }`. Walked recursively
+ * rather than listed, and recursively rather than one `readdirSync` of
+ * `PANEL` itself: a module added beside these four is gated the day it
+ * lands, and so is one added in a new subdirectory of this feature — the
+ * same guarantee `webview.cssTokens.test.js` makes for the whole webview
+ * source tree. `name` is the path relative to `PANEL`, not the bare
+ * basename, so a nested module still carries a name distinct from a
+ * same-named sibling; for these four flat files that is just the filename.
+ */
+function cssModulesIn(dir, base = dir) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...cssModulesIn(full, base));
+    } else if (entry.isFile() && entry.name.endsWith(".module.css")) {
+      out.push({
+        name: path.relative(base, full),
+        text: fs.readFileSync(full, "utf8"),
+      });
+    }
+  }
+  return out;
+}
+
+const FILES = cssModulesIn(PANEL).sort((a, b) => a.name.localeCompare(b.name));
 
 /* ── Lexing ────────────────────────────────────────────────────────────────
  * Deliberately self-contained rather than shared with
@@ -207,28 +228,67 @@ const RULES = FILES.flatMap((f) =>
  */
 
 /**
+ * The `font` shorthand's optional leading components — style, variant,
+ * weight, stretch — that can appear before the mandatory size when there is
+ * no `/<line-height>` to isolate it with instead. Not exhaustive CSS
+ * grammar: just the keywords (plus a bare numeric weight, matched
+ * separately) that have actually shown up in this panel's own rules ahead
+ * of the size.
+ */
+const FONT_LEADING_KEYWORDS = new Set([
+  "normal",
+  "italic",
+  "oblique", // font-style
+  "small-caps", // font-variant
+  "bold",
+  "bolder",
+  "lighter", // font-weight keywords (a bare 100-900 is matched separately)
+  "ultra-condensed",
+  "extra-condensed",
+  "condensed",
+  "semi-condensed",
+  "semi-expanded",
+  "expanded",
+  "extra-expanded",
+  "ultra-expanded", // font-stretch
+]);
+
+/**
  * Isolates the piece of a declaration's value that actually sets the
  * font-size. For a `font-size` declaration that is the whole value. For the
- * `font` shorthand it is buried behind optional style / variant / weight
- * tokens and a trailing family, with an optional `/<line-height>` glued
- * directly onto the size (`size/line-height family`) — so `.fileToggle`'s
- * `font: inherit` (a keyword covering the WHOLE shorthand) and a
- * `font: var(--font-size-base)/19px var(--text-mono)` both need grading on
- * their SIZE, not on their family or their line-height. Reading a `/19px`
- * line-height AS a font-size is exactly how a legitimately token-sized
- * shorthand could fail this file's own check.
+ * `font` shorthand it is buried behind optional style / variant / weight /
+ * stretch tokens and a trailing family — with an optional `/<line-height>`
+ * glued directly onto the size when one is given (`size/line-height
+ * family`), and nothing glued on when it is not (`weight size family`). So
+ * `.fileToggle`'s `font: inherit` (a keyword covering the WHOLE shorthand),
+ * `font: var(--font-size-base)/19px var(--text-mono)`, and
+ * `font: 400 var(--font-size-base) var(--font-family-mono)` all need grading
+ * on their SIZE, not on their family, weight, or line-height. Reading a
+ * `/19px` line-height as a font-size, or reporting a leading `400` as the
+ * size because there was no slash to isolate it from, are both exactly how a
+ * legitimately token-sized shorthand could fail this file's own check.
  *
- * Deliberately narrow rather than a general shorthand parser: the only two
- * shapes this file has ever needed to grade are the whole-value keyword and
- * "size/line-height family", so that is all it handles.
+ * Deliberately narrow rather than a general shorthand parser: the only
+ * shapes this file has ever needed to grade are the whole-value keyword,
+ * "size/line-height family", and "[style/variant/weight/stretch] size
+ * family" — so that is all it handles.
  */
 function isolateSize(property, value) {
   const trimmed = value.trim();
   if (property !== "font") return trimmed;
   if (trimmed.toLowerCase() === "inherit") return trimmed;
   const slash = trimmed.indexOf("/");
-  if (slash === -1) return trimmed;
-  return trimmed.slice(0, slash).trim().split(/\s+/).pop();
+  if (slash !== -1) return trimmed.slice(0, slash).trim().split(/\s+/).pop();
+  const tokens = trimmed.split(/\s+/);
+  let i = 0;
+  while (
+    i < tokens.length - 1 &&
+    (FONT_LEADING_KEYWORDS.has(tokens[i].toLowerCase()) ||
+      /^\d+$/.test(tokens[i]))
+  ) {
+    i++;
+  }
+  return tokens[i] ?? trimmed;
 }
 
 /**
@@ -392,9 +452,9 @@ test("the one sanctioned pixel size is still the geometry that justifies it", ()
   assert.ok(
     bar < 13,
     `APERTURE_W is now ${bar} units — wide enough for the panel's reading ` +
-      "size (13px at the workbench default). The reason .apertureLabel is " +
-      "exempt from the token scale no longer holds: give it " +
-      "var(--font-size-base) and drop its SANCTIONED entry.",
+      "size (13px, the constant VS Code injects into every webview). The " +
+      "reason .apertureLabel is exempt from the token scale no longer " +
+      "holds: give it var(--font-size-base) and drop its SANCTIONED entry.",
   );
 
   const at = tsx.indexOf("styles.apertureLabel");
@@ -416,8 +476,11 @@ test("the one sanctioned pixel size is still the geometry that justifies it", ()
 // and a later `.row .addr` are two different exact strings), and it says
 // nothing at all about a module that does not exist yet. CHROME below is the
 // only list left, and it works the other way around: it names the selectors
-// that are SMALL ON PURPOSE, by final class rather than by exact string, so a
-// new selector inherits the same call its class already made.
+// that are SMALL ON PURPOSE, by (file, final class) rather than by exact
+// string, so a new selector variant inherits the same call its class already
+// made — but only within the file that made it. A CSS-module class name is
+// scoped to its own file, so a bare class name would let an unrelated
+// module's same-named class ride an exemption it never earned.
 //
 // SUB-HEADINGS are graded here too — `.unresolvedTitle`, `.conflictsTitle` and
 // MemoryNotes' `.title` are md, which trivially clears `>= base` — but
@@ -427,6 +490,7 @@ test("the one sanctioned pixel size is still the geometry that justifies it", ()
 
 const CHROME = [
   {
+    file: "BuildPlanView.module.css",
     class: ".backend",
     why:
       "an uppercase, 0.04em-tracked, weight-600 pill naming the slice's OS " +
@@ -434,12 +498,14 @@ const CHROME = [
       "which is the name being read",
   },
   {
+    file: "BuildPlanView.module.css",
     class: ".manifestBadge",
     why:
       "the uppercase tracked freshness badge — one recoloured word read as " +
       "a state, not as a sentence",
   },
   {
+    file: "BuildPlanView.module.css",
     class: ".manifestSubTitle",
     why:
       "the LABEL register (uppercase, 0.04em tracked, weight 600) over the " +
@@ -447,6 +513,7 @@ const CHROME = [
       "`.backend` are in — not a heading in the panel's four-rung ladder",
   },
   {
+    file: "BuildPlanView.module.css",
     class: ".sectionTitle",
     why:
       "uppercase + 0.04em + 600: a LABEL register, not a heading in this " +
@@ -454,6 +521,7 @@ const CHROME = [
       "instead of labelling",
   },
   {
+    file: "MemoryRegions.module.css",
     class: ".kind",
     why:
       "small deliberately, and NOT because it is a tracked badge: it has a " +
@@ -463,6 +531,7 @@ const CHROME = [
       "('carve-out')",
   },
   {
+    file: "BuildPlanView.module.css",
     class: ".manifestAge",
     why:
       "rides the badge on the `.sectionTitle` line — raising it would " +
@@ -479,7 +548,7 @@ test("nothing outside the chrome allowlist is set below the reading size", () =>
     if (grade.kind !== "token") continue;
     if (grade.tier >= BASE) continue;
     const cls = finalClassOf(rule.selector);
-    if (CHROME.some((c) => c.class === cls)) continue;
+    if (CHROME.some((c) => c.file === rule.file && c.class === cls)) continue;
     offenders.push(
       `  ${rule.file}:${rule.line}  ${rule.selector} { ${rule.property}: ` +
         `${rule.value} } sits at ${SCALE[grade.tier]}, below ` +
@@ -522,14 +591,14 @@ test("chrome stays below the reading size", () => {
   const offenders = [];
   for (const entry of CHROME) {
     const matches = RULES.filter(
-      (r) => finalClassOf(r.selector) === entry.class,
+      (r) => r.file === entry.file && finalClassOf(r.selector) === entry.class,
     );
     if (matches.length === 0) {
       offenders.push(
-        `  CHROME names ${entry.class}, which no rule in the panel sets a ` +
-          `font-size on any more. It was exempted because: ${entry.why}. ` +
-          "Re-point or remove this entry rather than leaving it to forgive " +
-          "a class that no longer exists.",
+        `  CHROME names ${entry.file} ${entry.class}, which no rule in that ` +
+          `file sets a font-size on any more. It was exempted because: ` +
+          `${entry.why}. Re-point or remove this entry rather than leaving ` +
+          "it to forgive a class that no longer exists there.",
       );
       continue;
     }
@@ -848,6 +917,19 @@ test("isolateSize strips a font shorthand's line-height and family, not its size
     "var(--font-size-base)",
     "the size is the token immediately before the slash even when the " +
       "line-height and family both follow it",
+  );
+  assert.equal(
+    isolateSize("font", "400 var(--font-size-base) var(--font-family-mono)"),
+    "var(--font-size-base)",
+    "with no `/<line-height>` to isolate the size from, a leading numeric " +
+      "weight must be skipped instead — not returned as the size, and not " +
+      "left glued to it",
+  );
+  assert.equal(
+    isolateSize("font", "italic bold var(--font-size-lg) var(--text-mono)"),
+    "var(--font-size-lg)",
+    "multiple leading keywords (style, then weight) are skipped in " +
+      "sequence, not just the first one",
   );
 });
 
