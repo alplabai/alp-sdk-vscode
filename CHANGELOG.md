@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **The memory map's chart scrolls on its own; the scale toggle and legend do
+  not (#484).** A narrow column scrolled the whole side of the panel
+  sideways, so reading a band near the drawing's right edge could hide "True
+  scale" / "Equalized" above it and clip the legend below it against the same
+  edge. The chart now sits in its own scroll container, and the pressed scale
+  button now draws a visible focus ring — it used to paint in the same colour
+  as its own pressed background.
+
 ## 0.6.0
 
 **Stable.** First even-minor cut since `0.4.0`, so `release-vsix.yml` publishes
