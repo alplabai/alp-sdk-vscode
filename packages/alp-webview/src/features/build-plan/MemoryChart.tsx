@@ -44,17 +44,17 @@ import styles from "./MemoryChart.module.css";
  * glyphs (~86 units — still inside the gutter) and one past 2^36 prints 12
  * (~94 — not, overrunning the box's left edge by ~6). THE TWELFTH IS CLIPPED,
  * and silently. `.svg` sets `overflow: visible`, but that only stops the SVG
- * VIEWPORT from clipping: `.mapSide` (MemoryRegions.module.css) is now
- * `overflow-x: auto`, which makes it a scroll container, and a scroll
- * container clips its descendants' ink at its own padding box whatever the svg
- * says. Worse, ink past the INLINE-START edge is not in the scrollable
- * overflow region either, so no scrollbar reaches it: such a label would lose
- * most of the leading `0` of its `0x`, on the one screen whose digits are read
- * one at a time. (Ink past the opposite edge IS scrollable, which is why a
- * long band label below is only overprinted.) It cannot arise on what this
- * panel resolves today — MRAM and OCRAM bases come back as 0x0…/0x8…, all ten
- * glyphs — and a 64-bit A-core map is where it would; widening the gutter is
- * that change's job, not this one's.
+ * VIEWPORT from clipping: `.chartScroll` (MemoryRegions.module.css), which
+ * wraps this SVG directly, is `overflow-x: auto`, which makes it a scroll
+ * container, and a scroll container clips its descendants' ink at its own
+ * padding box whatever the svg says. Worse, ink past the INLINE-START edge is
+ * not in the scrollable overflow region either, so no scrollbar reaches it:
+ * such a label would lose most of the leading `0` of its `0x`, on the one
+ * screen whose digits are read one at a time. (Ink past the opposite edge IS
+ * scrollable, which is why a long band label below is only overprinted.) It
+ * cannot arise on what this panel resolves today — MRAM and OCRAM bases come
+ * back as 0x0…/0x8…, all ten glyphs — and a 64-bit A-core map is where it
+ * would; widening the gutter is that change's job, not this one's.
  *
  * So RAIL_X moved 78 -> 96, making the gutter 88 units (good to ~14.6px), and
  * APERTURE_X, DETAIL_X and W moved by the same 18 units so that every gap to
@@ -130,32 +130,26 @@ const TICK_LABEL_H = 14;
 /**
  * Where a label's baseline sits relative to the edge it names.
  *
- * PINNED, not computed — a deliberate change from the original shape, not the
- * original shape itself. Both were first written as
- * `Math.round(TICK_LABEL_H * 1.1)` and `-Math.round(TICK_LABEL_H * 0.35)`, on
- * the reasoning below; review found that reasoning did not hold as a standing
- * invariant — nothing tied the 1.1/0.35 ratio to TICK_LABEL_H's own
- * definition, so the "formula" was two independent numbers wearing a shared
- * multiplier, not a real derivation. Pinning them here is what TICK_LABEL_H's
- * own docblock above now asks for explicitly: revise all three by hand
- * together.
+ * PINNED, not computed. They were bare `+12` and `-4`, fitted by eye to 10px
+ * text, and stay bare now — no formula ties them to TICK_LABEL_H, so revising
+ * TICK_LABEL_H does not move either one on its own. Revise all three by hand
+ * together, which is exactly what TICK_LABEL_H's own docblock above asks for.
  *
- * The values themselves are unchanged and still reasoned from TICK_LABEL_H's
- * ink-fitted collision floor, ~9 units of ink plus ~5 of white — the one
- * vertical measure this module has that is pinned to the type. They were bare
- * `+12` and `-4`, fitted by eye to 10px text. Neither BROKE at base (13px): a
- * capital needs ~0.73em of ascent, ~9.5 units, and +12 still cleared the
- * band's top edge by ~2.5. What it lost was the optical gap — the label sat
- * visibly tighter under the edge than it had at 10px, where 12 cleared ~7.3 by
- * ~4.7. These constants buy that gap back and tie it to the type.
+ * The values are reasoned from TICK_LABEL_H's ink-fitted collision floor, ~9
+ * units of ink plus ~5 of white — the one vertical measure this module has
+ * that is pinned to the type. Neither BROKE at base (13px): a capital needs
+ * ~0.73em of ascent, ~9.5 units, and +12 still cleared the band's top edge by
+ * ~2.5. What it lost was the optical gap — the label sat visibly tighter
+ * under the edge than it had at 10px, where 12 cleared ~7.3 by ~4.7. Fitting
+ * new constants to 13px text is what buys that gap back.
  *
- *  - BAND_LABEL_DY (15, originally 1.1 floors) drops the baseline INSIDE the
- *    band: it clears the ~9.5-unit ascent by ~5.5, a little more than the
- *    ~4.7 the old +12 gave 10px text rather than the same.
- *  - LINE_LABEL_DY (-5, originally 0.35 of a floor) lifts it ABOVE a rule —
- *    the marker's line, and the hover readout's, which is the same case — by
- *    a descender (~0.18em, ~2.3 units) plus a gap, so a `p` in a name never
- *    touches the line it belongs to.
+ *  - BAND_LABEL_DY (15) drops the baseline INSIDE the band: it clears the
+ *    ~9.5-unit ascent by ~5.5, a little more than the ~4.7 the old +12 gave
+ *    10px text.
+ *  - LINE_LABEL_DY (-5) lifts it ABOVE a rule — the marker's line, and the
+ *    hover readout's, which is the same case — by a descender (~0.18em, ~2.3
+ *    units) plus a gap, so a `p` in a name never touches the line it belongs
+ *    to.
  *
  * A band shorter than its own label still overflows it, and the overflow is
  * not cut: an SVG shape clips nothing drawn after it, and the spill stays well

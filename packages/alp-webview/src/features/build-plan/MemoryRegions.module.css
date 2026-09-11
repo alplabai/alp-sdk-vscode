@@ -42,9 +42,13 @@
    follows it down to the panel's width instead of flooring at the drawing's
    and making the WHOLE panel scroll sideways. `min-width: 0` is what zeroes
    that floor: it is an explicit value, not `auto`, so it wins outright and
-   needs no `overflow` on THIS element to take effect — contrast `.chartScroll`
-   below, which has no SVG of its own to floor against and instead resolves
-   the same problem through overflow, the way this element used to.
+   needs no `overflow` on THIS element to take effect. `.chartScroll` below
+   does wrap the SVG directly, but it does not need this same trick for its
+   OWN width: it is a cross-axis item of this column, so it takes its width by
+   stretching to whatever this element hands it, already zeroed here —
+   `.chartScroll`'s `overflow-x: auto` then turns what's left over (the SVG
+   still wider than that stretched box) into a scrollbar, which is a different
+   job from the one `min-width: 0` does on this element.
 
    THE SCROLLER USED TO BE THIS WHOLE COLUMN, not just the chart. `overflow-x:
    auto` sat here directly, and it worked — the drawing scrolled — but it
@@ -64,29 +68,35 @@
 
 /* THE CHART'S OWN SCROLLER, wrapping only `<MemoryChart>` (MemoryRegions.tsx)
    — not the scale toggle above it, not the legend below. `flex: none` keeps
-   this box from being squashed in HEIGHT by `.mapSide`'s column layout, the
-   same guarantee `.svg`'s own `flex: none` (MemoryChart.module.css) gave
-   itself directly back when the SVG was `.mapSide`'s immediate flex child;
-   now the SVG's parent is this box instead, so the guarantee has to be
-   restated here or a squashed height would rescale the drawing's type exactly
-   as the paragraph above describes.
+   this box from being squashed in HEIGHT by `.mapSide`'s column layout — a
+   squashed height would rescale the drawing's type exactly as the paragraph
+   above describes, since `preserveAspectRatio` defaults to `meet`. The SVG
+   itself carries no `flex: none` of its own any more (MemoryChart.module.css):
+   its parent here is a plain block box, not a flex container, so a `flex`
+   property stated on the SVG would be inert. This rule is the flex item in
+   the chain, and it is the one that has to hold the guarantee.
 
-   `min-width: 0` repeats that same paragraph's reasoning one level down: this
-   is the box that actually holds the wide SVG, so it is what must stop
-   insisting on the SVG's full intrinsic width once `.mapSide` hands it less.
-   `overflow-x: auto` is the other half of the mechanism `.mapSide` used to
-   supply — a flex item whose computed overflow is not `visible` resolves its
-   automatic minimum size to zero, so this box can render narrower than the
-   SVG and scroll rather than force `.mapSide` wide; `min-width: 0` is belt and
-   braces, and is what would still hold the shrink if that overflow value ever
-   changed.
+   `min-width: 0` is NOT what makes this box narrower than the SVG it holds.
+   `.chartScroll` is a flex item of `.mapSide`'s COLUMN, so this box's width
+   is the CROSS axis, not the main one — the flexbox rule that zeroes an
+   item's automatic minimum size when its overflow is not `visible` applies
+   only to a flex item's MAIN axis (here, height), never to its cross axis.
+   What actually narrows this box is cross-axis STRETCH: with no width of its
+   own stated, it simply takes whatever width `.mapSide` hands it, which
+   `.mapSide`'s own `min-width: 0` (above) has already let shrink to nothing.
+   `overflow-x: auto` does not size anything either — it only turns what is
+   left over, the SVG still wider than this now-narrow box, into a scrollbar
+   rather than a silent, unreachable overflow. `min-width: 0` here is belt and
+   braces against a future change to how this box gets its width (an explicit
+   width, a non-stretch `align-self`), not against how it gets it today.
 
    Two things this inherits from the mechanism it replaces. `overflow-x: auto`
    computes `overflow-y` to `auto` too, harmless only because this box is
    auto-height and the chart never overflows vertically. And it works at all
    only while the svg is allowed to keep its intrinsic width: see `.svg` in
-   MemoryChart.module.css — a `max-width: 100%` there caps the drawing at this
-   box, so it scales again and this container never has anything to scroll.
+   MemoryChart.module.css — a `max-width: 100%` there would cap the drawing at
+   this box, so it would scale again and this container would never have
+   anything to scroll.
 
    AND THIS BOX CLIPS, which `.svg`'s `overflow: visible` does not undo: that
    declaration stops the SVG's own viewport cutting a label which outruns the
@@ -302,7 +312,7 @@
 }
 
 /* md (14px): a sub-heading, one rung above the 13px rows it heads and one rung
-   below the panel's own `.title`, which is lg (16px) in
+   below the panel's own `.title`, which is xl (20px) in
    BuildPlanView.module.css. At base it was the exact size of the list beneath
    it, which is a rung spent for nothing — weight and colour were left carrying
    a rank that size is the only signal for. */
@@ -338,7 +348,7 @@
 }
 
 /* md, like `.unresolvedTitle` and for the same reason: a rung above the rows
-   it heads, a rung below the panel's lg title. The error colour and the tinted
+   it heads, a rung below the panel's xl title. The error colour and the tinted
    bordered box carry the alarm; size is what says this line is the heading OF
    the box rather than the first entry IN it. */
 .conflictsTitle {

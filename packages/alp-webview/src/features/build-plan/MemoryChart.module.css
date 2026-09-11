@@ -24,12 +24,19 @@
    attributes give it and the column scrolls instead, and `max-width: none` is
    stated rather than deleted so that capping it again has to be deliberate.
 
-   `flex: none` because that column is a flex container and a SQUASHED HEIGHT
-   would scale the drawing exactly the way a capped width would —
-   `preserveAspectRatio` defaults to `meet`, so losing height loses type.
+   NO `flex: none` HERE ANY MORE. This SVG's own parent is `.chartScroll`
+   (MemoryRegions.module.css), a plain block box rather than a flex container,
+   so a `flex` property on this rule would be inert — it was load-bearing
+   only while `.mapSide`'s column held this element directly. The
+   SQUASHED-HEIGHT guard that justified it still has to exist, and it does,
+   one level up: a shrunk height would scale the drawing exactly the way a
+   capped width would, since `preserveAspectRatio` defaults to `meet`, and
+   `.chartScroll` — now the flex item inside `.mapSide`'s column — is what
+   carries `flex: none` to hold it.
 
    `overflow: visible` is older, and it no longer says what it used to. It
-   stops the SVG VIEWPORT from clipping, and nothing more: `.mapSide` is now
+   stops the SVG VIEWPORT from clipping, and nothing more: `.chartScroll`
+   (MemoryRegions.module.css), which wraps this SVG directly, is
    `overflow-x: auto`, which makes it a scroll container, and a scroll
    container clips its descendants' ink at its own padding box regardless. Ink
    past the right edge of that box is at least reachable by scrolling; ink past
@@ -38,7 +45,6 @@
    MemoryChart.tsx carries the address width that would. */
 .svg {
   display: block;
-  flex: none;
   max-width: none;
   overflow: visible;
   font-family: var(--font-family-mono);

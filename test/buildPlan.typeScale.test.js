@@ -509,11 +509,10 @@ test("nothing outside the chrome allowlist is set below the reading size", () =>
 });
 
 test("chrome stays below the reading size", () => {
-  // This is where four of six of these entries used to be asserted — wedged
-  // inside "the type scan actually reads the panel" below, a test about
-  // whether the SCAN works, not about whether the PANEL still draws the
-  // distinction between what is read and what is glanced at. It gets its own
-  // name and now covers every entry, not four of six.
+  // A separate concern from "the type scan actually reads the panel" below,
+  // which is about whether the SCAN works. This test is about whether the
+  // PANEL still draws the distinction between what is read and what is
+  // glanced at, and it covers every CHROME entry.
   assert.ok(
     CHROME.length > 0,
     "the CHROME allowlist is empty — either restore its entries or delete " +
