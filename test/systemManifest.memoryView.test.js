@@ -734,3 +734,128 @@ test("an unrecognised status is never drawn, even when the row also carries a ba
     'base is kept only when status is exactly "ok" — an unrecognised status must not surface a base the UI would then draw',
   );
 });
+
+// ---------------------------------------------------------------------------
+// outside_region — the manifest's own numbers disagree
+// ---------------------------------------------------------------------------
+
+test("outside_region: a resolved carve-out that overruns its own named region", () => {
+  const manifest = blockedSample();
+  manifest.ipc = [RESOLVED_CARVE_OUT];
+  manifest.memory = [
+    {
+      name: "mram_main",
+      source: "som_preset",
+      kind: "flash",
+      status: "ok",
+      base: 0x80540000,
+      size_bytes: 0x00020000, // half the carve-out's own size
+      write_authority: "customer_image",
+    },
+  ];
+
+  const view = buildMemoryView(manifest);
+
+  assert.deepEqual(
+    view.conflicts.map((c) => [c.kind, c.first, c.second]),
+    [["outside_region", "alp_rpmsg", "mram_main"]],
+  );
+});
+
+test("outside_region is not emitted for an unresolved named region", () => {
+  const manifest = blockedSample();
+  manifest.ipc = [RESOLVED_CARVE_OUT];
+  manifest.memory = [
+    {
+      name: "mram_main",
+      source: "som_preset",
+      kind: "flash",
+      status: "unresolved",
+      size_bytes: 0x20000,
+      reason: "TBD",
+    },
+  ];
+  assert.deepEqual(buildMemoryView(manifest).conflicts, []);
+});
+
+test("outside_region is not emitted for a sizeless named region", () => {
+  const manifest = blockedSample();
+  manifest.ipc = [RESOLVED_CARVE_OUT];
+  manifest.memory = [
+    {
+      name: "mram_main",
+      source: "som_preset",
+      kind: "flash",
+      status: "ok",
+      base: 0x80540000,
+    },
+  ];
+  assert.deepEqual(buildMemoryView(manifest).conflicts, []);
+});
+
+test("outside_region is not emitted for a duplicated region name", () => {
+  const manifest = blockedSample();
+  manifest.ipc = [RESOLVED_CARVE_OUT];
+  // Deliberately SMALLER than the carve-out (0x40000): if the duplicate
+  // refusal were missing or buggy and this join picked either row anyway,
+  // the carve-out would overrun it and the (wrong) finding WOULD fire —
+  // unlike a same-size duplicate, which would pass this test whether or
+  // not duplicates are actually refused.
+  manifest.memory = [
+    {
+      name: "mram_main",
+      source: "som_preset",
+      kind: "flash",
+      status: "ok",
+      base: 0x80540000,
+      size_bytes: 0x20000,
+    },
+    {
+      name: "mram_main",
+      source: "som_preset",
+      kind: "flash",
+      status: "ok",
+      base: 0x80540000,
+      size_bytes: 0x20000,
+    },
+  ];
+  assert.deepEqual(buildMemoryView(manifest).conflicts, []);
+});
+
+test("outside_region is not emitted when the carve-out's region name matches no row", () => {
+  // A `memory[]` pane that is PRESENT but simply never names "mram_main" —
+  // distinct from an absent/empty pane, which is a different case this
+  // finding must also refuse (there being nothing to compare against
+  // either way, but for a different reason: no pane at all, vs. a pane
+  // that resolves other regions and just not this one).
+  const manifest = blockedSample();
+  manifest.ipc = [RESOLVED_CARVE_OUT];
+  manifest.memory = [
+    {
+      name: "other",
+      source: "som_preset",
+      kind: "flash",
+      status: "ok",
+      base: 0x80540000,
+      size_bytes: 0x20000,
+    },
+  ];
+  assert.deepEqual(buildMemoryView(manifest).conflicts, []);
+});
+
+test("outside_region is not emitted for an empty memory[] pane", () => {
+  const manifest = blockedSample();
+  manifest.ipc = [RESOLVED_CARVE_OUT];
+  manifest.memory = [];
+  assert.deepEqual(buildMemoryView(manifest).conflicts, []);
+});
+
+test("outside_region is not emitted for a TRULY absent memory[] pane", () => {
+  // Distinct from the empty-array case above: `blockedSample()` sets no
+  // `memory` key at all, so `manifest.memory` is `undefined` here, not
+  // `[]` — the two are handled by the same early-out in `regions()`, but
+  // this pins that "absent" and "empty" are both refused, not just one.
+  const manifest = blockedSample();
+  manifest.ipc = [RESOLVED_CARVE_OUT];
+  assert.deepEqual(buildMemoryView(manifest).conflicts, []);
+});

@@ -39,6 +39,10 @@ const CONFLICT_TITLE: Record<MemoryConflict["kind"], string> = {
   overlap: "share addresses",
   covers_load_address: "covers an image load address",
   device_overlap: "overlap inside one flash device",
+  // Never actually looked up: OutsideRegionNotice (below) owns this kind's
+  // rendering and Conflicts never receives one. Present only because
+  // Record<MemoryConflict["kind"], string> requires every member.
+  outside_region: "lands outside the region it names",
 };
 
 /** One placed extent, with everything the manifest said about it. */
@@ -131,6 +135,43 @@ function Conflicts({ conflicts }: { conflicts: MemoryConflict[] }) {
   );
 }
 
+/**
+ * `outside_region` findings, rendered separately from `Conflicts` above.
+ *
+ * `Conflicts`' heading ("One extent lands on another") and its row
+ * (`{first} · {second}`) are a COLLISION framing: two things sharing an
+ * address. A carve-out that overruns the region it names is a different
+ * shape of problem — the manifest's OWN numbers disagreeing with each
+ * other — and reusing the collision heading here would claim something
+ * false: nothing else occupies the space this carve-out spilled into.
+ */
+function OutsideRegionNotice({ findings }: { findings: MemoryConflict[] }) {
+  if (findings.length === 0) return null;
+  return (
+    <div className={styles.conflicts} role="alert">
+      <p className={styles.conflictsTitle}>
+        {findings.length === 1
+          ? "The manifest's own numbers disagree"
+          : `${findings.length} extents disagree with the region they name`}
+      </p>
+      <ul className={styles.conflictList}>
+        {findings.map((f) => (
+          <li key={f.id} className={styles.conflictRow}>
+            <span className={styles.rowName}>
+              {f.first}&rsquo;s extent is not inside region {f.second}
+            </span>
+            <code className={styles.addr}>
+              {f.from === f.to
+                ? formatAddress(f.from)
+                : `${formatAddress(f.from)} – ${formatAddress(f.to)}`}
+            </code>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function MemoryRegions({
   memory,
   sizes,
@@ -148,7 +189,12 @@ export function MemoryRegions({
 
   return (
     <div className={styles.root}>
-      <Conflicts conflicts={memory.conflicts} />
+      <Conflicts
+        conflicts={memory.conflicts.filter((c) => c.kind !== "outside_region")}
+      />
+      <OutsideRegionNotice
+        findings={memory.conflicts.filter((c) => c.kind === "outside_region")}
+      />
 
       {placed.length === 0 && deviceRelative.length === 0 ? (
         <p className={styles.empty}>

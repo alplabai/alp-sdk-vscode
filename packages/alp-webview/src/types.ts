@@ -949,7 +949,8 @@ export interface MemoryRegion {
 export type MemoryConflictKind =
   | "overlap"
   | "covers_load_address"
-  | "device_overlap";
+  | "device_overlap"
+  | "outside_region";
 
 export interface MemoryConflict {
   id: string;

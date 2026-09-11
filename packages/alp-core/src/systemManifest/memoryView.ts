@@ -265,11 +265,16 @@ export function authorityClassOf(
  *                           allocation landing on top of something already
  *                           living there, with nothing failing at build time
  *  - `device_overlap`       two partitions overlap inside one flash device
+ *  - `outside_region`       a resolved carve-out's extent is not contained
+ *                           in the one resolved region its `carve_out_region`
+ *                           names — the manifest's own numbers disagreeing,
+ *                           not a collision
  */
 export type MemoryConflictKind =
   | "overlap"
   | "covers_load_address"
-  | "device_overlap";
+  | "device_overlap"
+  | "outside_region";
 
 /** Two extents the manifest placed on top of each other. */
 export interface MemoryConflict {
@@ -651,6 +656,63 @@ function findConflicts(spans: MemorySpan[]): MemoryConflict[] {
   return out;
 }
 
+/** A region's own absolute extent, or null when it does not resolve one —
+ *  the same half-open shape `extentOf` gives a span. */
+function regionExtentOf(
+  region: MemoryRegion,
+): { lo: number; hi: number } | null {
+  if (region.status !== "ok" || region.base === null) return null;
+  if (region.sizeBytes === null || region.sizeBytes <= 0) return null;
+  return { lo: region.base, hi: region.base + region.sizeBytes };
+}
+
+/**
+ * The one finding that reads both `spans` and `regions`: a resolved
+ * carve-out whose `carve_out_region` names exactly one resolved region,
+ * and whose extent that region does not fully contain. Worded as the
+ * manifest's own numbers disagreeing, not as a collision — rendered by
+ * the webview's `OutsideRegionNotice`, its own component with its own
+ * heading, never through `Conflicts`/`CONFLICT_TITLE`'s collision framing.
+ *
+ * "Exactly one": a region name shared by two or more rows is ambiguous, so
+ * this join refuses it rather than guessing which one the carve-out meant.
+ * Never emitted for an unresolved, sizeless or absent region either — there
+ * is nothing to compare the carve-out's extent against.
+ */
+function findOutsideRegion(
+  spans: MemorySpan[],
+  regionRows: MemoryRegion[],
+): MemoryConflict[] {
+  const byName = new Map<string, MemoryRegion[]>();
+  for (const region of regionRows) {
+    byName.set(region.name, [...(byName.get(region.name) ?? []), region]);
+  }
+
+  const out: MemoryConflict[] = [];
+  for (const span of spans) {
+    if (span.kind !== "carve_out" || span.region === null) continue;
+    const extent = extentOf(span);
+    if (extent === null) continue;
+
+    const candidates = byName.get(span.region);
+    if (!candidates || candidates.length !== 1) continue;
+    const regionExtent = regionExtentOf(candidates[0]);
+    if (regionExtent === null) continue;
+    if (extent.lo >= regionExtent.lo && extent.hi <= regionExtent.hi) continue;
+
+    out.push({
+      id: `outside_region:${span.label}:${candidates[0].name}`,
+      kind: "outside_region",
+      first: span.label,
+      second: candidates[0].name,
+      from: extent.lo,
+      to: extent.hi,
+      device: null,
+    });
+  }
+  return out;
+}
+
 /** The regions and devices the manifest names, each with what landed in it. */
 function findApertures(spans: MemorySpan[]): MemoryAperture[] {
   const out = new Map<string, MemoryAperture>();
@@ -716,7 +778,10 @@ export function buildMemoryView(manifest: SystemManifest): MemoryView {
     spans,
     unresolved: [...ipc.unresolved, ...storage.unresolved],
     apertures: findApertures(spans),
-    conflicts: findConflicts(spans),
+    conflicts: [
+      ...findConflicts(spans),
+      ...findOutsideRegion(spans, memoryRegions),
+    ],
     ...(memoryRegions.length > 0 ? { regions: memoryRegions } : {}),
   };
 }
