@@ -172,13 +172,20 @@
    on a pressed button the ring paints in the colour it already sits on: gone,
    not merely dim. "True scale" starts pressed, so this is the very first Tab
    stop into the panel, landing on a control with no visible focus at all.
-   `--accent-fg` is `--accent`'s own paired foreground token — chosen to read
-   against it already — so the ring reuses that same contrast guarantee
-   instead of asserting a new one. The offset is pulled in further than the
-   unpressed ring's `-1px`: a hairline ring at only 1px inside a saturated
-   fill is itself easy to lose, where 3px reads as a deliberate frame. */
+   `--accent-fg` is NOT the fix: it is `--vscode-button-foreground`, paired in
+   the theme with `--vscode-button-background` (the Workbench Action fill),
+   not with `--accent`/focusBorder — it carries no contrast guarantee against
+   THIS fill. In Default High Contrast (dark) it measures 2.57:1 against the
+   pressed `#f38518`, below WCAG 2.2 SC 1.4.11's 3:1 floor, on the very first
+   Tab stop. `--surface-bg` (Panel Ground, DESIGN.md) is the fix: it is the
+   panel's own background, which this saturated fill was always meant to sit
+   on top of, so it reads against every accent the theme can produce rather
+   than assuming one pairing — 8.18:1 in HC dark, comfortably above 3:1 in
+   light and dark too. The offset is pulled in further than the unpressed
+   ring's `-1px`: a hairline ring at only 1px inside a saturated fill is
+   itself easy to lose, where 3px reads as a deliberate frame. */
 .scaleBtn[aria-pressed="true"]:focus-visible {
-  outline-color: var(--accent-fg);
+  outline-color: var(--surface-bg);
   outline-offset: -3px;
 }
 
