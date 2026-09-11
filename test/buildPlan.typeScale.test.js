@@ -4,12 +4,13 @@
 //
 // THE COMPLAINT was that this panel's fonts read too small. THE REASON it
 // needs a gate rather than a review habit is that the scale it draws from is
-// FIXED IN PRACTICE. `packages/alp-webview/src/styles/tokens.css` anchors every
-// step to `--vscode-font-size`, which is VS Code's WORKBENCH font size — not
-// `editor.fontSize`, which is a different variable (`--vscode-editor-font-size`)
-// that nothing in this package reads. The webview injects no font variable of
-// its own, so the host's value is the only input and it is 13px on practically
-// every install:
+// FIXED. `packages/alp-webview/src/styles/tokens.css` anchors every step to
+// `--vscode-font-size`, which VS Code injects into every webview as a constant
+// 13px, tied to no setting (`webview/browser/themeing.ts`) — not
+// `editor.fontSize`, which feeds a different variable
+// (`--vscode-editor-font-size`) that nothing in this package reads. The
+// webview injects no font variable of its own, so the host's fixed value is
+// the only input:
 //
 //   xs 11px · sm 12px · base 13px · md 14px · lg 16px · xl 20px
 //

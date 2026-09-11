@@ -131,11 +131,12 @@
 
 /* ── Typography scale ───────────────────────────────────────────────────── */
 /*
- * Anchored to `--vscode-font-size`, which is the WORKBENCH UI font size VS Code
- * injects into every webview — NOT the editor font, which is a different
- * variable (`--vscode-editor-font-size`) that nothing here reads. We inject no
- * font variable of our own, so the host's value is the only input, and it is
- * 13px on practically every install:
+ * Anchored to `--vscode-font-size`, which VS Code injects into every webview
+ * as a CONSTANT 13px, tied to no user setting
+ * (`src/vs/workbench/contrib/webview/browser/themeing.ts`) — NOT the editor
+ * font: `editor.fontSize` feeds a different variable,
+ * `--vscode-editor-font-size`, that nothing here reads. We inject no font
+ * variable of our own, so the host's fixed value is the only input:
  *
  *   xs 11 · sm 12 · base 13 · md 14 · lg 16 · xl 20
  *
@@ -148,11 +149,16 @@
  */
 :root {
   /* 11px. Chrome only — uppercase tracked badges and pills that carry their own
-   * background and weight. Never prose, values, hex, paths or reasons. */
+   * background and weight. Guidance, not a gate: prose, values, hex, paths and
+   * reasons should read at `base` or above. `NewProjectFlowView`'s
+   * `.previewFilePath` is a known exception outside this panel, left at `xs`
+   * as-is rather than migrated here. */
   --font-size-xs: calc(var(--vscode-font-size, 13px) - 2px);
   /* 12px. Dense secondary chrome: meta rows, helper text beside a control.
-   * NOT the token for mono values, hex or paths — monospace is a FAMILY
-   * decision and is never on its own a reason to drop a size. */
+   * Guidance, not a gate: monospace is a FAMILY decision and is never on its
+   * own a reason to drop a size, so a mono value read character by character
+   * should still sit at `base`. `ModelsView`'s `.mono` and `.log` are known
+   * exceptions outside this panel, kept at `sm` as-is. */
   --font-size-sm: calc(var(--vscode-font-size, 13px) - 1px);
   /* 13px. The default for anything read rather than glanced at — body, labels,
    * descriptions, and equally the hex addresses, region names, commands, paths,

@@ -34,8 +34,9 @@ import styles from "./MemoryChart.module.css";
  * RAIL_X IS A GUTTER, NOT A MARGIN. The left axis labels are anchored `end` at
  * `RAIL_X - 8`, and an address is at least 10 mono glyphs at ~0.6em each, so
  * the gutter has to be at least 6x the tick label's font size. At the panel's
- * reading size (`--font-size-base`, 13px at the workbench default) that is 78
- * units, which the original 70-unit gutter could not hold — which is the whole
+ * reading size (`--font-size-base`, 13px — a constant VS Code injects into
+ * every webview, tied to no setting) that is 78 units, which the original
+ * 70-unit gutter could not hold — which is the whole
  * reason those labels used to be 10px.
  *
  * AT LEAST 10, because the pad in `formatAddress` is a FLOOR: it pads to eight
@@ -73,7 +74,13 @@ import styles from "./MemoryChart.module.css";
  * the aperture strip, 8 to the right-hand addresses), and all of it is still
  * INSIDE the viewBox — the clipping above happens at the BOX's edge, not the
  * rail's — so an 18-glyph name has margin, a 19-glyph one spills into that
- * white, and a 20-glyph one overprints the aperture bar rather than being cut.
+ * white, and a 20-glyph one overprints the aperture bar rather than being cut
+ * — true on the LEFT rail, whose neighbour to the right is that bar. The
+ * right (detail) rail runs the same 148-unit-wide label, but has no aperture
+ * bar beside it; its 20-glyph label instead runs into the right-hand
+ * addresses: `DETAIL_X + 5` plus 20 glyphs at ~7.8 units each ends at 479,
+ * and axis labels on that side start at `DETAIL_X + DETAIL_W + 8` = 474 — 5
+ * units of overprint onto the addresses themselves, not the white beside them.
  * Widening the rails to buy glyphs nobody has spent is not free either: the
  * drawing now renders at its intrinsic size and its column scrolls, so every
  * unit added to W is a unit of horizontal scrolling for everyone.
@@ -100,9 +107,11 @@ const CAPTION_Y = 282;
  * constant in this module can see. Reading it here would mean
  * `getComputedStyle` on a mounted <text> node: a layout read on every render,
  * answering nothing on the first paint, to serve a filter that runs before
- * there is a node to measure. So it is fitted instead — base is 13px at the
- * workbench default, an address label's ink is ~0.7em ≈ 9 units of that (hex
- * digits carry no descender), and 14 leaves ~5 units of white between two
+ * there is a node to measure. So it is fitted instead — base is 13px, a
+ * constant VS Code ties to no setting (not `editor.fontSize`, which feeds
+ * `--vscode-editor-font-size` instead) — an address label's ink is ~0.7em ≈ 9
+ * units of that (hex digits carry no descender), and 14 leaves ~5 units of
+ * white between two
  * marks. It was 11 while these labels were 10px.
  *
  * REVISIT IT WHENEVER `.tickLabel`'s TOKEN MOVES: nothing here follows the
@@ -112,30 +121,40 @@ const CAPTION_Y = 282;
  * each other, on the one screen whose numbers are read digit by digit. On the
  * line-box model (~1.1x the font size) 14 stops covering a label once base
  * resolves past ~12.7px, so it is already fitted to the ink rather than to the
- * box.
+ * box. BAND_LABEL_DY and LINE_LABEL_DY below are pinned separately, at the
+ * same base size, and do not move when this constant is revised — revise all
+ * three together by hand.
  */
 const TICK_LABEL_H = 14;
 
 /**
  * Where a label's baseline sits relative to the edge it names.
  *
- * Both are fractions of TICK_LABEL_H, and deliberately so — not because it is
- * a line box, which it is not: it is the ink-fitted collision floor above,
- * ~9 units of ink plus ~5 of white. It is simply the one vertical measure this
- * module has that is pinned to the type, so deriving from it is what makes a
- * type change carry these two with it instead of leaving them behind. They
- * were bare `+12` and `-4`, fitted by eye to 10px text. Neither BROKE at base
- * (13px): a capital needs ~0.73em of ascent, ~9.5 units, and +12 still cleared
- * the band's top edge by ~2.5. What it lost was the optical gap — the label sat
+ * PINNED, not computed — a deliberate change from the original shape, not the
+ * original shape itself. Both were first written as
+ * `Math.round(TICK_LABEL_H * 1.1)` and `-Math.round(TICK_LABEL_H * 0.35)`, on
+ * the reasoning below; review found that reasoning did not hold as a standing
+ * invariant — nothing tied the 1.1/0.35 ratio to TICK_LABEL_H's own
+ * definition, so the "formula" was two independent numbers wearing a shared
+ * multiplier, not a real derivation. Pinning them here is what TICK_LABEL_H's
+ * own docblock above now asks for explicitly: revise all three by hand
+ * together.
+ *
+ * The values themselves are unchanged and still reasoned from TICK_LABEL_H's
+ * ink-fitted collision floor, ~9 units of ink plus ~5 of white — the one
+ * vertical measure this module has that is pinned to the type. They were bare
+ * `+12` and `-4`, fitted by eye to 10px text. Neither BROKE at base (13px): a
+ * capital needs ~0.73em of ascent, ~9.5 units, and +12 still cleared the
+ * band's top edge by ~2.5. What it lost was the optical gap — the label sat
  * visibly tighter under the edge than it had at 10px, where 12 cleared ~7.3 by
  * ~4.7. These constants buy that gap back and tie it to the type.
  *
- *  - BAND_LABEL_DY (1.1 floors -> 15) drops the baseline INSIDE the band: it
- *    clears the ~9.5-unit ascent by ~5.5, a little more than the ~4.7 the old
- *    +12 gave 10px text rather than the same.
- *  - LINE_LABEL_DY (0.35 of a floor -> -5) lifts it ABOVE a rule — the
- *    marker's line, and the hover readout's, which is the same case — by a
- *    descender (~0.18em, ~2.3 units) plus a gap, so a `p` in a name never
+ *  - BAND_LABEL_DY (15, originally 1.1 floors) drops the baseline INSIDE the
+ *    band: it clears the ~9.5-unit ascent by ~5.5, a little more than the
+ *    ~4.7 the old +12 gave 10px text rather than the same.
+ *  - LINE_LABEL_DY (-5, originally 0.35 of a floor) lifts it ABOVE a rule —
+ *    the marker's line, and the hover readout's, which is the same case — by
+ *    a descender (~0.18em, ~2.3 units) plus a gap, so a `p` in a name never
  *    touches the line it belongs to.
  *
  * A band shorter than its own label still overflows it, and the overflow is
@@ -144,9 +163,20 @@ const TICK_LABEL_H = 14;
  * above takes only what falls off the BOX's inline-start edge. That is the
  * same trade the rails make horizontally — a name printed over its neighbour
  * is ugly, a name cut short is a different name.
+ *
+ * THE LIMITS THIS BUYS, at base (13px labels): in equalized mode a band's own
+ * height must clear BAND_LABEL_DY plus a descender (~17.3 units) to keep the
+ * label's own descender inside the band it names, which holds up to 12 spans
+ * in the window (15, at the old 10px labels); past 19 spans (25, at 10px) the
+ * gap between two bands' baselines drops below one label's own ink height and
+ * neighbouring labels print through each other. In true-scale mode the same
+ * offset bites at the window's low end instead: a band 1-3 units tall sitting
+ * at the very bottom still takes the full BAND_LABEL_DY drop, which pushes a
+ * label of 4 or more glyphs 1.1-2.1 units into the "true scale" caption text
+ * below the rail.
  */
-const BAND_LABEL_DY = Math.round(TICK_LABEL_H * 1.1);
-const LINE_LABEL_DY = -Math.round(TICK_LABEL_H * 0.35);
+const BAND_LABEL_DY = 15;
+const LINE_LABEL_DY = -5;
 
 /**
  * Magnification of the detail rail, and so the fraction of the window it covers.
