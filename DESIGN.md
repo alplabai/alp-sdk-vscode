@@ -301,9 +301,9 @@ the largest text in the system is seven pixels bigger than the smallest.
   character by character, mono or not, to `base` or above, and that is the
   standard for new work.
 - **Micro** (`-2px` — 11px): badges and micro-metadata only.
-  `NewProjectFlowView`'s `.previewFilePath` belongs here, not in Label — a
-  monospace path read character by character, and a known, un-migrated
-  exception to that same standard.
+  `NewProjectFlowView`'s `.previewFilePath` sits at this size — a monospace
+  path read character by character, and a known, un-migrated exception to
+  that same standard.
 
 ### Named Rules
 

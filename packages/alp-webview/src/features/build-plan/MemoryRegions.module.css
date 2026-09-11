@@ -67,28 +67,30 @@
 }
 
 /* THE CHART'S OWN SCROLLER, wrapping only `<MemoryChart>` (MemoryRegions.tsx)
-   — not the scale toggle above it, not the legend below. `flex: none` keeps
-   this box from being squashed in HEIGHT by `.mapSide`'s column layout — a
-   squashed height would rescale the drawing's type exactly as the paragraph
-   above describes, since `preserveAspectRatio` defaults to `meet`. The SVG
-   itself carries no `flex: none` of its own any more (MemoryChart.module.css):
-   its parent here is a plain block box, not a flex container, so a `flex`
-   property stated on the SVG would be inert. This rule is the flex item in
-   the chain, and it is the one that has to hold the guarantee.
+   — not the scale toggle above it, not the legend below. `flex: none` stops
+   this box being squashed in HEIGHT by `.mapSide`'s column layout, which
+   would otherwise turn it into a short vertical scroller rather than a
+   horizontal one. The SVG itself carries no `flex` property of its own
+   (MemoryChart.module.css): its parent here is a plain block box, not a flex
+   container, so a `flex` property stated on the SVG would be inert. This
+   rule is the flex item in the chain, and it is the one that has to hold the
+   guarantee.
 
-   `min-width: 0` is NOT what makes this box narrower than the SVG it holds.
+   This box is NOT given its own `min-width: 0` — a cross-axis item's
+   automatic minimum is already 0, so an explicit one here would be inert.
    `.chartScroll` is a flex item of `.mapSide`'s COLUMN, so this box's width
    is the CROSS axis, not the main one — the flexbox rule that zeroes an
    item's automatic minimum size when its overflow is not `visible` applies
-   only to a flex item's MAIN axis (here, height), never to its cross axis.
-   What actually narrows this box is cross-axis STRETCH: with no width of its
+   only to a flex item's MAIN axis (here, height), never to its cross axis;
+   the cross axis has no content-based minimum to zero out in the first
+   place. What narrows this box is cross-axis STRETCH: with no width of its
    own stated, it simply takes whatever width `.mapSide` hands it, which
    `.mapSide`'s own `min-width: 0` (above) has already let shrink to nothing.
    `overflow-x: auto` does not size anything either — it only turns what is
    left over, the SVG still wider than this now-narrow box, into a scrollbar
-   rather than a silent, unreachable overflow. `min-width: 0` here is belt and
-   braces against a future change to how this box gets its width (an explicit
-   width, a non-stretch `align-self`), not against how it gets it today.
+   rather than a silent, unreachable overflow. A future non-stretch
+   `align-self` on this box would size it to its own content instead — the
+   SVG's 578px — with or without a `min-width` stated.
 
    Two things this inherits from the mechanism it replaces. `overflow-x: auto`
    computes `overflow-y` to `auto` too, harmless only because this box is
@@ -110,7 +112,6 @@
    legend — they are outside the box that scrolls. */
 .chartScroll {
   flex: none;
-  min-width: 0;
   overflow-x: auto;
 }
 
@@ -177,13 +178,17 @@
    not with `--accent`/focusBorder — it carries no contrast guarantee against
    THIS fill. In Default High Contrast (dark) it measures 2.57:1 against the
    pressed `#f38518`, below WCAG 2.2 SC 1.4.11's 3:1 floor, on the very first
-   Tab stop. `--surface-bg` (Panel Ground, DESIGN.md) is the fix: it is the
-   panel's own background, which this saturated fill was always meant to sit
-   on top of, so it reads against every accent the theme can produce rather
-   than assuming one pairing — 8.18:1 in HC dark, comfortably above 3:1 in
-   light and dark too. The offset is pulled in further than the unpressed
-   ring's `-1px`: a hairline ring at only 1px inside a saturated fill is
-   itself easy to lose, where 3px reads as a deliberate frame. */
+   Tab stop. `--surface-bg` (Panel Ground, DESIGN.md) is the fix: the ring
+   takes the panel's own ground instead, which is the same colour pair the
+   theme already uses for its OWN focus ring drawn on that same ground
+   elsewhere in the workbench — so this ring is exactly as visible as that
+   one, no more and no less, not a guarantee against every accent. Measured
+   in the default themes: 3.92:1 Dark Modern, 5.94:1 Light Modern, 8.18:1
+   High Contrast Dark, 5.47:1 High Contrast Light. A theme whose own focus
+   ring falls under 3:1 against this ground stays under it here too. The
+   offset is pulled in further than the unpressed ring's `-1px`: a hairline
+   ring at only 1px inside a saturated fill is itself easy to lose, where
+   3px reads as a deliberate frame. */
 .scaleBtn[aria-pressed="true"]:focus-visible {
   outline-color: var(--surface-bg);
   outline-offset: -3px;

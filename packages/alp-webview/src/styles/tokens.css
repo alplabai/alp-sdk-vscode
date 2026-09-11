@@ -151,9 +151,10 @@
   /* 11px. Chrome only — DESIGN.md's Micro register: badges and
    * micro-metadata, not only the uppercase tracked pills that carry their own
    * background and weight. Build Plan's `.kind` (a tinted pill with no
-   * uppercase, tracking or weight) and `.manifestAge` (no background,
-   * uppercase, or weight at all — plain text riding a section title's line)
-   * are both chrome at `xs` without fitting that narrower shape. Guidance,
+   * uppercase, tracking or weight of its own) is chrome at `xs` without
+   * fitting that narrower shape. `.manifestAge` declares none of them
+   * either, but inherits uppercase, 0.04em tracking and weight 600 from the
+   * `.sectionTitle` line it sits on; it lacks only a background. Guidance,
    * not a gate: prose, values, hex, paths and reasons should read at `base`
    * or above. `NewProjectFlowView`'s `.previewFilePath` is a known exception
    * outside this panel, left at `xs` as-is rather than migrated here. */

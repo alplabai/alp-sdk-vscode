@@ -63,21 +63,26 @@
  * `.fileRow` are both base, and neither's final class is on the type-scale
  * gate's CHROME allowlist (test/buildPlan.typeScale.test.js). Colour is a
  * third axis and is decided elsewhere — the board.yaml path's is
- * `.boardYaml` below, a generated path's is whatever `.fileToggle` (default
- * or `:hover`) is currently showing; `color: inherit` below only forwards
- * that decision past the host's own `code` colour, it does not make one of
- * its own. */
+ * `.boardYaml` below, a resting generated path's is `.fileToggle`'s own
+ * --text-secondary; `color: inherit` below only forwards those two past the
+ * host's own `code` colour. A hovered generated path never depended on this
+ * rule: `.fileToggle:hover .filePath` (below) sets colour on the <code>
+ * element directly, at higher specificity than the host's. */
 .boardYaml code,
 .fileList code {
   font-family: var(--vscode-font-family, system-ui, sans-serif);
   /* VS Code's default webview stylesheet (prepended ahead of this one) sets
-   * `code { color: var(--vscode-textPreformat-foreground) }`, and neither
-   * `.boardYaml` nor `.fileList` set `color` on this element to beat it — so
-   * without this, the board.yaml path renders in textPreformat.foreground
-   * (near-invisible against the panel background in High Contrast Light)
-   * instead of `.boardYaml`'s --text-primary, and a generated path never
-   * picks up `.fileToggle:hover .filePath`'s colour either. `inherit` hands
-   * both back to the colour the surrounding element already decided on. */
+   * `code { color: var(--vscode-textPreformat-foreground) }`, which beats
+   * inheritance on specificity alone. Without `inherit` here, the board.yaml
+   * path loses `.boardYaml`'s --text-primary and a RESTING generated path
+   * loses `.fileToggle`'s --text-secondary, both rendering in
+   * textPreformat.foreground instead — near-invisible against its own
+   * textCodeBlock background (#F2F2F2 in High Contrast Light). A hovered
+   * generated path is unaffected either way: `.fileToggle:hover .filePath`
+   * (below) sets colour on this <code> element directly, and that selector's
+   * specificity already beats the host's `code {}` rule with or without this
+   * declaration. `inherit` hands the other two cases back to the colour the
+   * surrounding element already decided on. */
   color: inherit;
 }
 
@@ -110,27 +115,22 @@
   color: var(--text-secondary);
 }
 
-/* THE COLOUR MOVED, from secondary to primary — a real visual change, not the
- * old behaviour written out. The <code> inside carried `color:
- * var(--text-mono, var(--text-primary))`, which is invalid at computed-value
- * time (`--text-mono` is a FONT STACK, and an invalid value on an inherited
- * property computes to `inherit`), so the path took this element's
- * --text-secondary and the primary fallback arm never ran. Now that the path
- * is read at base it is provenance — the file a person opens to change
- * anything the panel is showing — so primary is the honest colour for it.
+/* Primary, not secondary: the board.yaml path is provenance — the file a
+ * person opens to change anything the panel is showing — so it reads at the
+ * same weight as `.sku` and the other primary facts in this header, not as
+ * muted metadata.
  *
- * Removing that invalid declaration was not the whole fix. VS Code's own
- * default webview stylesheet (prepended ahead of this file) also sets
- * `code { color: var(--vscode-textPreformat-foreground) }`, and a rule that
- * targets the <code> element directly beats inheritance from this div no
- * matter what this div's own colour computes to. `.boardYaml code,
- * .fileList code` (above) has to assert `color: inherit` right back, or this
- * rule's primary never reaches the text it is meant to colour.
- *
- * It is still declared here rather than on the <code>, because the two are
- * the same text: this <div> wraps exactly one <code> holding the whole path,
- * and `inherit` on the inner element only forwards this decision — it is not
- * a second, narrower one. */
+ * Declared here rather than on the inner <code>, because the two are the
+ * same text: this <div> wraps exactly one <code> holding the whole path, and
+ * `inherit` on the inner element (`.boardYaml code, .fileList code`, above)
+ * only forwards this decision — it is not a second, narrower one. That
+ * forwarding is load-bearing: VS Code's own default webview stylesheet
+ * (prepended ahead of this file) sets
+ * `code { color: var(--vscode-textPreformat-foreground) }`, which targets the
+ * <code> element directly and beats inheritance from this div no matter what
+ * this div's own colour computes to, so `.boardYaml code, .fileList code`
+ * has to assert `color: inherit` right back or this rule's primary never
+ * reaches the text it is meant to colour. */
 .boardYaml {
   font-size: var(--font-size-base);
   color: var(--text-primary);
@@ -343,9 +343,9 @@
 .fileContent {
   margin: var(--space-1) 0 var(--space-2) var(--space-4);
   padding: var(--space-2) var(--space-3);
-  /* 240px, not the old 220px: the preview shows the same ~12 lines it always
-   * did: 220 / (12px * 1.45) matches 240 / (13px * 1.45). Shrinking the visible
-   * line count is not the trade this size bump was asking for. */
+  /* 240px holds the same ~12 lines this preview has always shown at base
+   * type: 240 / (13px * 1.45) matches 220 / (12px * 1.45), so the taller box
+   * tracks the larger type rather than showing more or fewer lines. */
   max-height: 240px;
   overflow: auto;
   /* Not a proportional-text fix: the UA stylesheet's `pre { font-family:
@@ -618,10 +618,11 @@
 
 /* base, not xs — the tint does not make it chrome. It sets a background and
    nothing else: no text-transform, no letter-spacing, no font-weight, so it
-   fails all three tests for the label register that `.backend`,
-   `.manifestBadge` and `.manifestSubTitle` pass. What it carries is verbatim
-   manifest data: `link.name`, `link.kind`, the endpoint pair, `link.status`
-   and `link.reason` for IPC, and `mcu.name` + `mcu.chip` for a helper MCU.
+   fails all three of the uppercase / tracking / weight tests that `.backend`
+   and `.manifestBadge` (Micro) and `.manifestSubTitle` (Label) all pass.
+   What it carries is verbatim manifest data: `link.name`, `link.kind`, the
+   endpoint pair, `link.status` and `link.reason` for IPC, and `mcu.name` +
+   `mcu.chip` for a helper MCU.
    `mcu.chip` is a PART NUMBER, and a part number misread by one character is
    different silicon. The mono family and the tinted shell stay — those are
    what make it read as a chip. */

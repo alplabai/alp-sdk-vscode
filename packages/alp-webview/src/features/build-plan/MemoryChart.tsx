@@ -35,9 +35,7 @@ import styles from "./MemoryChart.module.css";
  * `RAIL_X - 8`, and an address is at least 10 mono glyphs at ~0.6em each, so
  * the gutter has to be at least 6x the tick label's font size. At the panel's
  * reading size (`--font-size-base`, 13px — a constant VS Code injects into
- * every webview, tied to no setting) that is 78 units, which the original
- * 70-unit gutter could not hold — which is the whole
- * reason those labels used to be 10px.
+ * every webview, tied to no setting) that floor is 78 units.
  *
  * AT LEAST 10, because the pad in `formatAddress` is a FLOOR: it pads to eight
  * hex digits and does not truncate to them, so an address past 2^32 prints 11
@@ -56,12 +54,12 @@ import styles from "./MemoryChart.module.css";
  * back as 0x0…/0x8…, all ten glyphs — and a 64-bit A-core map is where it
  * would; widening the gutter is that change's job, not this one's.
  *
- * So RAIL_X moved 78 -> 96, making the gutter 88 units (good to ~14.6px), and
- * APERTURE_X, DETAIL_X and W moved by the same 18 units so that every gap to
- * the right of the rail is the one it already was: 6 units from the rail's
- * right edge to the first aperture bar, a 68-unit strip that still holds three
- * bars at `APERTURE_W + 14` pitch, and 104 units for the right-hand labels to
- * run into.
+ * RAIL_X is 96, an 88-unit gutter (good to ~14.6px) that clears the 78-unit
+ * floor above with margin. APERTURE_X, DETAIL_X and W are offset from it by
+ * the same fixed amounts, so every gap to the right of the rail is the one
+ * it always was: 6 units from the rail's right edge to the first aperture
+ * bar, a 68-unit strip that holds three bars at `APERTURE_W + 14` pitch, and
+ * 104 units for the right-hand labels to run into.
  *
  * RAIL_W AND DETAIL_W DID NOT MOVE, and the names that run inside them are why
  * that is a decision and not an oversight. A band label starts at `x + 5` and
@@ -130,22 +128,12 @@ const TICK_LABEL_H = 14;
 /**
  * Where a label's baseline sits relative to the edge it names.
  *
- * PINNED, not computed. They were bare `+12` and `-4`, fitted by eye to 10px
- * text, and stay bare now — no formula ties them to TICK_LABEL_H, so revising
- * TICK_LABEL_H does not move either one on its own. Revise all three by hand
- * together, which is exactly what TICK_LABEL_H's own docblock above asks for.
+ * PINNED, not computed, fitted by hand to 13px text. No formula ties either
+ * one to TICK_LABEL_H or to anything else in this module — revise all three
+ * (this pair plus TICK_LABEL_H above) together by hand, and only together.
  *
- * The values are reasoned from TICK_LABEL_H's ink-fitted collision floor, ~9
- * units of ink plus ~5 of white — the one vertical measure this module has
- * that is pinned to the type. Neither BROKE at base (13px): a capital needs
- * ~0.73em of ascent, ~9.5 units, and +12 still cleared the band's top edge by
- * ~2.5. What it lost was the optical gap — the label sat visibly tighter
- * under the edge than it had at 10px, where 12 cleared ~7.3 by ~4.7. Fitting
- * new constants to 13px text is what buys that gap back.
- *
- *  - BAND_LABEL_DY (15) drops the baseline INSIDE the band: it clears the
- *    ~9.5-unit ascent by ~5.5, a little more than the ~4.7 the old +12 gave
- *    10px text.
+ *  - BAND_LABEL_DY (15) drops the baseline INSIDE the band: it clears a
+ *    capital's ~9.5-unit ascent by ~5.5.
  *  - LINE_LABEL_DY (-5) lifts it ABOVE a rule — the marker's line, and the
  *    hover readout's, which is the same case — by a descender (~0.18em, ~2.3
  *    units) plus a gap, so a `p` in a name never touches the line it belongs
@@ -161,13 +149,12 @@ const TICK_LABEL_H = 14;
  * THE LIMITS THIS BUYS, at base (13px labels): in equalized mode a band's own
  * height must clear BAND_LABEL_DY plus a descender (~17.3 units) to keep the
  * label's own descender inside the band it names, which holds up to 12 spans
- * in the window (15, at the old 10px labels); past 19 spans (25, at 10px) the
- * gap between two bands' baselines drops below one label's own ink height and
- * neighbouring labels print through each other. In true-scale mode the same
- * offset bites at the window's low end instead: a band 1-3 units tall sitting
- * at the very bottom still takes the full BAND_LABEL_DY drop, which pushes a
- * label of 4 or more glyphs 1.1-2.1 units into the "true scale" caption text
- * below the rail.
+ * in the window; past 19 spans the gap between two bands' baselines drops
+ * below one label's own ink height and neighbouring labels print through
+ * each other. In true-scale mode the same offset bites at the window's low
+ * end instead: a band 1-3 units tall sitting at the very bottom still takes
+ * the full BAND_LABEL_DY drop, which pushes a label of 4 or more glyphs
+ * 1.1-2.1 units into the "true scale" caption text below the rail.
  */
 const BAND_LABEL_DY = 15;
 const LINE_LABEL_DY = -5;
