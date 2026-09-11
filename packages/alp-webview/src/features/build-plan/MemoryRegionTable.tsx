@@ -154,18 +154,21 @@ export function MemoryRegionTable({
           // either is clicked. `isDuplicated` is computed above, from the
           // same `duplicatedNames` this file imports from regionWindow.
           const isSelected = selected === region.id && !isDuplicated;
-          // A sizeless row (base known, size unresolved — the F22 "size
-          // unresolved" state) still says so when its base alone is
-          // outside the window: the `>= window.hi` half is checked either
-          // way, and only the LOWER half needs the extent to know it fully
-          // clears `window.lo` versus merely starting before it.
+          // A region with a base but no resolved size is marked outside
+          // only when its base alone already clears `window.hi` — the
+          // upper half of the fully-resolved check below is unchanged. The
+          // LOWER half needs a real extent to know the region fully clears
+          // `window.lo` rather than merely starting before it, and a
+          // sizeless region has none: its true reach is unknown, so it is
+          // never claimed to be outside on the lower side — it could still
+          // extend into the window.
           const outside =
             window !== null &&
             region.base !== null &&
-            (region.base >= window.hi ||
-              (region.sizeBytes !== null
-                ? region.base + region.sizeBytes <= window.lo
-                : region.base < window.lo));
+            (region.sizeBytes !== null
+              ? region.base >= window.hi ||
+                region.base + region.sizeBytes <= window.lo
+              : region.base >= window.hi);
           return (
             // Keyed by index PLUS id: two duplicate-named rows share the
             // same `id` (`memory:<name>`) — `id` alone would collide as a
@@ -178,9 +181,18 @@ export function MemoryRegionTable({
               data-selected={isSelected || undefined}
               role="option"
               aria-selected={isSelected}
+              // A duplicate-named row can never SHOW as selected
+              // (`isSelected` above is refused the same way), so letting a
+              // click through would silently clear whatever span or region
+              // WAS selected for no visible effect. Inert instead: no
+              // `onSelect` call either way, and `aria-disabled` says so.
+              aria-disabled={isDuplicated || undefined}
               tabIndex={0}
-              onClick={() => onSelect(region.id)}
+              onClick={() => {
+                if (!isDuplicated) onSelect(region.id);
+              }}
               onKeyDown={(e) => {
+                if (isDuplicated) return;
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   onSelect(region.id);

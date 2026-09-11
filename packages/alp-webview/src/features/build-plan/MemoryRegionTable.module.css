@@ -74,13 +74,14 @@
 }
 
 /* The region's class column (flash / ram / "class not proven") — named
- * `.regionClass`, never `.kind`, because the Build Plan panel's type-scale
- * gate (test/buildPlan.typeScale.test.js) matches its CHROME allowlist by
- * FINAL CLASS across every panel module, and `.kind` is already on that
- * allowlist (MemoryRegions.module.css's own carve-out/partition/slot-image
- * chip) at xs/sm — this table's own reading-size column would collide
- * with that entry and fail "chrome stays below the reading size" the
- * moment both modules are walked together. */
+ * `.regionClass`, not `.kind`, because `MemoryRegions.module.css` already
+ * has a `.kind` rule for a DIFFERENT field with a different value domain: a
+ * SPAN's `kind` (`slot_image` / `carve_out` / `partition`), never a
+ * REGION's (`flash` / `ram` / unclassified). The type-scale gate
+ * (test/buildPlan.typeScale.test.js) matches its CHROME allowlist on file
+ * AND class together, so the two `.kind` rules would not actually collide
+ * there — this name is for a reader scanning both modules, not for the
+ * gate. */
 .regionClass {
   font-size: var(--font-size-base);
   color: var(--text-secondary);
