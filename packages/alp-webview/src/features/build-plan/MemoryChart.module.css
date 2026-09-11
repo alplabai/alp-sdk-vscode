@@ -253,10 +253,13 @@
 }
 
 /* The SoM's own region table, drawn as frames behind every band the
- * manifest pins (#484 phase 2). A stroke only, tinted by authority class —
- * never the six-colour series palette above, which stays with the spans:
- * a region wearing one of those six would read as a seventh extent
- * rather than the ground the others sit on. */
+ * manifest pins (#484 phase 2) — never the six-colour series palette
+ * above, which stays with the spans: a region wearing one of those six
+ * would read as a seventh extent rather than the ground the others sit
+ * on. Every rule below keeps the same `--border-default` stroke except
+ * `unstated`'s; what varies by class is a `--text-primary` fill tint
+ * (falling from 12% to 4%), a dash pattern (rising sparseness), or both —
+ * `unstated` alone changes the stroke colour instead. */
 .regionFrame {
   fill: none;
   stroke: var(--border-default);

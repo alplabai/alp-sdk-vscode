@@ -35,6 +35,7 @@ import styles from "./MemoryChart.module.css";
 import {
   duplicatedNames,
   growWindowOverRegions,
+  regionLabelLevels,
   regionsInWindow,
   resolvedRegions,
   type ResolvedRegion,
@@ -344,6 +345,20 @@ function Rail({
   const tickX1 = axis === "left" ? x - 5 : x + width;
   const tickX2 = axis === "left" ? x : x + width + 5;
 
+  // Pixel tops of every band/budget label in this rail (both anchored at
+  // `top + BAND_LABEL_DY`, below) — what a region label must not land on.
+  const bandAndBudgetTops: number[] = [];
+  for (const s of spans) {
+    if (s.base === null) continue;
+    if (heightOf(s) >= 1) bandAndBudgetTops.push(topOf(s));
+    const bEnd = budgetEnd(s, budgets.get(s.label));
+    if (bEnd !== null) bandAndBudgetTops.push(y(bEnd));
+  }
+  const regionLevels = regionLabelLevels(
+    regions.map(({ hi }) => y(hi)),
+    bandAndBudgetTops,
+  );
+
   return (
     <g>
       {/* The axis: the two window ends plus power-of-two marks between.
@@ -393,25 +408,25 @@ function Rail({
        *  six-colour series palette, which stays with the spans.
        *
        *  LABEL ANCHOR: right-aligned at the rail's OWN right edge, never
-       *  `x + 5` — that is where a budget/band label's baseline already
-       *  sits (see below), and a region's own top routinely coincides with
-       *  a span or budget top (mcuboot's frame top IS the window's own
-       *  low edge; hp_slot0's frame top is exactly where its budget band
-       *  starts). Anchoring from the OPPOSITE edge means the two labels
-       *  only collide if BOTH read right to the rail's full width, which
-       *  neither does at this panel's reading size. */}
+       *  `x + 5` (a budget/band label's own baseline, below) — but that
+       *  only DEFERS a collision, not prevents one: two labels anchored at
+       *  opposite ends of the SAME row still overprint once their combined
+       *  width exceeds `width - 10`, true of V2N's `alp_default_rpmsg`
+       *  carve-out against its own `ocram_low` region, which share a top.
+       *  `regionLevels` (above) is what actually keeps them apart: a
+       *  region label whose top coincides, within a unit, with a band's, a
+       *  budget's or an earlier region's drops one `TICK_LABEL_H` line per
+       *  coincidence, so a shared top prints on its own line instead. */}
       {!equalized &&
         regions.map(({ region, lo, hi }, i) => {
           const top = y(hi);
           const height = Math.max(y(lo) - top, 1);
-          // Not `height >= TICK_LABEL_H` (14): a 14-19-unit-tall frame
-          // would pass that check yet still print its label ON or BELOW
-          // the frame's own bottom edge, because the label's baseline
-          // drops BAND_LABEL_DY (15) below the frame's top — see
-          // BAND_LABEL_DY's own docblock ("a band's own height must clear
-          // BAND_LABEL_DY plus a descender (~17.3 units)"). +3 rounds that
-          // ~2.3-unit descender up to a whole unit.
-          const labelFits = height >= BAND_LABEL_DY + 3;
+          const level = regionLevels[i];
+          // A label `regionLevels` drops by `level` lines needs that many
+          // extra TICK_LABEL_H steps of room too, or it prints past the
+          // frame's own bottom edge — same descender margin as the
+          // undropped case (+3 rounds a ~2.3-unit descender up to a unit).
+          const labelFits = height >= level * TICK_LABEL_H + BAND_LABEL_DY + 3;
           return (
             <g key={`region-${i}-${region.id}`}>
               <rect
@@ -427,7 +442,7 @@ function Rail({
                 <text
                   className={styles.regionLabel}
                   x={x + width - 5}
-                  y={top + BAND_LABEL_DY}
+                  y={top + level * TICK_LABEL_H + BAND_LABEL_DY}
                   textAnchor="end"
                 >
                   {region.name}
@@ -635,12 +650,10 @@ export function MemoryChart({
   spans: MemorySpan[];
   apertures: MemoryAperture[];
   budgets: Map<string, SliceSize>;
-  // OPTIONAL, defaulting to `[]` — not because a real caller ever omits it,
-  // but so THIS task's own `pnpm run typecheck` passes standalone. Task 5
-  // updates this component's only external call site
-  // (`MemoryRegions.tsx`) to pass a real array; making the prop required
-  // until then would report a missing-prop error at that call site for an
-  // entire task, which is not a state this plan asks anyone to tolerate.
+  // OPTIONAL, defaulting to `[]`: a caller that never resolves a region
+  // table — no producer new enough, or a SoM the resolver has nothing to
+  // say about — passes nothing and gets exactly the pre-region chart, with
+  // no window growth and no frames drawn.
   regions?: MemoryRegion[];
   equalized: boolean;
   selected: string | null;
@@ -650,9 +663,9 @@ export function MemoryChart({
   const resolved = resolvedRegions(regions);
   const rawWindow = windowOf(placed, budgets);
   if (!rawWindow) return null;
-  // §4's window rule: grow the spans/budgets window to a fixpoint over
-  // every resolved region that intersects or touches it. Regions never
-  // CREATE a window on their own — only widen one that already exists.
+  // Grow the spans/budgets window to a fixpoint over every resolved region
+  // that intersects or touches it. Regions never CREATE a window on their
+  // own — only widen one that already exists.
   const win = growWindowOverRegions(rawWindow, resolved);
 
   // The top 1/DETAIL_FACTOR of the window, magnified by exactly that factor
