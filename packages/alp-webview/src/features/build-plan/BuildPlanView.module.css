@@ -14,17 +14,21 @@
   gap: var(--space-3);
 }
 
-/* lg (16px), not xl (20px): this is a full editor-tab panel — `buildPlanPanel.ts`
- * calls `createWebviewPanel` — so the title has to outrank 13px body text. It
- * stops at lg because the field above it is already taken: four other full-tab
- * panels (Dependencies, SetupFlow, NewProjectFlow, ExistingProjectFlow) hardcode
- * an untokenised 18px title, and ModelsView's `.title` is ALREADY xl (20px) on
- * its own editor tab (`src/models/panel.ts`). So the field is Build Plan 16,
- * that cluster 18, Models 20 — lg keeps this panel below both. Tokenising the
- * 18px cluster and reconciling it with Models' xl is the follow-up, not this
- * file's business. */
+/* xl (20px): DESIGN.md's Display size — "panel titles only, one per view" —
+ * and tokens.css calls xl "Panel titles — the ceiling" outright. This IS a
+ * full editor-tab panel (`buildPlanPanel.ts` calls `createWebviewPanel`), so
+ * its title takes the token panel titles take, matching ModelsView's own
+ * `.title` (`src/models/panel.ts`), which is already xl on its own editor
+ * tab — two panel titles agreeing on the size DESIGN.md reserves for panel
+ * titles, rather than one sitting a rung below it for no documented reason.
+ * Four other full-tab panels (Dependencies, SetupFlow, NewProjectFlow,
+ * ExistingProjectFlow) still hardcode an untokenised 18px title instead of
+ * naming a token at all; tokenising that cluster is a follow-up, not this
+ * file's business — the hierarchy gate below floors at `>= lg` rather than
+ * pinning an equality on xl, so it does not assume this is the only panel
+ * title size in the product. */
 .title {
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-xl);
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
@@ -570,11 +574,18 @@
   margin-top: var(--space-2);
 }
 
-/* Chrome, and it stays chrome: `.manifestSub` is a flat flex row with no
-   padding-left, so the chips it labels are not indented under it. Raising this
-   would flatten a hierarchy level rather than add one. */
+/* Chrome, and it stays chrome — a LABEL register (uppercase, 0.04em tracked,
+   weight 600), the same register `.backend`, `.manifestBadge` and
+   `.sectionTitle` are in. sm, not xs: DESIGN.md pins the Label register
+   itself at sm (12px, -1px from the workbench default — "section labels and
+   captions"), and `.sectionTitle` above already takes it; two labels in one
+   register should not disagree about its size. It stays a rung below the
+   base body text it sits over (`.manifestChip` and friends), so it does not
+   start reading as a heading — `.manifestSub`'s flat flex row with no
+   padding-left is what keeps the chips it labels from looking indented under
+   it, not the font size. */
 .manifestSubTitle {
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
