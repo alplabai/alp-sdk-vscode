@@ -125,6 +125,22 @@
   outline-offset: -1px;
 }
 
+/* THE PRESSED BUTTON NEEDS ITS OWN RING. `--accent` (tokens.css) IS
+   `--vscode-focusBorder` — the same token the rule above paints the ring in —
+   and the pressed button below fills its background with that exact token, so
+   on a pressed button the ring paints in the colour it already sits on: gone,
+   not merely dim. "True scale" starts pressed, so this is the very first Tab
+   stop into the panel, landing on a control with no visible focus at all.
+   `--accent-fg` is `--accent`'s own paired foreground token — chosen to read
+   against it already — so the ring reuses that same contrast guarantee
+   instead of asserting a new one. The offset is pulled in further than the
+   unpressed ring's `-1px`: a hairline ring at only 1px inside a saturated
+   fill is itself easy to lose, where 3px reads as a deliberate frame. */
+.scaleBtn[aria-pressed="true"]:focus-visible {
+  outline-color: var(--accent-fg);
+  outline-offset: -3px;
+}
+
 .scaleBtn[aria-pressed="true"] {
   background: var(--accent);
   color: var(--accent-fg);
