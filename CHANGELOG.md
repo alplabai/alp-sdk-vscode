@@ -2,13 +2,18 @@
 
 ## Unreleased
 
-- **The memory map's chart scrolls on its own; the scale toggle and legend do
-  not (#484).** A narrow column scrolled the whole side of the panel
-  sideways, so reading a band near the drawing's right edge could hide "True
-  scale" / "Equalized" above it and clip the legend below it against the same
-  edge. The chart now sits in its own scroll container, and the pressed scale
-  button now draws a visible focus ring — it used to paint in the same colour
-  as its own pressed background.
+- **The Build Plan panel's memory map now reads at the panel's own base
+  size, not a rung below it (#484).** Hex addresses, region names, footprint
+  numbers and resolver reasons — plus the chart's axis, band and hover
+  labels — used to render at 10px or 11px, sizes no reader setting moves;
+  all of it now holds base (13px at the workbench default), and the panel
+  title takes `xl`, the size every other full-tab panel's title takes. In a
+  narrow column the chart keeps its drawing at 1:1 and scrolls horizontally
+  on its own instead of shrinking its labels back down — before, the whole
+  panel scrolled sideways as one ~572px-wide strip inside a 420px column,
+  and none of it ever scaled down. The scale toggle's pressed button also
+  now draws a visible focus ring in every state; it used to disappear into
+  its own pressed background.
 
 ## 0.6.0
 
