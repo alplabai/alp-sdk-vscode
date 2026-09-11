@@ -32,6 +32,13 @@ import type {
 } from "../../types";
 import { formatAddress, formatBytes } from "./format";
 import styles from "./MemoryChart.module.css";
+import {
+  duplicatedNames,
+  growWindowOverRegions,
+  regionsInWindow,
+  resolvedRegions,
+  type ResolvedRegion,
+} from "./regionWindow";
 
 /**
  * The drawing, in viewBox units. Fixed: the box is the contract.
@@ -223,88 +230,6 @@ export function windowOf(
   const lo = Math.min(...bases);
   const hi = Math.max(...ends);
   return hi > lo ? { lo, hi } : null;
-}
-
-/** A region's own resolved extent, paired with the row it came from — the
- *  shape both the window-growth rule and `Rail`'s frame-drawing want, so
- *  neither re-derives `status === "ok"` + a positive size itself. */
-export interface ResolvedRegion {
-  region: MemoryRegion;
-  lo: number;
-  hi: number;
-}
-
-/** Every region that resolves an extent: `status: "ok"`, a base, and a
- *  positive size. An unresolved, sizeless or zero-size region draws no
- *  frame and cannot grow the window. */
-export function resolvedRegions(regions: MemoryRegion[]): ResolvedRegion[] {
-  const out: ResolvedRegion[] = [];
-  for (const region of regions) {
-    if (region.status !== "ok" || region.base === null) continue;
-    if (region.sizeBytes === null || region.sizeBytes <= 0) continue;
-    out.push({ region, lo: region.base, hi: region.base + region.sizeBytes });
-  }
-  return out;
-}
-
-/**
- * Grows a window, to a FIXPOINT, over every resolved region that
- * intersects or TOUCHES it — so a region ending exactly where the window
- * begins (the normal adjacency of a region table, not a gap) still pulls
- * the window's edge out to cover it, and the next region touching THAT new
- * edge is pulled in too, and so on until nothing moves. A region that
- * never intersects or touches the window through that whole process is
- * left out on purpose — the region table then says it is outside it.
- */
-export function growWindowOverRegions(
-  win: Window,
-  regions: ResolvedRegion[],
-): Window {
-  let { lo, hi } = win;
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const r of regions) {
-      if (r.lo > hi || r.hi < lo) continue;
-      if (r.lo < lo) {
-        lo = r.lo;
-        changed = true;
-      }
-      if (r.hi > hi) {
-        hi = r.hi;
-        changed = true;
-      }
-    }
-  }
-  return { lo, hi };
-}
-
-/** The resolved regions that actually intersect a window — what a rail
- *  draws a frame for. Strict intersection, not "touches": a region merely
- *  adjacent to the window has nothing to show and would draw a
- *  zero-height frame. */
-export function regionsInWindow(
-  win: Window,
-  regions: ResolvedRegion[],
-): ResolvedRegion[] {
-  return regions.filter((r) => r.lo < win.hi && r.hi > win.lo);
-}
-
-/** Names shared by two or more rows. Selecting a region row sets `selected`
- *  to its id (`memory:<name>`) — for a duplicated name that id belongs to
- *  every row sharing it, so a click could highlight all of them at once
- *  unless the caller refuses the join. The single source of truth for that
- *  refusal: `MemoryRegionTable.tsx` (Task 5) imports this instead of
- *  keeping its own copy, so the chart frame, the aperture bar and the table
- *  row all refuse the same names the same way. */
-export function duplicatedNames(regions: MemoryRegion[]): Set<string> {
-  const seen = new Set<string>();
-  const dupes = new Set<string>();
-  for (const region of regions) {
-    if (seen.has(region.name)) dupes.add(region.name);
-    seen.add(region.name);
-  }
-  return dupes;
 }
 
 /**
