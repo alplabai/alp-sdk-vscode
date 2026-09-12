@@ -5,6 +5,17 @@
 // and clicks every button — the real "check the UI" test. esbuild-bundled then
 // run under Node; see test/webview/run.mjs.
 import "./jsdom-setup.js";
+// esbuild's `text` loader (configured in run.mjs) inlines these as plain
+// strings AT BUNDLE TIME — before the bundle ever runs from the temp
+// directory run.mjs builds it into. Reading them with fs + __dirname at
+// RUN time would resolve against that temp directory instead of this
+// file's real location; see run.mjs's own comment.
+declare module "*.yaml" {
+  const content: string;
+  export default content;
+}
+import aenFixtureText from "../fixtures/system-manifest.rpmsg-aen.memory.yaml";
+import v2nFixtureText from "../fixtures/system-manifest.rpmsg-v2n.memory.yaml";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { AppProvider } from "../../packages/alp-webview/src/shared/AppContext";
@@ -26,6 +37,7 @@ import { BuildPlanView } from "../../packages/alp-webview/src/features/build-pla
 import { ModelsView } from "../../packages/alp-webview/src/features/models";
 // #484: the harness runs the REAL narrower, not a hand-written payload.
 import { buildMemoryView } from "../../packages/alp-core/src/systemManifest/memoryView";
+import { parseSystemManifest } from "../../packages/alp-core/src/systemManifest/service";
 // Imported, not hardcoded: a hardcoded `_v: 2` outlived the bump to 3, so every
 // AppProvider here saw a protocol mismatch, held `state` at null, and rendered
 // nine skeletons that the harness scored as PASS.
@@ -821,8 +833,8 @@ async function main() {
           await settle();
           const notes = (container.textContent || "").toLowerCase();
           for (const needle of [
-            "alp-sdk#1365", // why half the map is missing
-            "not in", // ...the contract
+            "alp-sdk#1365", // the issue that gates whether the region table can appear at all
+            "not in", // "...not in system-manifest-v1 at all" for an older/pending manifest
             "nothing here is editable", // and why it stays read-only
           ]) {
             if (!notes.includes(needle)) {
@@ -1518,6 +1530,391 @@ async function main() {
     }
     console.log(
       `  ${problems.length === 0 ? "PASS" : "FAIL"}  error-boundary: caught a throwing render`,
+    );
+  }
+
+  // ── the SoM region backdrop, rpmsg-aen (#484 phase 2) ──
+  // A real emitted golden with a resolved region table: mcuboot / two image
+  // slots / reserved / storage / atoc all resolve, mram_main does not. Runs
+  // the real parser + narrower, exactly like feedState() above.
+  {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const problemsBefore = problems.length;
+    const root = createRoot(container);
+    root.render(
+      React.createElement(
+        AppProvider,
+        null,
+        React.createElement(BuildPlanView),
+      ),
+    );
+    await settle();
+    feedState();
+    await settle();
+    feedState();
+    await settle();
+
+    const aenManifest = parseSystemManifest(aenFixtureText);
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "systemManifestData",
+      postBuild: true,
+      manifest: aenManifest,
+      provenance: null,
+      memory: buildMemoryView(aenManifest),
+    });
+    await settle();
+    // `feedState()` above also posted a `sliceSizesData` report giving
+    // m55_hp a 5 767 168 B tan-size budget (needed by the PRE-EXISTING
+    // `build-plan` pass's own "22× top 378.2 kib" needle) — `useBuildPlan`
+    // keeps `sizes` across a `systemManifestData` post, so that stale
+    // budget would otherwise still apply to hp_slot0 here and grow the
+    // window to 0x80830000 instead of the 0x80580000 this pass asserts.
+    // Clear it: this pass is about the region-grown window, not slot
+    // budgets.
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "sliceSizesData",
+      report: {
+        schema: "alp-size/1",
+        slices: [],
+        summary: { over_budget: [], unknown_budget: [] },
+      },
+    });
+    await settle();
+
+    const tabs = Array.from(container.querySelectorAll('button[role="tab"]'));
+    const memoryTab = tabs.find((b) =>
+      (b.textContent || "").toLowerCase().includes("memory"),
+    );
+    if (!memoryTab) {
+      problems.push("memory-regions-aen: no Memory tab found");
+    } else {
+      (memoryTab as HTMLButtonElement).click();
+      await settle();
+      const memText = (container.textContent || "").toLowerCase();
+      for (const needle of [
+        "vendor image · locked", // mcuboot
+        "customer · written at flash time", // he_slot0 / hp_slot0
+        "no writer · reserved", // reserved
+        "customer · writable at runtime", // storage
+        "secure enclave · locked", // atoc
+        "a placeholder, not an address", // mram_main's reason, verbatim
+        "som regions (7)", // the table's own heading
+      ]) {
+        if (!memText.includes(needle.toLowerCase())) {
+          problems.push(`memory-regions-aen: missing "${needle}"`);
+        }
+      }
+      for (const forbidden of ["free", "remaining"]) {
+        if (memText.includes(forbidden)) {
+          problems.push(
+            `memory-regions-aen: rendered the eligibility word "${forbidden}", which this view must never claim`,
+          );
+        }
+      }
+      const svg = container.querySelector('svg[role="img"]');
+      const ariaLabel = (svg?.getAttribute("aria-label") || "").toLowerCase();
+      if (
+        !ariaLabel.includes("0x80000000") ||
+        !ariaLabel.includes("0x80580000")
+      ) {
+        problems.push(
+          `memory-regions-aen: chart aria-label "${ariaLabel}" does not span 0x80000000-0x80580000 — the window did not grow over the SoM's regions`,
+        );
+      }
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-aen: the SoM region backdrop`,
+    );
+  }
+
+  // ── the SoM region backdrop, rpmsg-v2n (#484 phase 2) ──
+  // Three soc_derived regions, kind "unresolved" on every row (never
+  // authored write_authority), and two of the three fall outside the
+  // (unchanged) chart window.
+  {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const problemsBefore = problems.length;
+    const root = createRoot(container);
+    root.render(
+      React.createElement(
+        AppProvider,
+        null,
+        React.createElement(BuildPlanView),
+      ),
+    );
+    await settle();
+    feedState();
+    await settle();
+    feedState();
+    await settle();
+
+    const v2nManifest = parseSystemManifest(v2nFixtureText);
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "systemManifestData",
+      postBuild: true,
+      manifest: v2nManifest,
+      provenance: null,
+      memory: buildMemoryView(v2nManifest),
+    });
+    await settle();
+
+    const tabs = Array.from(container.querySelectorAll('button[role="tab"]'));
+    const memoryTab = tabs.find((b) =>
+      (b.textContent || "").toLowerCase().includes("memory"),
+    );
+    if (!memoryTab) {
+      problems.push("memory-regions-v2n: no Memory tab found");
+    } else {
+      (memoryTab as HTMLButtonElement).click();
+      await settle();
+      const memText = (container.textContent || "").toLowerCase();
+      for (const needle of [
+        "class not proven", // every v2n region's `kind` is "unresolved"
+        "ddr_main",
+        "ocram_low",
+        "m33_tcm",
+        "som regions (3)",
+      ]) {
+        if (!memText.includes(needle)) {
+          problems.push(`memory-regions-v2n: missing "${needle}"`);
+        }
+      }
+      // A CURLY apostrophe, not a straight one: MemoryRegionTable.tsx
+      // renders this note with `&rsquo;`, which becomes U+2019 (’) in
+      // textContent — a straight `'` here would silently match zero rows
+      // every time, since `String.match` does not fold the two.
+      const outsideCount = (memText.match(/outside this map’s window/g) || [])
+        .length;
+      if (outsideCount !== 2) {
+        problems.push(
+          `memory-regions-v2n: ${outsideCount} row(s) marked outside the chart window, want exactly 2 (ddr_main, m33_tcm — ocram_low is the one that joins the window)`,
+        );
+      }
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-v2n: class-not-proven and outside-window rows`,
+    );
+  }
+
+  // ── an unrecognised kind, and outside_region's own wording (#484 phase 2
+  //    spec pins 6 and 8) ──
+  // A hand-built manifest, not a vendored fixture: no real emitted golden
+  // exercises a `kind` this build has never seen (`unresolved` — the only
+  // non-flash/ram value in both real fixtures — is still a DOCUMENTED
+  // member; this is a genuinely novel string), nor an outside_region
+  // violation. Built the same way test/systemManifest.memoryView.test.js's
+  // `blockedSample()` is: a plain object, not YAML, fed straight to
+  // `buildMemoryView`.
+  {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const problemsBefore = problems.length;
+    const root = createRoot(container);
+    root.render(
+      React.createElement(
+        AppProvider,
+        null,
+        React.createElement(BuildPlanView),
+      ),
+    );
+    await settle();
+    feedState();
+    await settle();
+    feedState();
+    await settle();
+
+    const manifest = {
+      schema_version: 1,
+      generated_by: "scripts/alp_orchestrate.py",
+      hw_info: { sku: "E1M-AEN801", silicon: "alif:ensemble:e8" },
+      slices: [],
+      ipc: [
+        {
+          name: "alp_rpmsg",
+          kind: "rpmsg",
+          endpoints: ["m55_hp", "m55_he"],
+          carve_out_base: "0x80540000",
+          carve_out_size: "0x00040000",
+          carve_out_region: "odd_region",
+          cacheable: false,
+          rpmsg_endpoint_ids: { src: "0x000004e6", dst: "0x000004e7" },
+          mailbox_channel: 0,
+        },
+      ],
+      helper_mcus: [],
+      boot_order: [],
+      memory: [
+        {
+          name: "odd_region",
+          source: "som_preset",
+          kind: "sram_tcm", // never documented by the schema
+          status: "ok",
+          base: 0x80540000,
+          size_bytes: 0x00020000, // half the carve-out's own size — overruns it
+        },
+      ],
+    };
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "systemManifestData",
+      postBuild: true,
+      manifest,
+      provenance: null,
+      memory: buildMemoryView(manifest as never),
+    });
+    await settle();
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "sliceSizesData",
+      report: {
+        schema: "alp-size/1",
+        slices: [],
+        summary: { over_budget: [], unknown_budget: [] },
+      },
+    });
+    await settle();
+
+    const tabs = Array.from(container.querySelectorAll('button[role="tab"]'));
+    const memoryTab = tabs.find((b) =>
+      (b.textContent || "").toLowerCase().includes("memory"),
+    );
+    if (!memoryTab) {
+      problems.push("memory-regions-unrecognised: no Memory tab found");
+    } else {
+      (memoryTab as HTMLButtonElement).click();
+      await settle();
+      const memText = (container.textContent || "").toLowerCase();
+      if (!memText.includes("class not proven")) {
+        problems.push(
+          'memory-regions-unrecognised: kind "sram_tcm" (never documented) did not render "class not proven"',
+        );
+      }
+      if (!memText.includes("the manifest's own numbers disagree")) {
+        problems.push(
+          "memory-regions-unrecognised: outside_region did not render its own non-collision heading",
+        );
+      }
+      if (memText.includes("one extent lands on another")) {
+        problems.push(
+          "memory-regions-unrecognised: outside_region rendered through the Conflicts collision heading instead of OutsideRegionNotice's own",
+        );
+      }
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-unrecognised: unrecognised kind + outside_region wording`,
+    );
+  }
+
+  // ── duplicate region names refuse the selection join, everywhere (#484
+  //    phase 2 — the same refusal `findOutsideRegion` applies in core and
+  //    `duplicatedNames` applies in the webview) ──
+  // A hand-built manifest with two rows sharing one name and NO carve-out
+  // naming either, so this pass is only about selection, not about
+  // outside_region (which the previous pass already covers with its own
+  // single-row "odd_region").
+  {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const problemsBefore = problems.length;
+    const root = createRoot(container);
+    root.render(
+      React.createElement(
+        AppProvider,
+        null,
+        React.createElement(BuildPlanView),
+      ),
+    );
+    await settle();
+    feedState();
+    await settle();
+    feedState();
+    await settle();
+
+    const manifest = {
+      schema_version: 1,
+      generated_by: "scripts/alp_orchestrate.py",
+      hw_info: { sku: "E1M-AEN801", silicon: "alif:ensemble:e8" },
+      slices: [],
+      ipc: [],
+      helper_mcus: [],
+      boot_order: [],
+      memory: [
+        {
+          name: "dup_region",
+          source: "som_preset",
+          kind: "flash",
+          status: "ok",
+          base: 0x80600000,
+          size_bytes: 0x1000,
+        },
+        {
+          name: "dup_region",
+          source: "som_preset",
+          kind: "flash",
+          status: "ok",
+          base: 0x80610000,
+          size_bytes: 0x1000,
+        },
+      ],
+    };
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "systemManifestData",
+      postBuild: true,
+      manifest,
+      provenance: null,
+      memory: buildMemoryView(manifest as never),
+    });
+    await settle();
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "sliceSizesData",
+      report: {
+        schema: "alp-size/1",
+        slices: [],
+        summary: { over_budget: [], unknown_budget: [] },
+      },
+    });
+    await settle();
+
+    const tabs = Array.from(container.querySelectorAll('button[role="tab"]'));
+    const memoryTab = tabs.find((b) =>
+      (b.textContent || "").toLowerCase().includes("memory"),
+    );
+    if (!memoryTab) {
+      problems.push("memory-regions-duplicate: no Memory tab found");
+    } else {
+      (memoryTab as HTMLButtonElement).click();
+      await settle();
+
+      const rows = Array.from(
+        container.querySelectorAll(
+          'ul[aria-label="SoM regions"] [role="option"]',
+        ),
+      );
+      if (rows.length !== 2) {
+        problems.push(
+          `memory-regions-duplicate: expected 2 rows for the duplicated name, found ${rows.length}`,
+        );
+      } else {
+        (rows[0] as HTMLLIElement).click();
+        await settle();
+        const selectedCount = container.querySelectorAll(
+          'ul[aria-label="SoM regions"] [aria-selected="true"]',
+        ).length;
+        if (selectedCount !== 0) {
+          problems.push(
+            `memory-regions-duplicate: clicking one of two duplicate-named rows left ${selectedCount} element(s) aria-selected — the join must be refused, selecting neither`,
+          );
+        }
+        const memText = (container.textContent || "").toLowerCase();
+        if (!memText.includes("name shared by 2 rows, not joined")) {
+          problems.push(
+            'memory-regions-duplicate: missing "name shared by 2 rows, not joined"',
+          );
+        }
+      }
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-duplicate: two same-named rows refuse the selection join`,
     );
   }
 
