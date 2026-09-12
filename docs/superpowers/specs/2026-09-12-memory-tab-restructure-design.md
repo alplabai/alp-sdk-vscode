@@ -157,9 +157,15 @@ not mention frames at all, and the Notes tab does not document the encoding
 either, so decoding one frame costs a 400px round trip, seven times.
 
 **Acceptance criteria, measured not asserted:** each swatch value scores ≥3:1
-against the panel ground in Dark+ and Light+, and all six are pairwise
-distinguishable. Six values in one channel is what failed before; these two
-gates are what make the choice safe rather than a repeat.
+against the panel ground, and all six are pairwise distinguishable, in **all
+four default themes — Dark+, Light+, High Contrast Dark and High Contrast
+Light**. Six values in one channel is what failed before; these gates are what
+make the choice safe rather than a repeat.
+
+The high-contrast arms are not padding. A two-theme gate is exactly how the
+`fix/chart-series-contrast` work shipped a pressed-button fill measuring 1.00:1
+against its own ground in High Contrast Dark while its twelve tests ran green:
+the theme that breaks an encoding is rarely one of the two everybody checks.
 
 ## 4. Typography: use the scale that already exists
 
@@ -292,8 +298,11 @@ rail over it. The split is planned up front, not after:
   producer column, the deterministic equal-`base` order, the group headers and
   counts, gap-segment count and compressed byte text, the 8px floor, the six
   swatch values, legend presence, and the promoted blocked finding.
-- A contrast test computes each swatch value against the panel ground in Dark+
-  and Light+ and asserts ≥3:1, plus pairwise distinguishability.
+- A contrast test computes each swatch value against the panel ground in Dark+,
+  Light+, High Contrast Dark and High Contrast Light, asserting ≥3:1 in each,
+  plus pairwise distinguishability in each. Every theme arm resolves its colours
+  from the declared tokens and composites any alpha against the real backdrop —
+  a pinned composite is a value the gate can no longer police.
 - Keyboard tests assert a single tab stop into the table, arrow-key movement
   across rows and across group boundaries, `Home`/`End`, `preventDefault` on
   Space, that a collapsed group's rows leave the option set, and that the
