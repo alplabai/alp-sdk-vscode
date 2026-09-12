@@ -151,7 +151,7 @@
    themes without exception — the label sat in the same hue as the tint
    behind it, which is close to itself by construction. `--chart-label-fg`
    (tokens.css) is one token for all six, chosen because it clears 4.5:1
-   against every one of the six composited fills in both themes (5.84:1 the
+   against every one of the six composited fills in both themes (6.00:1 the
    worst case in Dark+, 7.40:1 the worst case in Light+) — the series colour
    still carries the band's own fill and stroke below, so the chart's colour
    grouping survives; only the label's own fill moved. */

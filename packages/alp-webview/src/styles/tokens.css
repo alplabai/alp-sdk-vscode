@@ -26,16 +26,16 @@
    * selected accent button is unmistakable vs a secondary one. */
   --accent: var(--vscode-focusBorder);
   --accent-fg: var(--vscode-button-foreground);
-  /* button-bg / button-fg — DESIGN.md's own documented pair ("Workbench
-   * Action"), missing from this file until now. The pressed scale-toggle
-   * (MemoryRegions.module.css) used to fill with --accent (focusBorder)
-   * under --accent-fg (button.foreground, always white) — 4.21:1 Dark+,
-   * 3.35:1 Light+, both under the 4.5:1 text floor, because focusBorder is a
-   * BORDER colour with no contrast guarantee against a white foreground.
-   * button.background is the fill VS Code designs to hold 4.5:1 against
-   * button.foreground, and does: 6.40:1 Dark+, 4.51:1 Light+. */
-  --button-bg: var(--vscode-button-background);
-  --button-fg: var(--vscode-button-foreground);
+  /* Round 1 tried re-pointing the pressed scale-toggle at button.background /
+   * button.foreground instead of --accent/--accent-fg. Reverted per decision:
+   * DESIGN.md's Selected-Not-Suggested Rule reserves --accent for exactly
+   * this ("what is currently selected"), and button.background is
+   * Color.black in High Contrast Dark (inputColors.ts) — identical to
+   * sideBar.background there, so the pressed fill vanished against the panel
+   * (1.00:1) and the fallback cue (pressed text vs unpressed text) also fell
+   * under 3:1. --accent stays the fill; MemoryRegions.module.css carries the
+   * remaining --accent-fg contrast shortfall and why it cannot move without
+   * either --accent or a bare literal. */
   /* Concrete monospace stack — deliberately NOT var(--vscode-editor-font-family, …).
    * That VS Code var resolves to an EMPTY value in some webview hosts, which makes
    * the nested var() empty and collapses inline `code` to the serif UA default
@@ -117,28 +117,46 @@
  *
  * VS Code ships a palette for exactly this: `charts.*` are theme-provided and
  * meant for data series, so a chart drawn from them keeps agreeing with the
- * editor when the theme changes. They are NOT the status colours — a region's
- * colour distinguishes it from its neighbour and says nothing about health,
- * and reusing `--status-err` for "the third region" would say the wrong thing
- * loudly.
+ * editor when the theme changes — true for five of these six; `--chart-3`
+ * borrows a non-`charts.*` core token instead, because `charts.orange` (its
+ * natural slot) is never opaque (see below). They are NOT the status
+ * colours — a region's colour distinguishes it from its neighbour and says
+ * nothing about health, and reusing `--status-err` for "the third region"
+ * would say the wrong thing loudly.
  *
- * Each carries a fallback, because a theme need not define `charts.*` and a
- * `fill` set to nothing paints nothing. */
+ * Each carries a fallback, because a theme need not define every one of
+ * these and a `fill` set to nothing paints nothing. */
 :root {
   --chart-1: var(--vscode-charts-blue, #4daafc);
   --chart-2: var(--vscode-charts-green, #89d185);
   /* NOT charts.orange: its own registered default is
    * minimap.findMatchHighlight -> editor.findMatchHighlightBackground, which
    * VS Code documents as "must not be opaque" — #EA5C0055 (~33% alpha) in
-   * BOTH Dark+ and Light+. Composited over input.background that reads as a
-   * muddy brown (#764728, 1.42:1) in Dark+ and a pale salmon (#F8C9AA,
-   * 1.51:1) in Light+ — never the opaque orange the fallback below implies,
-   * because the real VS Code variable is always defined and always wins.
-   * gitDecoration.modifiedResourceForeground is VS Code's own opaque
-   * amber/orange (#E2C08D Dark+, #895503 Light+ — the "M" badge on a
-   * modified file) and clears 6.39:1 Dark+ / 6.24:1 Light+ against
-   * input.background. */
-  --chart-3: var(--vscode-gitDecoration-modifiedResourceForeground, #d18616);
+   * ALL FOUR default themes. Composited over input.background that reads as
+   * a muddy brown (#764728, 1.42:1) in Dark+ and a pale salmon (#F8C9AA,
+   * 1.51:1) in Light+ — never opaque, because the real VS Code variable is
+   * always defined and always wins over the fallback below.
+   *
+   * Round 1's fix (gitDecoration.modifiedResourceForeground) was opaque but
+   * wrong for a different reason: it is EXTENSION-contributed (the built-in
+   * Git extension's package.json, not the core colour registry), so it
+   * vanishes if Git is ever disabled — and its hue (~36°) sits close enough
+   * to --chart-5's (~49°, editorWarning.foreground) that the two read as the
+   * same colour: direct contrast between the two series fell from 3.37:1
+   * (Dark+) / 2.07:1 (Light+) to 1.34:1 / 2.00:1.
+   *
+   * terminal.ansiCyan is CORE-registered (workbench, not an extension),
+   * opaque in all four default themes (#11a8cd Dark+, #0598bc Light+,
+   * #00cdcd HC Dark, #0598bc HC Light — never alpha), and a teal ~145° away
+   * from --chart-5's hue in both Dark+ and Light+ (was ~13°) — the collision
+   * this token exists to avoid. It sits closer in hue to --chart-1 (blue,
+   * ~20° apart) than the palette's other gaps (45°+), a real but lesser
+   * trade-off with no core, opaque, all-four-theme token available at true
+   * "orange" (~20-30°) — VS Code simply does not register one outside the
+   * translucent chain above and the extension-contributed one this replaces.
+   * Clears 3.37-10.61:1 against input.background (non-text, >=3:1) in every
+   * default theme. */
+  --chart-3: var(--vscode-terminal-ansiCyan, #0598bc);
   --chart-4: var(--vscode-charts-purple, #b180d7);
   --chart-5: var(--vscode-charts-yellow, #cca700);
   --chart-6: var(--vscode-charts-red, #f14c4c);
@@ -150,9 +168,10 @@
    * so the two are close by construction. tab.activeForeground is VS Code's
    * own opaque, always-defined, theme-flipping pair (white in Dark+, #333333
    * in Light+) built for text on a prominent fill; against all six
-   * composited band tints (post the chart-3 fix above) it clears a 5.84:1
-   * floor in Dark+ (chart-3) and a 7.40:1 floor in Light+ (chart-4) — every
-   * series, both themes, comfortably past 4.5:1. The series colour keeps
+   * composited band tints (with the terminal.ansiCyan chart-3 above) it
+   * clears a 6.00:1 floor in Dark+ (chart-2) and a 7.40:1 floor in Light+
+   * (chart-4) — every series, both themes, comfortably past 4.5:1. The
+   * series colour keeps
    * carrying the band's own fill and stroke; only the label's fill moved
    * here. */
   --chart-label-fg: var(--vscode-tab-activeForeground, #ffffff);

@@ -36,6 +36,32 @@
   released version — the memory map itself landed after `0.6.0` with no
   CHANGELOG entry of its own; this is its first.
 
+- **The Build Plan panel's Memory chart fixes four WCAG contrast failures.**
+  Every chart-series band/marker label used to fill with its own series
+  colour on top of that series' own 30%-opacity band fill — a self-defeating
+  pairing that failed 4.5:1 for all six series, both themes, without
+  exception. Labels now share one `--chart-label-fg` token
+  (`tab.activeForeground`) that clears 4.5:1 against every series' band fill
+  in every default theme; the series colour still carries the band's own
+  fill and stroke. `--chart-3` pointed at `charts.orange`, whose own default
+  is never opaque (~33% alpha in every default theme, VS Code's own design);
+  it now points at `terminal.ansiCyan`, a core-registered, always-opaque
+  token distinct in hue from `--chart-5`. The memory chart's rail frame,
+  axis ticks and inter-rail bracket used `--border-default` (`panel.border`,
+  ~35% alpha) — 1.45-1.59:1 against their backdrop, under the 3:1 non-text
+  floor for a stroke that carries meaning; a new `--border-chart` token
+  (`descriptionForeground`) clears 3:1 in every default theme.
+  `.regionFrame`'s own stroke and every decorative `--border-default` use are
+  untouched. The pressed scale-toggle button's text (`--accent-fg`, white, on
+  `--accent`) still falls short of 4.5:1 in Dark+ (4.21:1), Light+ (3.35:1)
+  and High Contrast Dark (2.57:1) — `--accent` stays the fill (DESIGN.md's
+  Selected-Not-Suggested Rule), and no single text colour reads against all
+  four of focusBorder's defaults, which range from a moderate blue to a
+  bright orange in High Contrast Dark; High Contrast Dark alone is fixed with
+  a scoped `body.vscode-high-contrast` override, since that theme's own panel
+  ground happens to be pure black. Reported, not silently accepted, for
+  Dark+/Light+.
+
 ## 0.6.0
 
 **Stable.** First even-minor cut since `0.4.0`, so `release-vsix.yml` publishes
