@@ -117,6 +117,7 @@ const MODELS = [
   { mirror: "MemoryAperture", file: MEMORY_REL },
   { mirror: "MemoryConflict", file: MEMORY_REL },
   { mirror: "MemoryView", file: MEMORY_REL },
+  { mirror: "MemoryRegion", file: MEMORY_REL },
 
   // ── board.yaml ──
   { mirror: "BoardConfig", file: BOARD_REL },
@@ -231,6 +232,12 @@ const KNOWN_UNMIRRORED = {
   "ManifestSlice.recipe?":
     "The bitbake recipe packaging an app-only Yocto slice. The manifest table " +
     "renders app/image; the recipe is a build-internal name with no column.",
+  "SystemManifest.memory?":
+    "The raw memory[] rows are not rendered directly. Only the DERIVED " +
+    "MemoryView.regions (built by buildMemoryView: authority-classified, " +
+    "narrowed field for field, joined to spans/apertures by name) reaches " +
+    "the webview — mirroring the raw pane too would give one screen two " +
+    "shapes of the same data to disagree about.",
 
   // ── board.yaml ──
   // The five below are safe for a reason the CoreEntry ones do not share: the
@@ -310,6 +317,7 @@ const ALIASES = [
   { mirror: "SliceSizeStatus", file: MANIFEST_REL },
   { mirror: "HelperFlashPolicy", file: MANIFEST_REL },
   { mirror: "MemorySpanKind", file: MEMORY_REL },
+  { mirror: "MemoryAuthorityClass", file: MEMORY_REL },
   { mirror: "MemoryConflictKind", file: MEMORY_REL },
   { mirror: "ManifestFreshness", file: STALENESS_REL },
   { mirror: "DependencyStatus", file: PLANNER_REL },

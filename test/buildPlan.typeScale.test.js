@@ -491,7 +491,7 @@ test("the one sanctioned pixel size is still the geometry that justifies it", ()
 // SUB-HEADINGS are graded here too — `.unresolvedTitle`, `.conflictsTitle` and
 // MemoryNotes' `.title` are md, which trivially clears `>= base` — but
 // `>= base` could never have PINNED them there: base also satisfies it, and
-// base is exactly where all three sat before this panel was fixed. Their own
+// base is exactly where they all sat before this panel was fixed. Their own
 // arm below grades them against the body they actually head instead.
 
 const CHROME = [
@@ -643,10 +643,11 @@ test("chrome stays below the reading size", () => {
 //   chrome        xs/sm 11-12px the CHROME allowlist above
 //
 // `>= base` cannot hold a sub-heading, because base is precisely the mistake:
-// all three of these sat AT the size of the list underneath them before this
-// fix — a rung spent on nothing, with weight and colour left carrying a rank
-// that size is the only signal for. So this arm grades a sub-heading against
-// the body it actually heads and demands it be STRICTLY larger.
+// `.unresolvedTitle`, `.conflictsTitle` and MemoryNotes' `.title` each sat AT
+// the size of the list underneath them before an earlier fix — a rung spent
+// on nothing, with weight and colour left carrying a rank that size is the
+// only signal for. So this arm grades every sub-heading below against the
+// body it actually heads and demands it be STRICTLY larger.
 //
 // Only the lower edge is graded here. The ceiling — that no sub-heading
 // reaches the panel's own xl `.title` — is already held by the hierarchy test
@@ -657,7 +658,9 @@ test("chrome stays below the reading size", () => {
 // `.unresolvedTitle` is the <p> over the `.unresolved` list whose rows carry
 // `.rowName` and `.reason`; `.conflictsTitle` sits over `.conflictRow` items
 // carrying `.rowName` and `.conflictKind`; MemoryNotes' `.title` is the <h4>
-// of a `<section class=note>` whose paragraphs are `.note p`.
+// of a `<section class=note>` whose paragraphs are `.note p`; MemoryRegionTable's
+// `.title` is the <p> over the "SoM regions" listbox whose options carry
+// `.rowName` and `.reason`.
 
 const SUB_HEADINGS = [
   {
@@ -677,6 +680,12 @@ const SUB_HEADINGS = [
     selector: ".title",
     heads: [".note p"],
     why: "the <h4> over each note section, in a tab that is nothing but prose",
+  },
+  {
+    file: "MemoryRegionTable.module.css",
+    selector: ".title",
+    heads: [".rowName", ".reason"],
+    why: "'SoM regions (N)' — the heading over the SoM's own region table",
   },
 ];
 

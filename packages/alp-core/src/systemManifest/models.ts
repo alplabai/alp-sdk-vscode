@@ -129,6 +129,13 @@ export interface SystemManifest {
   boot_order: unknown[];
   /** Resolved storage partitions — present only when the project declares storage. */
   storage?: unknown[];
+  /** The SoM's own region table (#484 phase 2) — present only from an
+   *  alp-sdk that carries alp-sdk#1365's `memory[]` pane (landed in
+   *  alp-sdk#2030; not yet in a tagged release, alp-sdk#2047) and only
+   *  when it resolves at least one region for this SoM. `unknown[]` at
+   *  this boundary for the same reason `storage` is: every field is
+   *  narrowed from scratch in `memoryView.ts`, never cast. */
+  memory?: unknown[];
 }
 
 /** True for a slice whose core participates in build/flash (its os isn't off). */

@@ -248,6 +248,63 @@
   font-size: 9px;
 }
 
+.apertureBar[data-selected] {
+  stroke-width: 2.5;
+}
+
+/* The SoM's own region table, drawn as frames behind every band the
+ * manifest pins (#484 phase 2) — never the six-colour series palette
+ * above, which stays with the spans: a region wearing one of those six
+ * would read as a seventh extent rather than the ground the others sit
+ * on. Every rule below keeps the same `--border-default` stroke except
+ * `unstated`'s; what varies by class is a `--text-primary` fill tint
+ * (falling from 12% to 4%), a dash pattern (rising sparseness), or both —
+ * `unstated` alone changes the stroke colour instead. */
+.regionFrame {
+  fill: none;
+  stroke: var(--border-default);
+  stroke-width: 1;
+}
+
+.regionFrame[data-authority="customer_runtime"] {
+  fill: color-mix(in srgb, var(--text-primary) 12%, transparent);
+}
+
+/* Distinct from customer_runtime by MORE than fill percentage — the two
+ * sit under a 30%-opacity span fill in the common case, where an 8-vs-12%
+ * difference in the frame underneath is not reliably legible. The dashed
+ * stroke is the load-bearing distinction; the lighter fill is secondary. */
+.regionFrame[data-authority="customer_image"] {
+  fill: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  stroke-dasharray: 3 1;
+}
+
+.regionFrame[data-authority="locked"] {
+  fill: color-mix(in srgb, var(--text-primary) 4%, transparent);
+  stroke-dasharray: 2 2;
+}
+
+.regionFrame[data-authority="reserved"] {
+  stroke-dasharray: 1 3;
+}
+
+.regionFrame[data-authority="composite"] {
+  stroke-dasharray: 4 2;
+}
+
+.regionFrame[data-authority="unstated"] {
+  stroke: var(--text-secondary);
+}
+
+.regionFrame[data-selected] {
+  stroke-width: 2.5;
+}
+
+.regionLabel {
+  fill: var(--text-secondary);
+  font-size: var(--font-size-base);
+}
+
 .hit {
   cursor: pointer;
 }

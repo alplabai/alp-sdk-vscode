@@ -24,9 +24,25 @@
 
 import { useState } from "react";
 import { scaleBand, scaleLinear } from "d3-scale";
-import type { MemoryAperture, MemorySpan, SliceSize } from "../../types";
+import type {
+  MemoryAperture,
+  MemoryRegion,
+  MemorySpan,
+  SliceSize,
+} from "../../types";
 import { formatAddress, formatBytes } from "./format";
 import styles from "./MemoryChart.module.css";
+import {
+  budgetEnd,
+  chartWindowOf,
+  duplicatedNames,
+  endOf,
+  regionLabelLevels,
+  regionsInWindow,
+  resolvedRegions,
+  type ResolvedRegion,
+  type Window,
+} from "./regionWindow";
 
 /**
  * The drawing, in viewBox units. Fixed: the box is the contract.
@@ -169,57 +185,6 @@ const LINE_LABEL_DY = -5;
  */
 export const DETAIL_FACTOR = 22;
 
-export interface Window {
-  lo: number;
-  hi: number;
-}
-
-/** Where a span's end lies, or null when the manifest pinned no size. */
-export function endOf(span: MemorySpan): number | null {
-  if (span.base === null || span.sizeBytes === null) return null;
-  return span.base + span.sizeBytes;
-}
-
-/**
- * How far a slot image reaches, per `tan size`.
- *
- * The manifest pins where an image LOADS and says nothing about how much room
- * it has; `tan size` resolves that budget from SoM metadata and reports it as
- * `flash.total`. Measured on E1M-AEN801: 2.63 MiB for both M55 slices, which is
- * 2688 KiB — byte-for-byte the `he_slot0` / `hp_slot0` region size. So the
- * budget IS the slot. It is drawn dashed and labelled, never as a solid
- * manifest-pinned band: the base comes from the manifest and the extent from a
- * second tool, and a reader has to be able to tell which number came from where.
- */
-export function budgetEnd(
-  span: MemorySpan,
-  budget: SliceSize | undefined,
-): number | null {
-  if (span.kind !== "slot_image" || span.base === null) return null;
-  const total = budget?.flash.total;
-  return typeof total === "number" && total > 0 ? span.base + total : null;
-}
-
-/**
- * The window the map covers: the lowest pinned base to the highest reach.
- * Null when fewer than two distinct addresses are known — one point is not a
- * range, and a ruler drawn across nothing invites the reader to measure
- * distances that were never measured.
- */
-export function windowOf(
-  spans: MemorySpan[],
-  budgets: Map<string, SliceSize>,
-): Window | null {
-  const bases = spans.map((s) => s.base).filter((b): b is number => b !== null);
-  if (bases.length === 0) return null;
-  const ends = spans
-    .flatMap((s) => [endOf(s) ?? s.base, budgetEnd(s, budgets.get(s.label))])
-    .filter((e): e is number => e !== null);
-  const lo = Math.min(...bases);
-  const hi = Math.max(...ends);
-  return hi > lo ? { lo, hi } : null;
-}
-
 /**
  * Tick addresses for a window: aligned to a power of two, never to a power of
  * ten.
@@ -281,6 +246,15 @@ interface RailProps {
   axis: "left" | "right";
   caption: string;
   series: Map<string, number>;
+  regions: ResolvedRegion[];
+  /** Null when nothing is selected, OR when the selected region's name is
+   *  shared by two or more rows — a duplicated name is refused here, not
+   *  just in the table, so a click on either duplicate row never
+   *  highlights both this frame and the aperture bar of the same name.
+   *  Distinct from `selected` (the raw id), which spans still match
+   *  directly — only a region frame/aperture match is name-based and so
+   *  is the one that needs this refusal. */
+  selectedRegionName: string | null;
 }
 
 /** One rail: frame, budgets, bands, markers, axis. */
@@ -288,6 +262,8 @@ function Rail({
   win,
   spans,
   budgets,
+  regions,
+  selectedRegionName,
   x,
   width,
   equalized,
@@ -320,6 +296,20 @@ function Rail({
   const labelX = axis === "left" ? x - 8 : x + width + 8;
   const tickX1 = axis === "left" ? x - 5 : x + width;
   const tickX2 = axis === "left" ? x : x + width + 5;
+
+  // Pixel tops of every band/budget label in this rail (both anchored at
+  // `top + BAND_LABEL_DY`, below) — what a region label must not land on.
+  const bandAndBudgetTops: number[] = [];
+  for (const s of spans) {
+    if (s.base === null) continue;
+    if (heightOf(s) >= 1) bandAndBudgetTops.push(topOf(s));
+    const bEnd = budgetEnd(s, budgets.get(s.label));
+    if (bEnd !== null) bandAndBudgetTops.push(y(bEnd));
+  }
+  const regionLevels = regionLabelLevels(
+    regions.map(({ hi }) => y(hi)),
+    bandAndBudgetTops,
+  );
 
   return (
     <g>
@@ -364,6 +354,55 @@ function Rail({
         width={width}
         height={PLOT_BOTTOM - PLOT_TOP}
       />
+
+      {/* The SoM's own region table (#484 phase 2), behind every band the
+       *  manifest pins — a stroke tinted by authority class, never the
+       *  six-colour series palette, which stays with the spans.
+       *
+       *  LABEL ANCHOR: right-aligned at the rail's OWN right edge, never
+       *  `x + 5` (a budget/band label's own baseline, below) — but that
+       *  only DEFERS a collision, not prevents one: two labels anchored at
+       *  opposite ends of the SAME row still overprint once their combined
+       *  width exceeds `width - 10`, true of V2N's `alp_default_rpmsg`
+       *  carve-out against its own `ocram_low` region, which share a top.
+       *  `regionLevels` (above) is what actually keeps them apart: a
+       *  region label whose top coincides, within a unit, with a band's, a
+       *  budget's or an earlier region's drops one `TICK_LABEL_H` line per
+       *  coincidence, so a shared top prints on its own line instead. */}
+      {!equalized &&
+        regions.map(({ region, lo, hi }, i) => {
+          const top = y(hi);
+          const height = Math.max(y(lo) - top, 1);
+          const level = regionLevels[i];
+          // A label `regionLevels` drops by `level` lines needs that many
+          // extra TICK_LABEL_H steps of room too, or it prints past the
+          // frame's own bottom edge — same descender margin as the
+          // undropped case (+3 rounds a ~2.3-unit descender up to a unit).
+          const labelFits = height >= level * TICK_LABEL_H + BAND_LABEL_DY + 3;
+          return (
+            <g key={`region-${i}-${region.id}`}>
+              <rect
+                className={styles.regionFrame}
+                data-authority={region.authorityClass}
+                data-selected={selectedRegionName === region.name || undefined}
+                x={x}
+                y={top}
+                width={width}
+                height={height}
+              />
+              {labelFits && (
+                <text
+                  className={styles.regionLabel}
+                  x={x + width - 5}
+                  y={top + level * TICK_LABEL_H + BAND_LABEL_DY}
+                  textAnchor="end"
+                >
+                  {region.name}
+                </text>
+              )}
+            </g>
+          );
+        })}
 
       {/* `tan size` budgets, behind everything the manifest pinned. */}
       {!equalized &&
@@ -502,19 +541,24 @@ function Rail({
 /**
  * One aperture as a bar beside the map — never as a band inside it.
  *
- * An aperture's own base and size are not in this contract; what is known is
- * which extents the resolver put inside it. So the bar spans the hull of its
- * members: "at least this much of it is in use", which is true, where a bar
- * drawn to a guessed extent would say how much is left, which nothing knows.
+ * An aperture's own base and size are never READ here, even though the
+ * contract can now carry them for a same-named row (the SoM region table,
+ * `regions` below): what this bar draws from is only which extents the
+ * resolver put inside it. So the bar still spans the hull of its members
+ * — "at least this much of it is in use", which is true, where a bar
+ * drawn to a guessed extent would say how much is left, which this
+ * function does not know and does not try to.
  */
 function ApertureBar({
   aperture,
   win,
   x,
+  selected,
 }: {
   aperture: MemoryAperture;
   win: Window;
   x: number;
+  selected: boolean;
 }) {
   if (aperture.hullBase === null || aperture.hullEnd === null) return null;
   const y = scaleLinear()
@@ -527,6 +571,7 @@ function ApertureBar({
     <g>
       <rect
         className={styles.apertureBar}
+        data-selected={selected || undefined}
         x={x}
         y={top}
         width={APERTURE_W}
@@ -549,6 +594,7 @@ export function MemoryChart({
   spans,
   apertures,
   budgets,
+  regions = [],
   equalized,
   selected,
   onSelect,
@@ -556,12 +602,23 @@ export function MemoryChart({
   spans: MemorySpan[];
   apertures: MemoryAperture[];
   budgets: Map<string, SliceSize>;
+  // OPTIONAL, defaulting to `[]`: a caller that never resolves a region
+  // table — no producer new enough, or a SoM the resolver has nothing to
+  // say about — passes nothing and gets exactly the pre-region chart, with
+  // no window growth and no frames drawn.
+  regions?: MemoryRegion[];
   equalized: boolean;
   selected: string | null;
   onSelect: (id: string) => void;
 }) {
   const placed = spans.filter((s) => s.base !== null);
-  const win = windowOf(placed, budgets);
+  const resolved = resolvedRegions(regions);
+  // Grown to a fixpoint over every resolved region that intersects or
+  // touches the spans' own window — computed once in `chartWindowOf`, the
+  // same call `MemoryRegions.tsx` makes for the table's "outside this
+  // map's window" note, so the two can never disagree about where the
+  // window ends.
+  const win = chartWindowOf(spans, budgets, regions);
   if (!win) return null;
 
   // The top 1/DETAIL_FACTOR of the window, magnified by exactly that factor
@@ -578,14 +635,35 @@ export function MemoryChart({
       budgetEnd(s, budgets.get(s.label)) ?? endOf(s) ?? (s.base as number);
     return reach > detail.lo;
   });
+  const regionsInDetail = regionsInWindow(detail, resolved);
   const regionApertures = apertures.filter(
     (a) => a.kind === "region" && a.hullBase !== null,
   );
+  const regionsInMain = regionsInWindow(win, resolved);
   const series = seriesIndex(placed);
   const y = scaleLinear()
     .domain([win.lo, win.hi])
     .range([PLOT_BOTTOM, PLOT_TOP])
     .clamp(true);
+
+  // A selected REGION (id `memory:<name>`) also highlights the aperture of
+  // the same name — a different id namespace (`region:<name>`), so this is
+  // a name match, not an id match. Refused (set to null) when that name is
+  // shared by two or more rows in the FULL region list (not just the
+  // resolved ones in `win`/`detail`) — the same join `duplicatedNames`
+  // refuses in the table, computed the same way here so the chart frame,
+  // this aperture highlight and the table row all refuse the identical set
+  // of names.
+  const rawSelectedRegionName =
+    selected !== null && selected.startsWith("memory:")
+      ? selected.slice("memory:".length)
+      : null;
+  const duplicatedRegionNames = duplicatedNames(regions);
+  const selectedRegionName =
+    rawSelectedRegionName !== null &&
+    duplicatedRegionNames.has(rawSelectedRegionName)
+      ? null
+      : rawSelectedRegionName;
 
   return (
     <svg
@@ -600,6 +678,8 @@ export function MemoryChart({
         win={win}
         spans={placed}
         budgets={budgets}
+        regions={regionsInMain}
+        selectedRegionName={selectedRegionName}
         x={RAIL_X}
         width={RAIL_W}
         equalized={equalized}
@@ -616,6 +696,7 @@ export function MemoryChart({
             key={a.id}
             aperture={a}
             win={win}
+            selected={selectedRegionName === a.name}
             x={APERTURE_X + i * (APERTURE_W + 14)}
           />
         ))}
@@ -652,6 +733,8 @@ export function MemoryChart({
             win={detail}
             spans={inDetail}
             budgets={budgets}
+            regions={regionsInDetail}
+            selectedRegionName={selectedRegionName}
             x={DETAIL_X}
             width={DETAIL_W}
             equalized={false}

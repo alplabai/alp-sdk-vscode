@@ -20,6 +20,17 @@
 // The third test is the tripwire: it fails the day the contract grows the
 // missing half, so the read-only decision is re-taken deliberately by whoever
 // lands it, rather than quietly outliving its reason.
+//
+// #484 PHASE 2 landed read-only backdrop+table rendering FROM `memory[]`
+// (alp-sdk#1365 / alp-sdk#2030) WITHOUT re-vendoring this schema — that
+// stays #662, tag-only. So the tripwire below has NOT fired: the vendored
+// copy still declares the same eight root keys, even though a real
+// manifest from a new-enough SDK now carries a ninth (`memory`). D5 was
+// re-taken against that landed contract anyway, because `write_authority`
+// ships optional on both sides (no schema-required, no default) — the
+// precondition below was never about the KEY existing, only about
+// authority being unambiguous once it does. It still is not, so the map
+// stays read-only.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -30,7 +41,11 @@ const REPO = path.join(__dirname, "..");
 /** Every file the memory surface is made of. The chart moved into its own
  *  module when the picture became an SVG; a prohibition that named only the
  *  original file would have opened a hole the same day. */
-const VIEW_FILES = ["MemoryRegions.tsx", "MemoryChart.tsx"].map((name) =>
+const VIEW_FILES = [
+  "MemoryRegions.tsx",
+  "MemoryChart.tsx",
+  "MemoryRegionTable.tsx",
+].map((name) =>
   path.join(
     REPO,
     "packages",

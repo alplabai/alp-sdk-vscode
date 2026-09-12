@@ -52,3 +52,17 @@ In VS Code, use board.yaml LSP features:
 - effective-config preview
 
 These often shorten the fix loop before re-running CLI validate.
+
+## 6. `memory:` Squiggle in `system-manifest.yaml`
+
+An alp-sdk that carries alp-sdk#1365's `memory[]` pane can emit one inside
+`build/system-manifest.yaml` (landed in alp-sdk#2030; not yet in a tagged
+release, alp-sdk#2047). If this extension's bundled
+`schemas/system-manifest-v1.schema.json` predates that producer, the
+editor underlines `memory:` as an unknown property.
+
+- This is a stale BUNDLED SCHEMA, not a bad manifest — the file itself is
+  fine and the Build Plan panel's Memory tab reads it normally.
+- Confirm by opening the panel: if the Memory tab shows a "SoM regions"
+  table, the manifest parsed correctly regardless of the squiggle.
+- Safe to ignore until the extension's next vendored-schema bump.

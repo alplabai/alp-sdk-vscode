@@ -261,6 +261,21 @@ two 4% chrome bars, 1.111–1.202 for the 8% card header. The percentage is the 
 4% for a chrome bar (the Overview header and the configurator's `.topbar` and
 `.footer` both use it), 8% one level deeper for a card header (`.advHead`).
 
+**The Region-Frame Rule (#484 phase 2).** A SoM region frame in the Build
+Plan panel's Memory tab strokes at `{colors.border-default}`, 1px, with no
+fill by default — never a hatch, never the six-colour chart series
+palette, which stays with the spans a region sits behind. Three of the
+six authority classes add a wash of `{colors.text-primary}`, falling with
+authority: `customer_runtime` 12% and a solid stroke, `customer_image` 8%
+plus a `3 1` dash, `locked` 4% plus a `2 2` dash. The dash is what tells
+`customer_runtime` from `customer_image` apart at a glance — both sit
+under the span's own 30%-opacity fill, where a 12-vs-8% difference in the
+frame underneath is not reliably legible on its own. `reserved` (`1 3`,
+mostly gap) and `composite` (`4 2`, mostly dash) drop the wash back to no
+fill and carry a dash pattern alone. `unstated` drops the dash too, and is
+told apart the only other way this rule has left: its stroke itself swaps
+to `{colors.text-secondary}` rather than `{colors.border-default}`.
+
 **The Selected-Not-Suggested Rule.** `{colors.accent}` marks what is currently
 selected — an active toggle, a chosen segment. It never marks what to do next.
 The primary action stays on `{colors.button-bg}`. Two saturated fills competing

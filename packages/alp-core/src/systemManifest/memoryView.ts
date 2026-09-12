@@ -5,20 +5,28 @@
 //
 // ── Why this module is narrow ────────────────────────────────────────────────
 //
-// The SoM's own region table is not in the contract. `system-manifest-v1`
-// declares eight root keys — `schema_version, generated_by, hw_info, slices,
-// ipc, helper_mcus, boot_order, storage` — and none of them carries a region, a
-// base or a size. Measured on the vendored copy, on the submodule copy and on
-// alp-sdk `dev`; alp-sdk#1365 is the request that would add one. Reading
-// `metadata/e1m_modules/<SKU>.yaml` from TypeScript instead is what the
-// manifest's own description forbids ("Tools read THIS instead of re-deriving
-// folder layout / build wiring from board.yaml + the SoM presets").
+// The SoM's own region table arrives as a NINTH root key, `memory[]`, only
+// from an alp-sdk that carries alp-sdk#1365's `memory[]` pane (landed in
+// alp-sdk#2030; not yet in a tagged release, alp-sdk#2047). Older
+// producers, and this contract before that commit, declare only eight:
+// `schema_version, generated_by, hw_info, slices, ipc, helper_mcus,
+// boot_order, storage`. When
+// `memory[]` is present it is narrowed into `MemoryRegion[]` below (#484
+// phase 2) — but it is NEVER joined into a span's own `base`: a span's base
+// stays exactly what the emitter pinned for it, never a value this module
+// computed by combining two panes. Reading `metadata/e1m_modules/<SKU>.yaml`
+// directly from TypeScript remains out of bounds either way — that is what
+// the manifest's own description forbids ("Tools read THIS instead of
+// re-deriving folder layout / build wiring from board.yaml + the SoM
+// presets").
 //
-// So this module derives ONLY the extents the manifest already resolves, which
-// is precisely the customer-owned half: the IPC carve-outs and the storage
-// partitions the customer declared in `board.yaml`, plus the load address the
-// emitter pins for each Zephyr slice. Everything else renders as absent, and
-// absent is rendered as absent — never as zero.
+// So `spans`/`apertures`/`conflicts` below still derive ONLY the extents the
+// manifest already resolves for the customer-owned half: the IPC carve-outs
+// and the storage partitions declared in `board.yaml`, plus the load address
+// the emitter pins for each Zephyr slice. `regions` is additive, read
+// separately, and joined to the rest BY NAME only (see `MemoryRegion` and
+// `findOutsideRegion`) — never folded into a span's own fields. Everything
+// else renders as absent, and absent is rendered as absent — never as zero.
 //
 // ── The key names are the EMITTER's, not the dataclass's ─────────────────────
 //
@@ -60,6 +68,34 @@ import type { SystemManifest } from "./models";
  */
 export type MemorySpanKind = "slot_image" | "carve_out" | "partition";
 
+/** `som_preset` | `soc_derived`, open: an unrecognised string is kept
+ *  verbatim rather than dropped — see `MemoryRegion`. */
+export type MemoryRegionSource = "som_preset" | "soc_derived" | (string & {});
+
+/** `unclassified` and `unresolved` mean "not proven" and must never be
+ *  read as RAM; open for the same reason as `MemoryRegionSource`. */
+export type MemoryRegionKind =
+  | "flash"
+  | "ram"
+  | "unclassified"
+  | "unresolved"
+  | (string & {});
+
+/** Only `"ok"` is drawn; an unrecognised value is treated like
+ *  `"unresolved"` — never drawn, even when the row also carries a base. */
+export type MemoryRegionStatus = "ok" | "unresolved" | (string & {});
+
+/** Derived from `write_authority` + `source` by `authorityClassOf`. A
+ *  CLOSED union — unlike the three above, the UI's authority-tinted
+ *  frames and grouping have to exhaust it. */
+export type MemoryAuthorityClass =
+  | "customer_runtime"
+  | "customer_image"
+  | "locked"
+  | "reserved"
+  | "composite"
+  | "unstated";
+
 /** One extent the manifest pins, with the provenance to say where it came from. */
 export interface MemorySpan {
   /** Stable render key. `<kind>:<label>`. */
@@ -72,16 +108,23 @@ export interface MemorySpan {
    *
    * A storage partition is always `null` here even when it fully resolves: the
    * emitter reports `offset_kib` as an offset WITHIN its flash device, and the
-   * device's own base lives in the region table this contract does not carry.
-   * Adding the two would require a base this extension cannot know, so the
-   * offset is reported as an offset and the absolute address is left absent.
+   * device's own base is a SEPARATE pane (`memory[]`, narrowed below into
+   * `regions`) that this field does not join in. Combining the two would
+   * fold two differently-sourced numbers into one that reads as a single
+   * fact from the manifest, so the offset is reported as an offset and the
+   * absolute address stays absent here — a reader wanting the device's own
+   * base joins `MemorySpan.device` to a `MemoryRegion.name` by hand, the way
+   * the region table and `MemoryRegionTable` do.
    */
   base: number | null;
   /** Offset within `device`, in bytes. Partitions only; `null` elsewhere. */
   deviceOffset: number | null;
-  /** Extent in bytes, or `null` when the manifest pins a base but no size —
-   *  which is the normal state of a slot image, whose capacity is a SoM budget
-   *  the manifest does not carry. */
+  /** Extent in bytes, or `null` when the manifest pins a base but no size
+   *  — which is the normal state of a slot image: the SLOT SPAN itself
+   *  carries no size here, ever. A same-named `MemoryRegion` row MAY carry
+   *  that slot's extent (`memory[]`, when the manifest resolves one) —
+   *  listed separately in the region table and never joined to this span,
+   *  the same rule `MemorySpan.base`'s doc above states for base. */
   sizeBytes: number | null;
   /** `carve_out_region`: the SoM region the resolver allocated from. */
   region: string | null;
@@ -111,15 +154,19 @@ export interface MemoryUnresolved {
 }
 
 /**
- * A region or flash device the manifest NAMES but does not describe.
+ * A region or flash device the manifest NAMES but does not describe here.
  *
  * `carve_out_region` and `flash_device` say which aperture the resolver
- * allocated out of; the aperture's own base and size live in the SoM region
- * table, which this contract does not carry. So an aperture here is a name plus
- * the hull of what landed inside it — never the aperture's own extent. The
- * distinction matters on screen: a rail drawn to the hull says "at least this
- * much of it is in use", which is true, where a rail drawn to a guessed extent
- * would say how much is left, which nothing here knows.
+ * allocated out of; the aperture's own base and size, when the contract
+ * carries them at all, arrive as a SEPARATE `memory[]` row (narrowed below
+ * into `MemoryRegion`) — this type never reads that pane. So an aperture
+ * here is still a name plus the hull of what landed inside it, never the
+ * aperture's own extent, EVEN WHEN a same-named `MemoryRegion` resolves one:
+ * the two are joined only in the UI, by name, never merged into one object
+ * here. The distinction matters on screen either way: a rail drawn to the
+ * hull says "at least this much of it is in use", which is true, where a
+ * rail drawn to a guessed extent would say how much is left, which nothing
+ * in THIS type knows.
  */
 export interface MemoryAperture {
   id: string;
@@ -136,17 +183,98 @@ export interface MemoryAperture {
 }
 
 /**
+ * One row of the SoM's own region table (#484 phase 2): `memory[]` on
+ * `system-manifest-v1`, present only from an alp-sdk that carries
+ * alp-sdk#1365's `memory[]` pane (landed in alp-sdk#2030; not yet in a
+ * tagged release, alp-sdk#2047) and only when it resolves at least one
+ * region for this SoM.
+ *
+ * Regions never feed `spans`, `apertures` or the pre-existing conflict
+ * checks — the UI joins them to spans and apertures BY NAME. The one
+ * exception is `outside_region` (below), which reads both.
+ */
+export interface MemoryRegion {
+  /** `memory:<name>` — distinct from `MemoryAperture`'s `region:<name>`,
+   *  which names a different object and must not share selection state
+   *  with this one. */
+  id: string;
+  name: string;
+  source: MemoryRegionSource;
+  kind: MemoryRegionKind;
+  status: MemoryRegionStatus;
+  /** Kept only when `status` is exactly `"ok"` — an unrecognised status
+   *  drops it even if the row carries one. */
+  base: number | null;
+  /** Resolves independently of `base`. */
+  sizeBytes: number | null;
+  /** Verbatim, or `null` when the producer named none. */
+  writeAuthority: string | null;
+  authorityClass: MemoryAuthorityClass;
+  cores: string[];
+  /** Verbatim and in full. */
+  reason: string | null;
+}
+
+// A Map, not a plain object literal: a plain object indexed by bracket
+// notation returns an inherited Object.prototype member for a key like
+// "constructor" or "__proto__" — a real, non-null value that a `?? "unstated"`
+// fallback would never catch. A Map's `.get` has no prototype chain to leak
+// through, so an unrecognised key (however it spells itself) always misses
+// cleanly.
+const AUTHORITY_CLASS_BY_WRITE_AUTHORITY = new Map<
+  string,
+  MemoryAuthorityClass
+>([
+  ["customer_runtime", "customer_runtime"],
+  ["customer_image", "customer_image"],
+  ["vendor_image", "locked"],
+  ["secure_enclave", "locked"],
+  ["none", "reserved"],
+  ["composite", "composite"],
+]);
+
+/**
+ * Fail-closed derivation of a region's `authorityClass` from its raw
+ * `write_authority` string. Exhaustively unit-tested; defaults to
+ * `"unstated"` for `null` and for any string this table does not
+ * recognise — including an inherited `Object.prototype` member name, which
+ * a plain-object lookup would not have refused.
+ *
+ * `source` never changes the CLASS this returns today — a `som_preset` row
+ * and a `soc_derived` row with the same (or absent) `write_authority`
+ * always land in the same class. It is still a parameter: the LABEL a UI
+ * puts beside that class (never computed here — see the webview) differs
+ * by source for the absent case ("authority not declared" vs "not
+ * authored · SoC-derived table"), and keeping both functions keyed on the
+ * same two arguments is what keeps them from drifting apart on what a
+ * region even is.
+ */
+export function authorityClassOf(
+  writeAuthority: string | null,
+  source: MemoryRegionSource,
+): MemoryAuthorityClass {
+  void source;
+  if (writeAuthority === null) return "unstated";
+  return AUTHORITY_CLASS_BY_WRITE_AUTHORITY.get(writeAuthority) ?? "unstated";
+}
+
+/**
  *  - `overlap`              two sized extents share addresses
  *  - `covers_load_address`  a sized extent contains a slice's load address —
  *                           the shape of the ATOC incident (alp-sdk#1289): an
  *                           allocation landing on top of something already
  *                           living there, with nothing failing at build time
  *  - `device_overlap`       two partitions overlap inside one flash device
+ *  - `outside_region`       a resolved carve-out's extent is not contained
+ *                           in the one resolved region its `carve_out_region`
+ *                           names — the manifest's own numbers disagreeing,
+ *                           not a collision
  */
 export type MemoryConflictKind =
   | "overlap"
   | "covers_load_address"
-  | "device_overlap";
+  | "device_overlap"
+  | "outside_region";
 
 /** Two extents the manifest placed on top of each other. */
 export interface MemoryConflict {
@@ -174,6 +302,10 @@ export interface MemoryView {
   unresolved: MemoryUnresolved[];
   /** The regions and devices the manifest names, with what landed in each. */
   apertures: MemoryAperture[];
+  /** The SoM's own region table (#484 phase 2). Omitted — never an empty
+   *  array — when the manifest carries no `memory[]` pane, or the pane
+   *  resolves no regions for this SoM. */
+  regions?: MemoryRegion[];
   /**
    * Extents the manifest placed on top of one another.
    *
@@ -254,8 +386,11 @@ function records(value: unknown): Record<string, unknown>[] {
  *
  * Only slices that participate at all: an `os: "off"` core builds nothing, so
  * a load address on one would point at an image that does not exist. Size is
- * left null on purpose — the slot's capacity is a budget from the SoM, which
- * `tan size` reports separately and this contract does not carry.
+ * left null on purpose — the slot SPAN itself never carries one: `tan size`
+ * reports the same slot's capacity separately (as a budget, not a manifest
+ * fact), and a `memory[]` row may separately resolve that slot's own extent
+ * as a region — joined to this span only in the UI, by name, never merged
+ * into one object here.
  */
 function slotSpans(slices: unknown): MemorySpan[] {
   const spans: MemorySpan[] = [];
@@ -374,6 +509,53 @@ function partitions(manifest: SystemManifest): {
   return { spans, unresolved };
 }
 
+/** A string field that is always readable even when it names nothing this
+ *  contract recognises — `source`, `kind` and `status` are open unions on
+ *  purpose (see their type docs), so an unrecognised value must still be a
+ *  string a UI can render, never null. */
+function asOpenString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/**
+ * The SoM's own region table, when the manifest carries one.
+ *
+ * `base` and `size_bytes` are the emitter's own plain YAML integers here —
+ * UNLIKE `carve_out_base`/`carve_out_size`, they are never quoted hex — so
+ * `asCount` is the whole rule; a hex string in this pane is a producer
+ * deviation and is dropped, never coerced (`asHexOrCount` is deliberately
+ * not used here). A row with no text `name` is dropped whole; every other
+ * field defaults to an empty string or null rather than dropping the row,
+ * because an unrecognised `source`/`kind`/`status` is still something a UI
+ * can render (as "not proven" / "unstated"), where dropping the row would
+ * hide a resolved extent instead. Duplicate names are kept as separate
+ * rows; only `findOutsideRegion`'s name-join refuses an ambiguous name.
+ */
+function regions(value: unknown): MemoryRegion[] {
+  const out: MemoryRegion[] = [];
+  for (const row of records(value)) {
+    const name = asText(row.name);
+    if (name === null) continue;
+    const source = asOpenString(row.source);
+    const status = asOpenString(row.status);
+    const writeAuthority = asText(row.write_authority);
+    out.push({
+      id: `memory:${name}`,
+      name,
+      source,
+      kind: asOpenString(row.kind),
+      status,
+      base: status === "ok" ? asCount(row.base) : null,
+      sizeBytes: asCount(row.size_bytes),
+      writeAuthority,
+      authorityClass: authorityClassOf(writeAuthority, source),
+      cores: asCores(row.accessible_from),
+      reason: asText(row.reason),
+    });
+  }
+  return out;
+}
+
 /** The absolute half-open range an extent occupies, or null for a point. */
 function extentOf(span: MemorySpan): { lo: number; hi: number } | null {
   if (span.base === null || span.sizeBytes === null || span.sizeBytes <= 0) {
@@ -474,6 +656,63 @@ function findConflicts(spans: MemorySpan[]): MemoryConflict[] {
   return out;
 }
 
+/** A region's own absolute extent, or null when it does not resolve one —
+ *  the same half-open shape `extentOf` gives a span. */
+function regionExtentOf(
+  region: MemoryRegion,
+): { lo: number; hi: number } | null {
+  if (region.status !== "ok" || region.base === null) return null;
+  if (region.sizeBytes === null || region.sizeBytes <= 0) return null;
+  return { lo: region.base, hi: region.base + region.sizeBytes };
+}
+
+/**
+ * The one finding that reads both `spans` and `regions`: a resolved
+ * carve-out whose `carve_out_region` names exactly one resolved region,
+ * and whose extent that region does not fully contain. Worded as the
+ * manifest's own numbers disagreeing, not as a collision — rendered by
+ * the webview's `OutsideRegionNotice`, its own component with its own
+ * heading, never through `Conflicts`/`CONFLICT_TITLE`'s collision framing.
+ *
+ * "Exactly one": a region name shared by two or more rows is ambiguous, so
+ * this join refuses it rather than guessing which one the carve-out meant.
+ * Never emitted for an unresolved, sizeless or absent region either — there
+ * is nothing to compare the carve-out's extent against.
+ */
+function findOutsideRegion(
+  spans: MemorySpan[],
+  regionRows: MemoryRegion[],
+): MemoryConflict[] {
+  const byName = new Map<string, MemoryRegion[]>();
+  for (const region of regionRows) {
+    byName.set(region.name, [...(byName.get(region.name) ?? []), region]);
+  }
+
+  const out: MemoryConflict[] = [];
+  for (const span of spans) {
+    if (span.kind !== "carve_out" || span.region === null) continue;
+    const extent = extentOf(span);
+    if (extent === null) continue;
+
+    const candidates = byName.get(span.region);
+    if (!candidates || candidates.length !== 1) continue;
+    const regionExtent = regionExtentOf(candidates[0]);
+    if (regionExtent === null) continue;
+    if (extent.lo >= regionExtent.lo && extent.hi <= regionExtent.hi) continue;
+
+    out.push({
+      id: `outside_region:${span.label}:${candidates[0].name}`,
+      kind: "outside_region",
+      first: span.label,
+      second: candidates[0].name,
+      from: extent.lo,
+      to: extent.hi,
+      device: null,
+    });
+  }
+  return out;
+}
+
 /** The regions and devices the manifest names, each with what landed in it. */
 function findApertures(spans: MemorySpan[]): MemoryAperture[] {
   const out = new Map<string, MemoryAperture>();
@@ -533,11 +772,16 @@ export function buildMemoryView(manifest: SystemManifest): MemoryView {
     ...ipc.spans,
     ...storage.spans,
   ].sort(byAddress);
+  const memoryRegions = regions(manifest.memory);
   return {
     sku: asText(manifest.hw_info?.sku) ?? "",
     spans,
     unresolved: [...ipc.unresolved, ...storage.unresolved],
     apertures: findApertures(spans),
-    conflicts: findConflicts(spans),
+    conflicts: [
+      ...findConflicts(spans),
+      ...findOutsideRegion(spans, memoryRegions),
+    ],
+    ...(memoryRegions.length > 0 ? { regions: memoryRegions } : {}),
   };
 }
