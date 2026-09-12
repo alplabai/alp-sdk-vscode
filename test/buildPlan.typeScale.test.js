@@ -491,7 +491,7 @@ test("the one sanctioned pixel size is still the geometry that justifies it", ()
 // SUB-HEADINGS are graded here too — `.unresolvedTitle`, `.conflictsTitle` and
 // MemoryNotes' `.title` are md, which trivially clears `>= base` — but
 // `>= base` could never have PINNED them there: base also satisfies it, and
-// base is exactly where all three sat before this panel was fixed. Their own
+// base is exactly where they all sat before this panel was fixed. Their own
 // arm below grades them against the body they actually head instead.
 
 const CHROME = [

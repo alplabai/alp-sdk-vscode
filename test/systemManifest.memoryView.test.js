@@ -493,7 +493,7 @@ test("names each aperture with what landed in it, never with its own extent", ()
 // are byte copies of alp-sdk's own emit-snapshot goldens
 // (tests/fixtures/emit-snapshots/rpmsg-{aen,v2n}.system-manifest.snap) at
 // alp-sdk commit 20fec7a7e9ea0479e5a9241edc75c6a8354d0fd0, written with
-// `git show <commit>:<path> > <target>` — see Task 1 Step 1.
+// `git show <commit>:<path> > <target>`.
 // ---------------------------------------------------------------------------
 
 test("an absent memory[] pane produces no `regions` key on the view", () => {
@@ -555,11 +555,9 @@ test("an absent memory[] pane produces exactly the pre-#484-phase-2 view shape",
   }
 });
 
-test("[RED PROBE] parseSystemManifest reads the vendored rpmsg-aen fixture's memory[] pane, seven rows", () => {
-  // Unlike the four invariance guards above, this genuinely fails before
-  // Steps 4-5 below: `SystemManifest` has no `memory` field yet and
-  // `parseSystemManifest` does not read one, so `manifest.memory` is
-  // `undefined` and `.length` throws. See Step 3.
+test("parseSystemManifest reads the rpmsg-aen fixture's memory[] pane (seven rows)", () => {
+  // `parseSystemManifest` must keep reading `memory`; dropping the field
+  // here would make every region silently absent.
   const text = fs.readFileSync(
     path.join(__dirname, "fixtures", "system-manifest.rpmsg-aen.memory.yaml"),
     "utf8",
