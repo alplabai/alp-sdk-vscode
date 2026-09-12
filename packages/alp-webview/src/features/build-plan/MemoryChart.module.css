@@ -43,9 +43,13 @@
   font-family: var(--font-family-mono);
 }
 
+/* Load-bearing, not decorative: this frame IS the rail's boundary, so it
+   takes --border-chart (3.92-5.44:1 against surface-bg/surface-input, both
+   themes), not --border-default (1.45-1.59:1 there — a divider ratio, not a
+   shape ratio). */
 .railFrame {
   fill: var(--surface-input);
-  stroke: var(--border-default);
+  stroke: var(--border-chart);
   stroke-width: 1;
 }
 
@@ -79,11 +83,6 @@
   stroke: var(--chart-1);
 }
 
-.bandLabel[data-series="1"],
-.markerLabel[data-series="1"] {
-  fill: var(--chart-1);
-}
-
 .band[data-series="2"],
 .budget[data-series="2"] {
   fill: color-mix(in srgb, var(--chart-2) 30%, transparent);
@@ -92,11 +91,6 @@
 
 .marker[data-series="2"] {
   stroke: var(--chart-2);
-}
-
-.bandLabel[data-series="2"],
-.markerLabel[data-series="2"] {
-  fill: var(--chart-2);
 }
 
 .band[data-series="3"],
@@ -109,11 +103,6 @@
   stroke: var(--chart-3);
 }
 
-.bandLabel[data-series="3"],
-.markerLabel[data-series="3"] {
-  fill: var(--chart-3);
-}
-
 .band[data-series="4"],
 .budget[data-series="4"] {
   fill: color-mix(in srgb, var(--chart-4) 30%, transparent);
@@ -122,11 +111,6 @@
 
 .marker[data-series="4"] {
   stroke: var(--chart-4);
-}
-
-.bandLabel[data-series="4"],
-.markerLabel[data-series="4"] {
-  fill: var(--chart-4);
 }
 
 .band[data-series="5"],
@@ -139,11 +123,6 @@
   stroke: var(--chart-5);
 }
 
-.bandLabel[data-series="5"],
-.markerLabel[data-series="5"] {
-  fill: var(--chart-5);
-}
-
 .band[data-series="6"],
 .budget[data-series="6"] {
   fill: color-mix(in srgb, var(--chart-6) 30%, transparent);
@@ -152,11 +131,6 @@
 
 .marker[data-series="6"] {
   stroke: var(--chart-6);
-}
-
-.bandLabel[data-series="6"],
-.markerLabel[data-series="6"] {
-  fill: var(--chart-6);
 }
 
 /* The extent's own name, read straight off the picture — so it takes the
@@ -169,15 +143,29 @@
    loses only what falls off the box's inline-start edge. The arithmetic, the
    goldens it was checked against, and why buying glyphs nobody has spent costs
    horizontal scrolling all live with the constants the numbers come from: the
-   `W` docblock in MemoryChart.tsx. */
+   `W` docblock in MemoryChart.tsx.
+
+   FILL IS NOT THE SERIES COLOUR, on purpose: it used to be (one rule per
+   `data-series`, matching `.band`/`.marker` below), and every one of the six
+   series colours failed 4.5:1 against its own 30%-opacity band fill in both
+   themes without exception — the label sat in the same hue as the tint
+   behind it, which is close to itself by construction. `--chart-label-fg`
+   (tokens.css) is one token for all six, chosen because it clears 4.5:1
+   against every one of the six composited fills in both themes (5.84:1 the
+   worst case in Dark+, 7.40:1 the worst case in Light+) — the series colour
+   still carries the band's own fill and stroke below, so the chart's colour
+   grouping survives; only the label's own fill moved. */
 .markerLabel,
 .bandLabel {
-  fill: var(--text-primary);
+  fill: var(--chart-label-fg);
   font-size: var(--font-size-base);
 }
 
+/* Load-bearing, not decorative: an axis mark IS the information, so it takes
+   --border-chart (3.92-5.44:1 against surface-bg/surface-input, both
+   themes), not --border-default (1.45-1.59:1 there). */
 .tick {
-  stroke: var(--border-default);
+  stroke: var(--border-chart);
   stroke-width: 1;
 }
 
@@ -225,8 +213,12 @@
   pointer-events: none;
 }
 
+/* Load-bearing, not decorative: this is the only mark stating the
+   relationship between the two rails, so it takes --border-chart
+   (3.92-5.44:1 against surface-bg/surface-input, both themes), not
+   --border-default (1.45-1.59:1 there — near-invisible in Dark+). */
 .bracket {
-  stroke: var(--border-default);
+  stroke: var(--border-chart);
   stroke-width: 1;
   stroke-dasharray: 3 3;
 }

@@ -167,36 +167,45 @@
   outline-offset: -1px;
 }
 
-/* THE PRESSED BUTTON NEEDS ITS OWN RING. `--accent` (tokens.css) IS
-   `--vscode-focusBorder` — the same token the rule above paints the ring in —
-   and the pressed button below fills its background with that exact token, so
-   on a pressed button the ring paints in the colour it already sits on: gone,
-   not merely dim. "True scale" starts pressed, so this is the very first Tab
-   stop into the panel, landing on a control with no visible focus at all.
-   `--accent-fg` is NOT the fix: it is `--vscode-button-foreground`, paired in
-   the theme with `--vscode-button-background` (the Workbench Action fill),
-   not with `--accent`/focusBorder — it carries no contrast guarantee against
-   THIS fill. In Default High Contrast (dark) it measures 2.57:1 against the
-   pressed `#f38518`, below WCAG 2.2 SC 1.4.11's 3:1 floor, on the very first
-   Tab stop. `--surface-bg` (Panel Ground, DESIGN.md) is the fix: the ring
-   takes the panel's own ground instead, which is the same colour pair the
-   theme already uses for its OWN focus ring drawn on that same ground
-   elsewhere in the workbench — so this ring is exactly as visible as that
-   one, no more and no less, not a guarantee against every accent. Measured
-   in the default themes: 3.92:1 Dark Modern, 5.94:1 Light Modern, 8.18:1
-   High Contrast Dark, 5.47:1 High Contrast Light. A theme whose own focus
-   ring falls under 3:1 against this ground stays under it here too. The
-   offset is pulled in further than the unpressed ring's `-1px`: a hairline
-   ring at only 1px inside a saturated fill is itself easy to lose, where
-   3px reads as a deliberate frame. */
+/* THE PRESSED BUTTON NEEDS ITS OWN RING, STILL — for a different reason now.
+   `--button-bg` / `--button-fg` (button.background / button.foreground)
+   replaced `--accent` / `--accent-fg` (focusBorder / button.foreground) as
+   this button's fill+text below: `--accent-fg` on `--accent` measured 4.21:1
+   Dark+ / 3.35:1 Light+, both under WCAG's 4.5:1 text floor, because
+   focusBorder carries no contrast guarantee against a white foreground — it
+   is a BORDER colour, not a button fill. `--button-bg`/`--button-fg` is VS
+   Code's own designed pair and holds: 6.40:1 Dark+ / 4.51:1 Light+
+   (tokens.css).
+
+   That fixed the text, but the DEFAULT ring (`outline: 1px solid
+   var(--border-focus)`, src/styles.css) still all but vanishes on this
+   button: focusBorder measures only 1.52:1 Dark+ / 1.34:1 Light+ against
+   `--button-bg` — a different saturated blue, not the identical one `--accent`
+   was, but still too close in luminance to read as a ring on a fill. "True
+   scale" starts pressed, so this is the very first Tab stop into the panel,
+   landing on a control that would otherwise show no visible focus at all.
+
+   `--surface-bg` — the previous fix, chosen back when the fill was `--accent`
+   — is not enough here either: against `--button-bg` it measures only 2.39:1
+   in Dark+ (button.background is dark enough itself that the panel ground
+   barely clears it), even though it still holds 4.06:1 in Light+. One theme
+   under WCAG 2.2 SC 1.4.11's 3:1 floor is still a failure.
+
+   `--button-fg` (white in both themes) is the fix: it is already this fill's
+   OWN designed pair — the 6.40:1 / 4.51:1 above — so a ring painted in it
+   clears 3:1 with room to spare in both themes, using a pairing the theme
+   already guarantees rather than a borrowed one. The offset stays pulled in
+   further than the unpressed ring's `-1px`: a hairline ring at only 1px
+   inside a saturated fill is itself easy to lose, where 3px reads as a
+   deliberate frame. */
 .scaleBtn[aria-pressed="true"]:focus-visible {
-  outline-color: var(--surface-bg);
+  outline-color: var(--button-fg);
   outline-offset: -3px;
 }
 
 .scaleBtn[aria-pressed="true"] {
-  background: var(--accent);
-  color: var(--accent-fg);
+  background: var(--button-bg);
+  color: var(--button-fg);
 }
 
 .band[data-selected],

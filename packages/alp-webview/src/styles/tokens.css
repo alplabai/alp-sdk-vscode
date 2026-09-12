@@ -26,6 +26,16 @@
    * selected accent button is unmistakable vs a secondary one. */
   --accent: var(--vscode-focusBorder);
   --accent-fg: var(--vscode-button-foreground);
+  /* button-bg / button-fg — DESIGN.md's own documented pair ("Workbench
+   * Action"), missing from this file until now. The pressed scale-toggle
+   * (MemoryRegions.module.css) used to fill with --accent (focusBorder)
+   * under --accent-fg (button.foreground, always white) — 4.21:1 Dark+,
+   * 3.35:1 Light+, both under the 4.5:1 text floor, because focusBorder is a
+   * BORDER colour with no contrast guarantee against a white foreground.
+   * button.background is the fill VS Code designs to hold 4.5:1 against
+   * button.foreground, and does: 6.40:1 Dark+, 4.51:1 Light+. */
+  --button-bg: var(--vscode-button-background);
+  --button-fg: var(--vscode-button-foreground);
   /* Concrete monospace stack — deliberately NOT var(--vscode-editor-font-family, …).
    * That VS Code var resolves to an EMPTY value in some webview hosts, which makes
    * the nested var() empty and collapses inline `code` to the serif UA default
@@ -72,6 +82,17 @@
   --border-focus: var(--vscode-focusBorder);
   --border-input: var(--vscode-input-border);
   --border-dropdown: var(--vscode-dropdown-border);
+  /* panel.border is rgba(128,128,128,.35) in both Dark+ and Light+ —
+   * 1.45-1.59:1 against surface-bg/surface-input, both themes. Fine for a
+   * DECORATIVE divider (row separators, button-group hairlines) where the
+   * eye reads the content on either side, not the line itself — but it
+   * fails the 3:1 non-text minimum wherever the line IS the information:
+   * the memory chart's rail frame, its axis ticks, and the bracket joining
+   * the two rails. Those three reuse descriptionForeground instead, already
+   * 3.92-5.44:1 against both chart backdrops in both themes, under a name
+   * that says why it is stronger — a chart stroke that carries meaning, not
+   * a divider that does not. Leave --border-default alone everywhere else. */
+  --border-chart: var(--text-secondary);
 }
 
 /* ── Color — status ─────────────────────────────────────────────────────── */
@@ -106,10 +127,35 @@
 :root {
   --chart-1: var(--vscode-charts-blue, #4daafc);
   --chart-2: var(--vscode-charts-green, #89d185);
-  --chart-3: var(--vscode-charts-orange, #d18616);
+  /* NOT charts.orange: its own registered default is
+   * minimap.findMatchHighlight -> editor.findMatchHighlightBackground, which
+   * VS Code documents as "must not be opaque" — #EA5C0055 (~33% alpha) in
+   * BOTH Dark+ and Light+. Composited over input.background that reads as a
+   * muddy brown (#764728, 1.42:1) in Dark+ and a pale salmon (#F8C9AA,
+   * 1.51:1) in Light+ — never the opaque orange the fallback below implies,
+   * because the real VS Code variable is always defined and always wins.
+   * gitDecoration.modifiedResourceForeground is VS Code's own opaque
+   * amber/orange (#E2C08D Dark+, #895503 Light+ — the "M" badge on a
+   * modified file) and clears 6.39:1 Dark+ / 6.24:1 Light+ against
+   * input.background. */
+  --chart-3: var(--vscode-gitDecoration-modifiedResourceForeground, #d18616);
   --chart-4: var(--vscode-charts-purple, #b180d7);
   --chart-5: var(--vscode-charts-yellow, #cca700);
   --chart-6: var(--vscode-charts-red, #f14c4c);
+  /* The band/marker LABEL used to fill with its own series colour, painted
+   * on top of that series' own 30%-opacity band fill (MemoryChart.module.css)
+   * — a self-defeating pairing that failed 4.5:1 for all six series, both
+   * themes, without exception. No flat colour reads reliably against all six
+   * of its own 30%-tints in both themes: a series colour IS that tint's hue,
+   * so the two are close by construction. tab.activeForeground is VS Code's
+   * own opaque, always-defined, theme-flipping pair (white in Dark+, #333333
+   * in Light+) built for text on a prominent fill; against all six
+   * composited band tints (post the chart-3 fix above) it clears a 5.84:1
+   * floor in Dark+ (chart-3) and a 7.40:1 floor in Light+ (chart-4) — every
+   * series, both themes, comfortably past 4.5:1. The series colour keeps
+   * carrying the band's own fill and stroke; only the label's fill moved
+   * here. */
+  --chart-label-fg: var(--vscode-tab-activeForeground, #ffffff);
 }
 
 /* ── Motion ─────────────────────────────────────────────────────────────── */
