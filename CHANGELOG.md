@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **The Build Plan panel's Memory tab now draws the SoM's own region table
+  when the manifest carries one (#484).** `system-manifest-v1`'s
+  `memory[]` pane (alp-sdk#1365; not yet in a tagged release, alp-sdk#2047)
+  is read into a new `MemoryRegion[]` view, drawn as authority-tinted
+  frames behind the existing spans and listed below them in a grouped,
+  keyboard-selectable region table. Absent when the manifest
+  predates that producer or resolves no regions for the SoM — the tab
+  renders exactly what it rendered before. Read-only, same as the rest of
+  this tab (#484 D5 re-taken against the landed contract). No schema
+  re-vendor, no `SUPPORTED_CLI_VERSION` bump.
 - **The Build Plan panel now reads at its own base size, not a rung below it
   (#484).** Slice and manifest rows, env values, generated-file paths and
   previews, warnings, notes, the memory map's own rows, and the chart's axis,

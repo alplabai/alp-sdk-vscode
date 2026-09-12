@@ -36,6 +36,15 @@
 // makes even `unknown` an improvement is that the manifest's AGE is now on
 // screen either way: "post-build · 3 days ago" lets a reader draw the
 // conclusion this module refuses to draw for them.
+//
+// #484 PHASE 2 added a `memory[]` pane to the contract, read by a sibling
+// module (`memoryView.ts`) — not by this one, and this file carried no
+// stale claim about a region table to correct. Recorded here only so a
+// future reader auditing this file against that change finds the answer
+// rather than re-deriving it: freshness is a fact about the FILE's age,
+// never its contents, and that holds identically whether or not the
+// manifest resolves a region table. A manifest carrying a `memory[]` pane
+// and one carrying none are dated exactly the same way.
 
 /**
  * - `fresh` — the last observed build finished at or before the manifest was
