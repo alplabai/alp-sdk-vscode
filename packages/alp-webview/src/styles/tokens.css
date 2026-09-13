@@ -36,23 +36,28 @@
    * under 3:1. --accent stays the fill; MemoryRegions.module.css carries the
    * remaining --accent-fg contrast reasoning. */
   /* Round 2 claimed no VS Code token is dark enough to read against --accent
-   * in Dark+/Light+ without being a bare literal. THAT CLAIM WAS WRONG.
-   * terminal.ansiBlack is core-registered (terminalColorRegistry.ts, the
-   * same core registry --chart-3 already borrows from below) at
-   * #000000 (dark/light/hcDark) / #292929 (hcLight) — not a literal this
-   * file invents, an existing always-defined token. On --accent: 4.99:1
-   * Dark+, 6.26:1 Light+, 8.18:1 High Contrast Dark — all three the round-2
-   * comment claimed were unfixable. Only High Contrast Light falls short
-   * (2.66:1, ansiBlack's own hcLight value is a dark grey, not black,
-   * because HC Light's chrome is otherwise all-black-on-white and a literal
-   * black glyph would vanish into HC Light's OWN body text) — that one theme
-   * keeps --accent-fg (white, 5.47:1 there) via a scoped override in
-   * MemoryRegions.module.css. Borrowing a terminal-palette token for
-   * non-terminal chrome is exactly what --chart-3 already does two token
-   * blocks down; the same justification applies here: VS Code registers no
-   * dedicated "text for a saturated accent fill" colour, and terminal.ansi*
-   * is the nearest always-opaque, always-defined stand-in. */
-  --accent-fg-strong: var(--vscode-terminal-ansiBlack, #000000);
+   * in Dark+/Light+ without being a bare literal. THAT CLAIM WAS WRONG:
+   * terminal.ansiBlack (core-registered, the same registry --chart-3 already
+   * borrows from below) reaches 4.99:1 Dark+ / 6.26:1 Light+ / 8.18:1 High
+   * Contrast Dark. Round 3 adopted it on that basis — and then found its
+   * real-world cost only afterwards: VS Code's actual out-of-the-box default
+   * (2026 Dark, distinct from the registerColor() defaults above) falls from
+   * 5.52:1 with --accent-fg (white) to 3.80:1 with ansiBlack, because 2026
+   * Dark's own focusBorder is a different, TRANSLUCENT colour composited
+   * over a different ground. Weighed against every default theme VS Code
+   * currently ships — Dark Modern 4.53:1, Light Modern 6.31:1, 2026 Dark
+   * 5.52:1, 2026 Light 5.39:1, High Contrast Light 5.47:1, all unaided —
+   * --accent-fg already passes everywhere that matters in practice; only
+   * Dark+ (4.21:1) and Light+ (3.35:1), retired as VS Code's own defaults
+   * since 1.74, and High Contrast Dark (2.57:1, fixed below via a scoped
+   * override) fail. DECISION: keep --accent-fg. Dark+/Light+ are an
+   * accepted, DECLINED shortfall, not an unfixable one — terminal.ansiBlack
+   * was evaluated and is not taken, because it trades a real shipping
+   * theme's contrast for two retired ones. (An accent-coloured underline
+   * instead of a filled pressed state was also considered and not taken:
+   * this toggle is slated for removal, not worth a second visual language
+   * for its remaining lifetime.) MemoryRegions.module.css carries the
+   * High-Contrast-Dark-specific override and its own reasoning. */
   /* Concrete monospace stack — deliberately NOT var(--vscode-editor-font-family, …).
    * That VS Code var resolves to an EMPTY value in some webview hosts, which makes
    * the nested var() empty and collapses inline `code` to the serif UA default

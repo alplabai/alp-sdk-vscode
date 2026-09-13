@@ -55,20 +55,27 @@
   untouched.
 
   The pressed scale-toggle button's fill stays `--accent` (DESIGN.md's
-  Selected-Not-Suggested Rule). Its text is now `--accent-fg-strong`
-  (`terminal.ansiBlack`, an opaque core token, not the previous
-  `--accent-fg`/white) — 4.99:1 Dark+, 6.26:1 Light+, 8.18:1 High Contrast
-  Dark, all unaided; High Contrast Light keeps `--accent-fg` (5.47:1) via a
-  `:global(.vscode-high-contrast-light)` override, verified against the
-  built `dist/main.css` (CSS Modules hashes `vscode-high-contrast` unless
-  it is wrapped in `:global(...)`, and the host writes that class onto
-  `<body>` literally — an earlier, unshipped version of this fix targeted
-  `vscode-high-contrast` without the wrapper and never actually matched
-  anything). Disclosed: VS Code's actual out-of-the-box defaults (2026
-  Dark/Light, Dark/Light Modern) expose no CSS class fine enough to scope a
-  fix around, and in 2026 Dark specifically the new text measures 3.80:1 —
-  a regression from the previous white's 5.52:1 there. Pinned, not silently
-  accepted.
+  Selected-Not-Suggested Rule); its text stays `--accent-fg` (white). An
+  interim build on this branch tried `terminal.ansiBlack` instead — an
+  opaque core token that reaches 4.99:1 Dark+, 6.26:1 Light+ and 8.18:1 High
+  Contrast Dark, all unaided — but it was evaluated and declined once its
+  cost was measured against the themes VS Code actually ships by default:
+  it regresses 2026 Dark from 5.52:1 (white) to 3.80:1, and VS Code exposes
+  no CSS class fine enough to scope a fix around that one theme without
+  also affecting Dark+ or Dark Modern. Weighed against every current
+  default (Dark Modern 4.53:1, Light Modern 6.31:1, 2026 Dark 5.52:1, 2026
+  Light 5.39:1, High Contrast Light 5.47:1, all passing with white), keeping
+  `--accent-fg` covers more real themes; Dark+ (4.21:1) and Light+ (3.35:1),
+  retired as VS Code's own default since 1.74, are an accepted, declined
+  shortfall, not an unfixable one. High Contrast Dark alone still needs (and
+  gets) a scoped fix — `--surface-bg` is pure black there specifically
+  (8.18:1) — written with `:global(.vscode-high-contrast):not(.vscode-high-
+  contrast-light)` and verified against the built `dist/main.css`: CSS
+  Modules hashes an unwrapped class name, and the host writes
+  `vscode-high-contrast` onto `<body>` literally, so an earlier, unshipped
+  version of this fix that omitted the wrapper never actually matched
+  anything. The exclusion matters because High Contrast Light also carries
+  the plain `vscode-high-contrast` class for backwards compatibility.
 
 ## 0.6.0
 
