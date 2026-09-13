@@ -720,8 +720,42 @@ if (!table) {
       `memory-regions-aen: ${groups.length} tier groups rendered, want exactly 3`,
     );
   }
+
+  // Carried forward from Task 2. Its swatch gate can only read source text —
+  // `AuthoritySwatch` was mounted nowhere, so there was no rendered output to
+  // assert against, and the review proved three mutations that kept that gate
+  // green: hardcoding `data-tier="yours"`, dropping the attribute, and
+  // returning null. This task is the first that mounts the component, so it is
+  // the first that can check what actually reaches the DOM.
+  for (const group of Array.from(groups)) {
+    const groupTier = group.getAttribute("data-tier-group");
+    for (const row of Array.from(group.querySelectorAll('li[role="option"]'))) {
+      const swatches = row.querySelectorAll("[data-tier]");
+      if (swatches.length !== 1) {
+        problems.push(
+          `memory-regions-aen: a row carries ${swatches.length} [data-tier] elements, want exactly 1`,
+        );
+        continue;
+      }
+      const tier = swatches[0].getAttribute("data-tier");
+      if (!["yours", "locked", "unproven"].includes(tier || "")) {
+        problems.push(
+          `memory-regions-aen: a row's swatch reads data-tier="${tier}", which is not one of the three tiers`,
+        );
+      }
+      if (groupTier && tier !== groupTier) {
+        problems.push(
+          `memory-regions-aen: a row in the "${groupTier}" group carries a "${tier}" swatch — the swatch is not following its row's tier`,
+        );
+      }
+    }
+  }
 }
 ```
+
+The group element therefore carries `data-tier-group` alongside its `role="group"`
+and `aria-label`, so the rendered swatch can be checked against the group it sits
+in rather than against a value the test itself supplies.
 
 - [ ] **Step 2: Run the harness to verify it fails**
 
