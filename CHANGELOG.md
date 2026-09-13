@@ -43,24 +43,32 @@
   exception. Labels now share one `--chart-label-fg` token
   (`tab.activeForeground`) that clears 4.5:1 against every series' band fill
   in every default theme; the series colour still carries the band's own
-  fill and stroke. `--chart-3` pointed at `charts.orange`, whose own default
-  is never opaque (~33% alpha in every default theme, VS Code's own design);
-  it now points at `terminal.ansiCyan`, a core-registered, always-opaque
-  token distinct in hue from `--chart-5`. The memory chart's rail frame,
-  axis ticks and inter-rail bracket used `--border-default` (`panel.border`,
-  ~35% alpha) — 1.45-1.59:1 against their backdrop, under the 3:1 non-text
-  floor for a stroke that carries meaning; a new `--border-chart` token
-  (`descriptionForeground`) clears 3:1 in every default theme.
+  fill and stroke. `--chart-3` pointed at `charts.orange`, whose own
+  registered default is never opaque (~33% alpha, VS Code's own design); it
+  now points at `terminal.ansiCyan`, a core-registered, always-opaque token
+  distinct in hue from `--chart-5`. The memory chart's rail frame, axis ticks
+  and inter-rail bracket used `--border-default` (`panel.border`, ~35% alpha
+  in Dark+/Light+) — 1.45-1.59:1 against their backdrop, under the 3:1
+  non-text floor for a stroke that carries meaning; a new `--border-chart`
+  token (`descriptionForeground`) clears 3:1 in every default theme.
   `.regionFrame`'s own stroke and every decorative `--border-default` use are
-  untouched. The pressed scale-toggle button's text (`--accent-fg`, white, on
-  `--accent`) still falls short of 4.5:1 in Dark+ (4.21:1), Light+ (3.35:1)
-  and High Contrast Dark (2.57:1) — `--accent` stays the fill (DESIGN.md's
-  Selected-Not-Suggested Rule), and no single text colour reads against all
-  four of focusBorder's defaults, which range from a moderate blue to a
-  bright orange in High Contrast Dark; High Contrast Dark alone is fixed with
-  a scoped `body.vscode-high-contrast` override, since that theme's own panel
-  ground happens to be pure black. Reported, not silently accepted, for
-  Dark+/Light+.
+  untouched.
+
+  The pressed scale-toggle button's fill stays `--accent` (DESIGN.md's
+  Selected-Not-Suggested Rule). Its text is now `--accent-fg-strong`
+  (`terminal.ansiBlack`, an opaque core token, not the previous
+  `--accent-fg`/white) — 4.99:1 Dark+, 6.26:1 Light+, 8.18:1 High Contrast
+  Dark, all unaided; High Contrast Light keeps `--accent-fg` (5.47:1) via a
+  `:global(.vscode-high-contrast-light)` override, verified against the
+  built `dist/main.css` (CSS Modules hashes `vscode-high-contrast` unless
+  it is wrapped in `:global(...)`, and the host writes that class onto
+  `<body>` literally — an earlier, unshipped version of this fix targeted
+  `vscode-high-contrast` without the wrapper and never actually matched
+  anything). Disclosed: VS Code's actual out-of-the-box defaults (2026
+  Dark/Light, Dark/Light Modern) expose no CSS class fine enough to scope a
+  fix around, and in 2026 Dark specifically the new text measures 3.80:1 —
+  a regression from the previous white's 5.52:1 there. Pinned, not silently
+  accepted.
 
 ## 0.6.0
 

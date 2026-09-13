@@ -234,10 +234,13 @@ in both directions, without a single override.
   how the system says "interactive" without a border or a shadow.
 - **Hairline** (`{colors.border-default}`) and **Widget Hairline**
   (`{colors.border-widget}`): the 1px rules that do all the structural work
-  shadows would do elsewhere. `{colors.border-default}` is `panel.border`
-  at ~35% alpha — 1.45-1.59:1 against `{colors.surface-bg}`/
-  `{colors.surface-input}`, fine for a divider the eye reads past, not for a
-  line that IS the information.
+  shadows would do elsewhere. `{colors.border-default}` is `panel.border` —
+  ~35% alpha (1.45-1.59:1 against `{colors.surface-bg}`/
+  `{colors.surface-input}`) in Dark+/Light+ only; in both High Contrast
+  themes `panel.border` is `contrastBorder` instead — a different, fully
+  opaque token (`#6FC3DF` HC Dark / `#0F4A85` HC Light) — so the ~35% alpha
+  figure does not apply there. Fine for a divider the eye reads past, not
+  for a line that IS the information.
 - **Chart Stroke** (`{colors.border-chart}`, aliased from
   `{colors.text-secondary}`): the memory chart's rail frame, axis ticks and
   inter-rail bracket — meaning-bearing strokes that need the 3:1 non-text

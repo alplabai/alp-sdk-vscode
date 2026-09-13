@@ -34,8 +34,25 @@
    * sideBar.background there, so the pressed fill vanished against the panel
    * (1.00:1) and the fallback cue (pressed text vs unpressed text) also fell
    * under 3:1. --accent stays the fill; MemoryRegions.module.css carries the
-   * remaining --accent-fg contrast shortfall and why it cannot move without
-   * either --accent or a bare literal. */
+   * remaining --accent-fg contrast reasoning. */
+  /* Round 2 claimed no VS Code token is dark enough to read against --accent
+   * in Dark+/Light+ without being a bare literal. THAT CLAIM WAS WRONG.
+   * terminal.ansiBlack is core-registered (terminalColorRegistry.ts, the
+   * same core registry --chart-3 already borrows from below) at
+   * #000000 (dark/light/hcDark) / #292929 (hcLight) — not a literal this
+   * file invents, an existing always-defined token. On --accent: 4.99:1
+   * Dark+, 6.26:1 Light+, 8.18:1 High Contrast Dark — all three the round-2
+   * comment claimed were unfixable. Only High Contrast Light falls short
+   * (2.66:1, ansiBlack's own hcLight value is a dark grey, not black,
+   * because HC Light's chrome is otherwise all-black-on-white and a literal
+   * black glyph would vanish into HC Light's OWN body text) — that one theme
+   * keeps --accent-fg (white, 5.47:1 there) via a scoped override in
+   * MemoryRegions.module.css. Borrowing a terminal-palette token for
+   * non-terminal chrome is exactly what --chart-3 already does two token
+   * blocks down; the same justification applies here: VS Code registers no
+   * dedicated "text for a saturated accent fill" colour, and terminal.ansi*
+   * is the nearest always-opaque, always-defined stand-in. */
+  --accent-fg-strong: var(--vscode-terminal-ansiBlack, #000000);
   /* Concrete monospace stack — deliberately NOT var(--vscode-editor-font-family, …).
    * That VS Code var resolves to an EMPTY value in some webview hosts, which makes
    * the nested var() empty and collapses inline `code` to the serif UA default
@@ -82,16 +99,22 @@
   --border-focus: var(--vscode-focusBorder);
   --border-input: var(--vscode-input-border);
   --border-dropdown: var(--vscode-dropdown-border);
-  /* panel.border is rgba(128,128,128,.35) in both Dark+ and Light+ —
-   * 1.45-1.59:1 against surface-bg/surface-input, both themes. Fine for a
-   * DECORATIVE divider (row separators, button-group hairlines) where the
-   * eye reads the content on either side, not the line itself — but it
-   * fails the 3:1 non-text minimum wherever the line IS the information:
-   * the memory chart's rail frame, its axis ticks, and the bracket joining
-   * the two rails. Those three reuse descriptionForeground instead, already
-   * 3.92-5.44:1 against both chart backdrops in both themes, under a name
-   * that says why it is stronger — a chart stroke that carries meaning, not
-   * a divider that does not. Leave --border-default alone everywhere else. */
+  /* panel.border is rgba(128,128,128,.35) in Dark+ and Light+ — 1.45-1.59:1
+   * against surface-bg/surface-input there. (In both High Contrast themes
+   * panel.border is contrastBorder instead — #6FC3DF HC Dark / #0F4A85 HC
+   * Light, fully opaque — a different token entirely, not this alpha value;
+   * see DESIGN.md.) Fine for a DECORATIVE divider (row separators,
+   * button-group hairlines) where the eye reads the content on either side,
+   * not the line itself — but it fails the 3:1 non-text minimum wherever the
+   * line IS the information: the memory chart's rail frame, its axis ticks,
+   * and the bracket joining the two rails. Those three reuse
+   * descriptionForeground instead: 5.44:1 (Dark+ vs surface-bg), 4.27:1
+   * (Dark+ vs surface-input — composited over surface-input, not
+   * surface-bg; an earlier version of this comment quoted the surface-bg
+   * composite's 3.92:1 against the wrong backdrop), 4.40:1 (Light+ vs
+   * surface-bg), 4.88:1 (Light+ vs surface-input) — a chart stroke that
+   * carries meaning, not a divider that does not. Leave --border-default
+   * alone everywhere else. */
   --border-chart: var(--text-secondary);
 }
 
@@ -129,13 +152,18 @@
 :root {
   --chart-1: var(--vscode-charts-blue, #4daafc);
   --chart-2: var(--vscode-charts-green, #89d185);
-  /* NOT charts.orange: its own registered default is
+  /* NOT charts.orange: its own REGISTERED DEFAULT is
    * minimap.findMatchHighlight -> editor.findMatchHighlightBackground, which
    * VS Code documents as "must not be opaque" — #EA5C0055 (~33% alpha) in
-   * ALL FOUR default themes. Composited over input.background that reads as
-   * a muddy brown (#764728, 1.42:1) in Dark+ and a pale salmon (#F8C9AA,
-   * 1.51:1) in Light+ — never opaque, because the real VS Code variable is
-   * always defined and always wins over the fallback below.
+   * the registerColor() defaults for Dark+, Light+, Dark Modern and Light
+   * Modern. Composited over input.background that reads as a muddy brown
+   * (#764728, 1.42:1) in Dark+ and a pale salmon (#F8C9AA, 1.51:1) in
+   * Light+ — never opaque there, because the real VS Code variable is
+   * always defined and always wins over the fallback below. A THEME may
+   * still override charts.orange to something opaque (2026 Dark sets
+   * "#CD861A", 2026 Light "#d18616" — both fully opaque) — the decision to
+   * move off it stands on the registered default every theme falls back to
+   * absent its own override, not a claim that no theme can ever set it.
    *
    * Round 1's fix (gitDecoration.modifiedResourceForeground) was opaque but
    * wrong for a different reason: it is EXTENSION-contributed (the built-in
@@ -150,12 +178,20 @@
    * #00cdcd HC Dark, #0598bc HC Light — never alpha), and a teal ~145° away
    * from --chart-5's hue in both Dark+ and Light+ (was ~13°) — the collision
    * this token exists to avoid. It sits closer in hue to --chart-1 (blue,
-   * ~20° apart) than the palette's other gaps (45°+), a real but lesser
-   * trade-off with no core, opaque, all-four-theme token available at true
-   * "orange" (~20-30°) — VS Code simply does not register one outside the
-   * translucent chain above and the extension-contributed one this replaces.
-   * Clears 3.37-10.61:1 against input.background (non-text, >=3:1) in every
-   * default theme. */
+   * ~20° apart, dark/light/HC Light — HC Dark's own ansiCyan value, #00cdcd,
+   * separates further, ~32°) than the palette's other gaps (its OWN next-
+   * closest pair is chart-5/chart-6, ~30-49° depending on theme, tightest in
+   * HC Light at ~29.9°) — a real but lesser trade-off. terminal.ansiMagenta
+   * clears >=26° from every OTHER series in all four themes, a wider margin
+   * than ansiCyan's ~20° from --chart-1, but fails on a DIFFERENT axis: its
+   * own contrast against input.background drops to 2.40:1 in Dark+
+   * (ansiBrightMagenta: 2.94:1 in Light+), under the 3:1 non-text floor —
+   * the constraint that actually excludes it, not hue. No core, opaque,
+   * all-four-theme token was found separated from BOTH --chart-5 and
+   * --chart-1 by hue AND clearing 3:1 against the rail; terminal.ansiCyan
+   * clears the rail everywhere (3.37-10.61:1, non-text >=3:1) and is
+   * separated from the collision this token exists to avoid, so it is the
+   * pick, with the chart-1 proximity disclosed rather than hidden. */
   --chart-3: var(--vscode-terminal-ansiCyan, #0598bc);
   --chart-4: var(--vscode-charts-purple, #b180d7);
   --chart-5: var(--vscode-charts-yellow, #cca700);

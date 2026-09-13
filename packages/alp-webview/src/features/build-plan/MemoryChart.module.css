@@ -44,7 +44,7 @@
 }
 
 /* Load-bearing, not decorative: this frame IS the rail's boundary, so it
-   takes --border-chart (3.92-5.44:1 against surface-bg/surface-input, both
+   takes --border-chart (4.27-5.44:1 against surface-bg/surface-input, both
    themes), not --border-default (1.45-1.59:1 there — a divider ratio, not a
    shape ratio). */
 .railFrame {
@@ -162,7 +162,7 @@
 }
 
 /* Load-bearing, not decorative: an axis mark IS the information, so it takes
-   --border-chart (3.92-5.44:1 against surface-bg/surface-input, both
+   --border-chart (4.27-5.44:1 against surface-bg/surface-input, both
    themes), not --border-default (1.45-1.59:1 there). */
 .tick {
   stroke: var(--border-chart);
@@ -215,7 +215,7 @@
 
 /* Load-bearing, not decorative: this is the only mark stating the
    relationship between the two rails, so it takes --border-chart
-   (3.92-5.44:1 against surface-bg/surface-input, both themes), not
+   (4.27-5.44:1 against surface-bg/surface-input, both themes), not
    --border-default (1.45-1.59:1 there — near-invisible in Dark+). */
 .bracket {
   stroke: var(--border-chart);

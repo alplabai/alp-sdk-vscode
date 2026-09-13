@@ -193,34 +193,60 @@
 
 .scaleBtn[aria-pressed="true"] {
   background: var(--accent);
-  color: var(--accent-fg);
+  color: var(--accent-fg-strong);
 }
 
-/* `--accent-fg` (button.foreground, always white) on `--accent` (focusBorder)
-   fails WCAG's 4.5:1 text floor in three of the four default themes — 4.21:1
-   Dark+, 3.35:1 Light+, 2.57:1 High Contrast Dark (only 5.47:1 High Contrast
-   Light passes — focusBorder is uncharacteristically dark there). This is
-   NOT fixable by choosing a different flat text colour while the fill stays
-   `--accent`: focusBorder's four defaults span too wide a luminance range
-   (a moderate blue in Dark+/Light+/HC Light, a BRIGHT orange in HC Dark) for
-   one colour to read against all of them — literal black clears Dark+
-   (4.99:1), Light+ (6.26:1) and HC Dark (8.18:1) but fails HC Light (3.84:1),
-   and no VS Code semantic token is that dark in Dark+/Light+ without being a
-   bare literal (`test/webview.cssTokens.test.js` forbids one as a primary
-   value; the darkest realistic token, editor.background's #1E1E1E, still
-   only reaches 3.96:1 in Dark+). Fixing Dark+/Light+ would need either a
-   literal `#000` (against the Borrowed Palette Rule) or moving off `--accent`
-   (against the user's decision) — this is reported, not silently accepted.
-   HC Dark alone IS fixable with a real token: it is the one theme where
-   `--surface-bg` (sideBar.background) is pure black, giving 8.18:1 against
-   `--accent` there specifically — VS Code injects a `vscode-high-contrast`
-   class on <body> for exactly this kind of per-theme-kind exception (see
-   `src/vs/workbench/contrib/webview/browser/themeing.ts`'s `ApiThemeClassName`
-   enum), so that one theme gets a scoped override rather than being left at
-   2.57:1 alongside Dark+/Light+, which cannot be moved at all under these
-   constraints. */
-body.vscode-high-contrast .scaleBtn[aria-pressed="true"] {
-  color: var(--surface-bg);
+/* CORRECTION, replacing the previous version of this comment: that version
+   claimed no VS Code token reads dark enough against `--accent` in
+   Dark+/Light+ without being a bare literal. THAT WAS WRONG.
+   `--accent-fg-strong` (tokens.css) is `terminal.ansiBlack` — core-registered,
+   opaque, always defined at #000000 in Dark+/Light+/High Contrast Dark and
+   #292929 in High Contrast Light. Against `--accent` (focusBorder): 4.99:1
+   Dark+, 6.26:1 Light+, 8.18:1 High Contrast Dark — all three the previous
+   comment called unfixable. Only High Contrast Light falls short (2.66:1):
+   its own ansiBlack value is a dark GREY, not black — HC Light's chrome is
+   built for black-on-white everywhere else, so a literal black glyph would
+   itself vanish into that theme's own body text, and VS Code did not chase
+   #000000 there. That one theme keeps `--accent-fg` (white, 5.47:1) via the
+   override below.
+
+   BLOCKER, fixed here: an earlier version of this rule targeted
+   `body.vscode-high-contrast` to patch High Contrast Dark specifically
+   (back when the base colour was `--accent-fg`/white, which fails there at
+   2.57:1). That rule was DEAD CODE: this is a CSS Module, `.vscode-high-
+   contrast` is not wrapped in `:global(...)`, so the build hashes it into a
+   file-local class no host ever writes onto <body> — VS Code writes the
+   LITERAL class, so the selector could never match, and High Contrast Dark
+   silently stayed at 2.57:1 while this file claimed it was fixed. Swapping
+   the base token to ansiBlack removes the need for that override entirely
+   (ansiBlack's own hcDark value already reads correctly there); the one
+   override this rule now needs is for High Contrast Light instead.
+
+   MAJOR, also corrected here: the override below is scoped to
+   `.vscode-high-contrast-light` specifically, NOT `.vscode-high-contrast`.
+   VS Code's webview bootstrap (`pre/index.html`) adds BOTH classes to <body>
+   whenever the active theme is High Contrast Light (the plain class for
+   backwards compatibility, alongside its own) — so a selector scoped to the
+   shared class would repaint High Contrast Light too. Targeting the `-light`
+   class alone needs no `:not()` the other way: High Contrast Dark never
+   carries it. Written with `:global(...)` — the first use of that escape
+   hatch in this package, because it wraps a class VS Code itself writes onto
+   <body> (`ApiThemeClassName` in `themeing.ts`), not a class this stylesheet
+   defines, so CSS Modules must be told not to hash it.
+
+   Disclosed, not hidden: `--accent-fg-strong` is not scoped any differently
+   for the themes VS Code currently ships as its actual out-of-box defaults
+   (Dark Modern / Light Modern / 2026 Dark / 2026 Light) — VS Code exposes no
+   CSS class finer than "dark" / "light" plus the two high-contrast variants,
+   so a "2026 Dark specifically" selector does not exist. Measured against
+   2026 Dark's own focusBorder default (`#3994BCB3`, itself translucent —
+   composited over this panel's ground it paints `#2F708C`): ansiBlack
+   reaches only 3.80:1 there, a regression from the 5.52:1 `--accent-fg`
+   (white) held in that theme before this change — see the contrast report.
+   This follows from the user's decision to standardise the pressed text on
+   ansiBlack for the registerColor()-default themes named above. */
+body:global(.vscode-high-contrast-light) .scaleBtn[aria-pressed="true"] {
+  color: var(--accent-fg);
 }
 
 .band[data-selected],
