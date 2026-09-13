@@ -38,6 +38,17 @@
 // `["yours","locked","unproven"]` list, so a CSS rule renamed or dropped, or
 // a fourth tier added to the type without a matching rule, would silently
 // stop being checked rather than fail.
+//
+// A fourth set of checks, also below, closes a gap the third one cannot see:
+// the union-versus-selectors arm reads `authorityTier.ts`'s TYPE and the
+// CSS's selectors — neither one observes what `AuthoritySwatch.tsx` actually
+// EMITS. A component that hardcodes `data-tier="yours"` regardless of its
+// own `tier` prop, one that drops the `data-tier={tier}` attribute
+// entirely, or one that returns `null`, all still satisfy every check above
+// while painting nothing real. These three are component-anchored,
+// source-text only (no render, no React, no jsdom — the component is
+// mounted nowhere yet; a real render assertion belongs to the task that
+// first mounts it), each tied to one of those three mutations.
 
 const fs = require("node:fs");
 const path = require("node:path");
@@ -62,6 +73,56 @@ const BUILD_PLAN_DIR = path.join(
 const COMPONENT_TSX = path.join(BUILD_PLAN_DIR, "AuthoritySwatch.tsx");
 const AUTHORITY_TIER_TS = path.join(BUILD_PLAN_DIR, "authorityTier.ts");
 const MODULE_CSS = path.join(BUILD_PLAN_DIR, "AuthoritySwatch.module.css");
+
+/** The `AuthoritySwatch` function's own body — the balanced-brace region
+ * between its opening `{` and matching closing `}` — so the three checks
+ * below read what THIS function renders, not `AuthorityLegend`'s JSX
+ * elsewhere in the same file (which invokes `<AuthoritySwatch ... />` as a
+ * component, not as a literal `data-tier` attribute). */
+function authoritySwatchBody(componentSrc) {
+  const marker = "export function AuthoritySwatch(";
+  const marked = componentSrc.indexOf(marker);
+  if (marked === -1) {
+    throw new Error(
+      "could not find `export function AuthoritySwatch(` in AuthoritySwatch.tsx",
+    );
+  }
+  // Skip the PARAMETER list paren-balanced first — it is itself
+  // `({ tier }: { tier: AuthorityTier })`, so the first `{` after the
+  // marker is the destructuring brace, not the function body's.
+  const paramsOpenParen = marked + marker.length - 1;
+  let parenDepth = 0;
+  let paramsCloseParen = -1;
+  for (let i = paramsOpenParen; i < componentSrc.length; i++) {
+    const c = componentSrc[i];
+    if (c === "(") parenDepth++;
+    if (c === ")") {
+      parenDepth--;
+      if (parenDepth === 0) {
+        paramsCloseParen = i;
+        break;
+      }
+    }
+  }
+  if (paramsCloseParen === -1) {
+    throw new Error(
+      "could not find the end of AuthoritySwatch's parameter list",
+    );
+  }
+  const braceStart = componentSrc.indexOf("{", paramsCloseParen);
+  let braceDepth = 0;
+  for (let i = braceStart; i < componentSrc.length; i++) {
+    const c = componentSrc[i];
+    if (c === "{") braceDepth++;
+    if (c === "}") {
+      braceDepth--;
+      if (braceDepth === 0) return componentSrc.slice(braceStart + 1, i);
+    }
+  }
+  throw new Error(
+    "could not find the closing brace of AuthoritySwatch's function body",
+  );
+}
 
 test("each swatch tier clears 3:1 against the panel ground in every covered theme", () => {
   for (const theme of THEMES) {
@@ -148,5 +209,38 @@ test("the AuthorityTier set AuthoritySwatch.tsx's data-tier prop is typed agains
       `(${cssTiers.join(", ")}) have drifted apart — a tier the component ` +
       "can be given no longer has a rule to paint it, or a CSS rule exists " +
       "for a tier the component can never be given.",
+  );
+});
+
+test("AuthoritySwatch's span actually carries data-tier={tier} — kills a dropped attribute", () => {
+  const body = authoritySwatchBody(fs.readFileSync(COMPONENT_TSX, "utf8"));
+  assert.ok(
+    body.includes("data-tier={tier}"),
+    "AuthoritySwatch.tsx no longer binds data-tier={tier} on its <span> — " +
+      "a swatch would render with no tier attribute at all, and " +
+      'AuthoritySwatch.module.css\'s [data-tier="…"] rules would match nothing',
+  );
+});
+
+test("AuthoritySwatch never hardcodes a data-tier literal — kills a fixed value", () => {
+  const body = authoritySwatchBody(fs.readFileSync(COMPONENT_TSX, "utf8"));
+  const literal = /data-tier="([^"]*)"/.exec(body);
+  assert.ok(
+    literal === null,
+    literal
+      ? `AuthoritySwatch.tsx hardcodes data-tier="${literal[1]}" on its ` +
+          "<span> — every swatch would paint that one tier regardless of " +
+          "its own tier prop"
+      : undefined,
+  );
+});
+
+test("AuthoritySwatch actually renders a <span className={styles.swatch}> — kills a return null", () => {
+  const body = authoritySwatchBody(fs.readFileSync(COMPONENT_TSX, "utf8"));
+  assert.ok(
+    /<span\b/.test(body) && body.includes("className={styles.swatch}"),
+    "AuthoritySwatch.tsx no longer renders a <span className={styles.swatch}> " +
+      "— it may return null (or something else) and paint nothing the CSS " +
+      "module's rules can ever match",
   );
 });
