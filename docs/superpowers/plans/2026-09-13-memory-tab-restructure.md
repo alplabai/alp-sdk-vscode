@@ -943,16 +943,35 @@ Expected: FAIL on all three.
 
 - [ ] **Step 3: Apply the changes**
 
-- [ ] **Step 4: Run the harness and the type-scale gate**
+- [ ] **Step 4: Pin the swatch CSS in the BUILT artifact**
+
+Carried forward from Task 2, where it was correctly impossible: the swatch gate
+reads the source CSS, because until this task nothing imported the component and
+`packages/alp-webview/dist/main.css` carried zero `data-tier` rules. Rendering the
+legend here is what puts them in the bundle, so this is the first task that can
+assert they survive Vite.
+
+Add an arm to `test/buildPlan.swatchContrast.test.js` that runs after
+`pnpm run compile` and asserts all three `[data-tier="…"]` rules are present in
+`packages/alp-webview/dist/main.css`. `test/buildPlan.chartContrast.test.js`
+already has a `readDistCss()` helper written for exactly this reason — a source
+read "cannot tell a working override from dead markup" — so reuse it rather than
+writing a second reader.
+
+Prove the arm bites: temporarily remove the `AuthorityLegend` import so the CSS
+module is tree-shaken out, confirm the arm FAILS naming the missing selectors,
+then restore the import.
+
+- [ ] **Step 5: Run the harness and the type-scale gate**
 
 Run: `pnpm run test:e2e:webview`
 Run: `node --test test/buildPlan.typeScale.test.js`
 Expected: PASS. Update the `CHROME` allowlist and `SANCTIONED` list for every size that moved, including `.apertureLabel`'s sanctioned `9px` if the rotated label is gone.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add packages/alp-webview/src/features/build-plan/MemoryRegions.tsx packages/alp-webview/src/features/build-plan/MemoryRegions.module.css test/webview/ui-render.tsx test/buildPlan.typeScale.test.js
+git add packages/alp-webview/src/features/build-plan/MemoryRegions.tsx packages/alp-webview/src/features/build-plan/MemoryRegions.module.css test/webview/ui-render.tsx test/buildPlan.typeScale.test.js test/buildPlan.swatchContrast.test.js
 ```
 
 ```bash
