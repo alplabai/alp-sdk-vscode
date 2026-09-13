@@ -62,16 +62,29 @@ Both kinds become rows of one table, sorted by resolved base address:
   provenance inline — `extent from region he_slot0` — rather than importing
   the number.
 
-Columns, fixed and aligned: `swatch | name | producer | authority | kind |
-base – end | size | cores`. Addresses are right-aligned and tabular so they form
-a real column. `MemoryRegions.module.css` already states that monospace was
-chosen to buy exactly that alignment; the current `display: flex; flex-wrap:
-wrap` throws it away, leaving the `<code>` address starting at a different x on
-every row.
+**Four columns by default**, fixed and aligned: `swatch | name | base – end |
+size`. The name cell carries a compact producer tag at Label register — `SoM
+region` or `placed image` — beside the identifier. The tag is not a column and
+does not cost a fifth one, but it is never dropped: it is the only thing
+stopping adjacency from reading as identity, which is the whole reason two
+producers may sit on consecutive rows at all.
+
+Addresses are right-aligned and tabular so they form a real column.
+`MemoryRegions.module.css` already states that monospace was chosen to buy
+exactly that alignment; the current `display: flex; flex-wrap: wrap` throws it
+away, leaving the `<code>` address starting at a different x on every row.
+
+**Everything else lives one interaction away.** Expanding a row reveals the
+authority phrase verbatim, kind, cores, the provenance clause, and the reason
+where there is one. Nothing is removed from the view — it is deferred. A screen
+reader reaches the same content through the row's accessible name without
+expanding anything.
 
 Rows are grouped by the authority ordering `byGroupThenAddress` already
-computes and currently renders no header for. Groups are rendered, **writable
-first**, each with a count. Non-writable groups collapse by default.
+computes and currently renders no header for. Only the writable group is open
+at rest, with its count; the rest collapse to a single line each (`SoM-owned
+(5)`). The customer's own extents are what the reader came for, and they are
+what the first screen shows.
 
 ## 2. The rail: a piecewise schematic
 
@@ -141,10 +154,22 @@ nothing is there. The 1px dash patterns are not resolvable on frames 1–4px tal
 Replacement: a solid **6px bar in its own gutter immediately left of the rail**,
 never behind the data, and the same swatch at the head of every table row.
 
-All six classes keep their own value — `customer_runtime`, `customer_image`,
-`locked`, `reserved`, `composite`, `unstated`. Nothing is collapsed: a declared
-`reserved` and a fail-closed `unstated` must not look alike, which is the same
-discipline that refuses the by-name join.
+**Three tiers at rest, six classes underneath.** The swatch shows one of three
+values on first sight — yours to write, locked, neither-yours-nor-proven — and
+the legend is three items, which is inside the four-item working-memory limit a
+six-item key is not.
+
+The six classes are not collapsed away. `customer_runtime`, `customer_image`,
+`locked`, `reserved`, `composite` and `unstated` each keep their exact name, and
+that name appears verbatim in the expanded row and in the row's accessible name,
+where it is always available to a screen reader without any interaction. A
+declared `reserved` and a fail-closed `unstated` therefore still never claim to
+be the same thing — the distinction moves off the first glance, it does not
+disappear. Deferring a distinction is honest; erasing one is not.
+
+The third tier's label must not read as a verdict the manifest did not make:
+it groups "not yours" with "not proven", which is exactly what the fail-closed
+rule already does when it decides who may write.
 
 The channel is **density and hatch, not hue**. `DESIGN.md`'s Status-Only Color
 Rule reserves colour for surfaces reporting state, and write authority is not a
@@ -156,9 +181,9 @@ not the Notes tab. Today `.legend` describes bands, lines and colour and does
 not mention frames at all, and the Notes tab does not document the encoding
 either, so decoding one frame costs a 400px round trip, seven times.
 
-**Acceptance criteria, measured not asserted:** each swatch value scores ≥3:1
-against the panel ground, and all six are pairwise distinguishable, in every
-theme the gate covers. That set must include **the themes VS Code actually
+**Acceptance criteria, measured not asserted:** each of the three swatch tiers
+scores ≥3:1 against the panel ground, and the three are pairwise
+distinguishable, in every theme the gate covers. That set must include **the themes VS Code actually
 ships as defaults — Dark Modern and Light Modern — and both high-contrast
 themes**. Dark+ and Light+ may be kept as legacy arms, but they are not the
 default and have not been since 1.74; a gate built only on them is measuring a
@@ -233,6 +258,13 @@ the defects the accessibility pass measured (7 HIGH, 5 MEDIUM, 3 LOW).
   semantics, and arrow keys must never land on a control that is not a row.
   Collapsed rows are removed from the option set, not hidden while still
   focusable.
+- Row expansion (§1) must not collide with row selection. Selection stays on
+  Enter; expansion gets its own key and its own `aria-expanded` state on the
+  row, and the revealed content is owned by the row rather than inserted as
+  new options — a listbox whose option count changes under the arrow keys is
+  the same defect as the collapsing groups above. Because every deferred value
+  is already in the row's accessible name, a screen-reader user never has to
+  expand anything to reach it.
 - `role="tablist"` gains arrow-key navigation, roving tabindex, a real
   `role="tabpanel"`, and `aria-controls`/`id` pairing.
 - The `<svg role="img">` contradiction ends. The rail carries no focusable
@@ -305,9 +337,16 @@ rail over it. The split is planned up front, not after:
 ## 11. Tests and gates
 
 - The render harness (`test/webview/ui-render.tsx`) pins, per fixture: the
-  producer column, the deterministic equal-`base` order, the group headers and
-  counts, gap-segment count and compressed byte text, the 8px floor, the six
-  swatch values, legend presence, and the promoted blocked finding.
+  four default columns and that no fifth renders at rest; the producer tag on
+  the name cell; the deterministic equal-`base` order; which group is open at
+  rest and the collapsed one-line form of the others with their counts;
+  gap-segment count and compressed byte text; the 8px floor; the three swatch
+  tiers; a three-item legend; and the promoted blocked finding.
+- A separate arm pins that **nothing is lost to deferral**: for every fixture
+  row, the exact authority class name (`customer_runtime`, `customer_image`,
+  `locked`, `reserved`, `composite`, `unstated`) appears in the row's
+  accessible name without expansion, and appears verbatim in the expanded row.
+  This is the assertion that keeps "deferred" from drifting into "dropped".
 - A contrast test computes each swatch value against the panel ground per §3's
   theme set — the shipping defaults plus both high-contrast themes — asserting
   ≥3:1 and pairwise distinguishability in each, resolving colours from the
