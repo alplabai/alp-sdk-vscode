@@ -45,6 +45,7 @@ const VIEW_FILES = [
   "MemoryRegions.tsx",
   "MemoryChart.tsx",
   "MemoryRegionTable.tsx",
+  "AuthoritySwatch.tsx",
 ].map((name) =>
   path.join(
     REPO,

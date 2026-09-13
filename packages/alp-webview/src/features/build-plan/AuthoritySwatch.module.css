@@ -1,0 +1,49 @@
+.swatch {
+  display: inline-block;
+  width: 6px;
+  height: 14px;
+  border-radius: var(--radius-sm);
+  flex: none;
+}
+
+/* Yours: solid. The reader's own rows carry full ink. */
+.swatch[data-tier="yours"] {
+  background: var(--text-primary);
+}
+
+/* Locked: half-tone. Present and definite, but not the reader's.
+ *
+ * 71%, not the brief's 55%: at 55% this tier fails the 3:1-against-
+ * --surface-bg floor in VS Code Light+ (2.28:1 — light's own
+ * --vscode-foreground/--vscode-sideBar-background pair is the tightest of
+ * the five themes this suite covers, only 5.58:1 apart at full opacity).
+ * 71% is the lowest whole percentage that clears 3:1 in every covered theme
+ * (Light+ lands at 3.06:1); see test/buildPlan.swatchContrast.test.js and
+ * its task-2-report.md for the per-theme numbers. */
+.swatch[data-tier="locked"] {
+  background: color-mix(in srgb, var(--text-primary) 71%, transparent);
+}
+
+/* Not yours or not proven: a hatch, so the difference survives a greyscale
+   display and does not rest on lightness alone. */
+.swatch[data-tier="unproven"] {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--text-primary) 0 2px,
+    transparent 2px 4px
+  );
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  margin: 0 0 var(--space-4);
+  color: var(--text-secondary);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
