@@ -47,6 +47,12 @@ export interface RailLayout {
  * `occupied` are the intervals something actually occupies. A segment no
  * interval covers is a `gap`. Passing none means "treat everything as
  * occupied", which is what a rail with a single extent wants.
+ *
+ * **Invariant:** Every `occupied` interval endpoint must appear in `boundaries`,
+ * so a segment is either wholly within an `occupied` interval or wholly without.
+ * When this invariant is violated, the overlap test below will mislabel a gap
+ * as an extent (wasting visible space) rather than an extent as a gap (hiding
+ * data silently). We choose the failure direction that makes the mistake obvious.
  */
 export function layoutRail(
   win: Window,
@@ -67,7 +73,7 @@ export function layoutRail(
     const isOccupied =
       occupied.length === 0
         ? true
-        : occupied.some((o) => o.lo <= lo && o.hi >= hi);
+        : occupied.some((o) => o.lo < hi && o.hi > lo);
     raw.push({ lo, hi, kind: isOccupied ? "extent" : "gap" });
   }
   if (raw.length === 0) raw.push({ lo: win.lo, hi: win.hi, kind: "extent" });
@@ -76,7 +82,10 @@ export function layoutRail(
   const gapCount = raw.filter((s) => s.kind === "gap").length;
   const extents = raw.filter((s) => s.kind === "extent");
   const fixed = gapCount * GAP_PX + extents.length * MIN_EXTENT_PX;
-  const shareable = Math.max(plotHeight - fixed, 0);
+
+  // When the fixed minimums exceed the plot height, squeeze proportionally to fit.
+  const squeeze = fixed > plotHeight ? plotHeight / fixed : 1;
+  const shareable = Math.max(plotHeight - fixed * squeeze, 0);
   const byteTotal = extents.reduce((n, s) => n + (s.hi - s.lo), 0) || 1;
 
   // Laid out from the BOTTOM up: the lowest address sits lowest.
@@ -85,15 +94,14 @@ export function layoutRail(
   for (const s of raw) {
     const height =
       s.kind === "gap"
-        ? GAP_PX
-        : MIN_EXTENT_PX + (shareable * (s.hi - s.lo)) / byteTotal;
+        ? GAP_PX * squeeze
+        : MIN_EXTENT_PX * squeeze + (shareable * (s.hi - s.lo)) / byteTotal;
     cursor -= height;
     segments.push({ ...s, top: cursor, height });
   }
 
   const find = (address: number): Segment =>
-    segments.find((s) => address >= s.lo && address <= s.hi) ??
-    (address < win.lo ? segments[0] : segments[segments.length - 1]);
+    segments.find((s) => address >= s.lo && address <= s.hi)!;
 
   return {
     segments,
