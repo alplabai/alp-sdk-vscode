@@ -430,7 +430,7 @@ git commit -q -m "feat(build-plan): add the three-tier authority swatch and its 
 
 **Interfaces:**
 - Consumes: `Window` from `./regionWindow`.
-- Produces: `Segment`, `RailLayout`, `layoutRail`, `GAP_PX`, `MIN_EXTENT_PX` — signatures in Step 4.
+- Produces: `Segment`, `RailLayout`, `layoutRail`, `GAP_PX`, `MIN_EXTENT_PX` — signatures in Step 3, where the module is written.
 
 **Constants and why:** `GAP_PX = 12` is the fixed height an empty run compresses to. `MIN_EXTENT_PX = 8` is the floor every extent-bearing segment gets before proportional distribution, because on `rpmsg-aen` the 64 KiB `mcuboot` is 1.2% of the ~5.5 MiB remaining *after* gaps compress — 3.5px on a 300px rail, still an invisible sliver.
 
