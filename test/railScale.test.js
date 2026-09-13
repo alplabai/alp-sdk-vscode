@@ -188,6 +188,33 @@ test("yOf is strictly monotonic across segment boundaries and round-trips throug
   }
 });
 
+test("occupied endpoint strictly inside a segment must be detected as extent", async () => {
+  const { layoutRail } = await load();
+  // This test deliberately violates the invariant stated in layoutRail's jsdoc: every
+  // occupied endpoint must appear in boundaries. We do this to prove the overlap predicate
+  // (o.lo < hi && o.hi > lo) correctly mislabels a gap as an extent when the invariant
+  // is broken, which wastes space visibly rather than hiding data silently.
+  //
+  // Fixture: occupied interval [0x80000000, 0x80008000] where the endpoint 0x80008000
+  // falls strictly inside the declared segment [0x80000000, 0x80080000].
+  // - Overlap form would mark it extent (correct when invariant holds)
+  // - Containment form would mark it gap (silent data loss when invariant breaks)
+  const layout = layoutRail(
+    { lo: 0x80000000, hi: 0x80120000 },
+    [0x80000000, 0x80080000, 0x80120000],
+    0,
+    300,
+    [{ lo: 0x80000000, hi: 0x80008000 }],
+  );
+  const segment = layout.segments.find((s) => s.lo === 0x80000000);
+  assert.ok(segment, "segment 0x80000000-0x80080000 must exist");
+  assert.equal(
+    segment.kind,
+    "extent",
+    "segment overlapping occupied interval must be classified as extent, not gap (even with invariant violation)",
+  );
+});
+
 test("a window with no interior boundary is one extent segment, no gaps", async () => {
   const { layoutRail } = await load();
   const layout = layoutRail({ lo: 0, hi: 0x1000 }, [0, 0x1000], 0, 100);
