@@ -157,15 +157,25 @@ not mention frames at all, and the Notes tab does not document the encoding
 either, so decoding one frame costs a 400px round trip, seven times.
 
 **Acceptance criteria, measured not asserted:** each swatch value scores ≥3:1
-against the panel ground, and all six are pairwise distinguishable, in **all
-four default themes — Dark+, Light+, High Contrast Dark and High Contrast
-Light**. Six values in one channel is what failed before; these gates are what
-make the choice safe rather than a repeat.
+against the panel ground, and all six are pairwise distinguishable, in every
+theme the gate covers. That set must include **the themes VS Code actually
+ships as defaults — Dark Modern and Light Modern — and both high-contrast
+themes**. Dark+ and Light+ may be kept as legacy arms, but they are not the
+default and have not been since 1.74; a gate built only on them is measuring a
+theme almost nobody runs.
 
-The high-contrast arms are not padding. A two-theme gate is exactly how the
-`fix/chart-series-contrast` work shipped a pressed-button fill measuring 1.00:1
-against its own ground in High Contrast Dark while its twelve tests ran green:
-the theme that breaks an encoding is rarely one of the two everybody checks.
+The theme list is where this class of gate keeps failing, twice over. A
+two-theme gate is how `fix/chart-series-contrast` shipped a pressed-button fill
+measuring 1.00:1 against its own ground in High Contrast Dark with twelve green
+tests. Widening it to four did not fix the underlying mistake: all four were
+Dark+/Light+/HC Dark/HC Light, none of them a shipping default, so the arms
+still could not see that `2026-dark.json` makes `focusBorder` translucent
+(`#3994BCB3`) and drops a ring that reads 3.64:1 in Dark+ to 3.17:1.
+
+So every arm must resolve its colours from the declared tokens for that theme
+and composite any alpha against the real backdrop. A token that is opaque in
+one default theme is not opaque in all of them, and a pinned composite is a
+value the gate can no longer police.
 
 ## 4. Typography: use the scale that already exists
 
@@ -298,11 +308,19 @@ rail over it. The split is planned up front, not after:
   producer column, the deterministic equal-`base` order, the group headers and
   counts, gap-segment count and compressed byte text, the 8px floor, the six
   swatch values, legend presence, and the promoted blocked finding.
-- A contrast test computes each swatch value against the panel ground in Dark+,
-  Light+, High Contrast Dark and High Contrast Light, asserting ≥3:1 in each,
-  plus pairwise distinguishability in each. Every theme arm resolves its colours
-  from the declared tokens and composites any alpha against the real backdrop —
-  a pinned composite is a value the gate can no longer police.
+- A contrast test computes each swatch value against the panel ground per §3's
+  theme set — the shipping defaults plus both high-contrast themes — asserting
+  ≥3:1 and pairwise distinguishability in each, resolving colours from the
+  declared tokens and compositing alpha against the real backdrop.
+- **Any test asserting that a CSS rule exists must assert against the built
+  `dist/main.css`, never the source text.** These are CSS Modules: Vite hashes
+  every local class name, so a selector written against a class the host sets —
+  `body.vscode-high-contrast` and its siblings — compiles to something that can
+  never match unless it is wrapped in `:global(...)`. A source-text assertion
+  passes happily on a rule that does not exist in the artifact. This is not
+  hypothetical: it is exactly how `fix/chart-series-contrast` produced a
+  high-contrast override that shipped as dead code with a green test guarding
+  it.
 - Keyboard tests assert a single tab stop into the table, arrow-key movement
   across rows and across group boundaries, `Home`/`End`, `preventDefault` on
   Space, that a collapsed group's rows leave the option set, and that the
