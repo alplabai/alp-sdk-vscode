@@ -283,22 +283,34 @@ test("each swatch tier clears 3:1 against the panel ground in every covered them
   }
 });
 
+// CORRECTED DURING EXECUTION. This assertion was first written as a plain
+// contrast ratio between the two tiers' inks, which could never pass: `yours`
+// and `unproven` are deliberately the SAME colour — both var(--text-primary)
+// at full strength — and are told apart by PATTERN, solid against hatch. Two
+// identical colours contrast at exactly 1.00:1, so the original form measured
+// a channel in which the difference was never encoded. The rule below is what
+// it always meant: two tiers must differ in at least one channel.
 test("the three tiers are pairwise distinguishable in every covered theme", () => {
   for (const theme of THEMES) {
+    // `swatchInk` reads the declared CSS, so a future edit that flattens the
+    // hatch into a solid fill collapses a pair and fails here, rather than
+    // sliding past a hardcoded tier-to-pattern table.
     const inks = {
-      yours: swatchInkRgb(theme, "yours"),
-      locked: swatchInkRgb(theme, "locked"),
-      unproven: swatchInkRgb(theme, "unproven"),
+      yours: swatchInk(theme, "yours"),
+      locked: swatchInk(theme, "locked"),
+      unproven: swatchInk(theme, "unproven"),
     };
     for (const [a, b] of [
       ["yours", "locked"],
       ["yours", "unproven"],
       ["locked", "unproven"],
     ]) {
-      const ratio = contrast(inks[a], inks[b]);
+      if (inks[a].pattern !== inks[b].pattern) continue; // distinguishable by shape
+      const ratio = contrast(inks[a].rgb, inks[b].rgb);
       assert.ok(
         ratio >= 1.5,
-        `swatch tiers ${a} vs ${b} in ${theme}: ${ratio.toFixed(2)}:1 — too close to tell apart`,
+        `swatch tiers ${a} and ${b} in ${theme} are both "${inks[a].pattern}" and contrast at ` +
+          `${ratio.toFixed(2)}:1 — two tiers may share a colour only when their patterns differ`,
       );
     }
   }
