@@ -18,8 +18,8 @@
  * --vscode-foreground/--vscode-sideBar-background pair is the tightest of
  * the five themes this suite covers, only 5.58:1 apart at full opacity).
  * 71% is the lowest whole percentage that clears 3:1 in every covered theme
- * (Light+ lands at 3.06:1); see test/buildPlan.swatchContrast.test.js and
- * its task-2-report.md for the per-theme numbers. */
+ * (Light+ lands at 3.06:1); see test/buildPlan.swatchContrast.test.js for
+ * the per-theme numbers. */
 .swatch[data-tier="locked"] {
   background: color-mix(in srgb, var(--text-primary) 71%, transparent);
 }

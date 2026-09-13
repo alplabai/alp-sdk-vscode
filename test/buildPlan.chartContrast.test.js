@@ -51,7 +51,6 @@ const {
   THEMES,
   resolvedOpaqueRgb,
   contrast,
-  relLum,
   parseColor,
 } = require("./helpers/vscodeThemes");
 
