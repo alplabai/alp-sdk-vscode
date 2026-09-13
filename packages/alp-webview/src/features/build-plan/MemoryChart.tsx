@@ -423,7 +423,6 @@ function Rail({
               />
               <text
                 className={styles.bandLabel}
-                data-series={series.get(seriesKey(s)) ?? 1}
                 x={x + 5}
                 y={top + BAND_LABEL_DY}
               >
@@ -479,7 +478,6 @@ function Rail({
               : true) && (
               <text
                 className={isMarker ? styles.markerLabel : styles.bandLabel}
-                data-series={series.get(seriesKey(s)) ?? 1}
                 x={x + 5}
                 y={isMarker ? top + LINE_LABEL_DY : top + BAND_LABEL_DY}
               >

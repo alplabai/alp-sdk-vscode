@@ -176,19 +176,16 @@
    `--accent-fg` is NOT the fix: it is `--vscode-button-foreground`, paired in
    the theme with `--vscode-button-background` (the Workbench Action fill),
    not with `--accent`/focusBorder — it carries no contrast guarantee against
-   THIS fill. In Default High Contrast (dark) it measures 2.57:1 against the
-   pressed `#f38518`, below WCAG 2.2 SC 1.4.11's 3:1 floor, on the very first
-   Tab stop. `--surface-bg` (Panel Ground, DESIGN.md) is the fix: the ring
-   takes the panel's own ground instead, which is the same colour pair the
-   theme already uses for its OWN focus ring drawn on that same ground
-   elsewhere in the workbench — so this ring is exactly as visible as that
-   one, no more and no less, not a guarantee against every accent. Measured
-   in the default themes: 3.92:1 Dark Modern, 5.94:1 Light Modern, 8.18:1
-   High Contrast Dark, 5.47:1 High Contrast Light. A theme whose own focus
-   ring falls under 3:1 against this ground stays under it here too. The
-   offset is pulled in further than the unpressed ring's `-1px`: a hairline
-   ring at only 1px inside a saturated fill is itself easy to lose, where
-   3px reads as a deliberate frame. */
+   THIS fill (see below). `--surface-bg` (Panel Ground, DESIGN.md) is the fix:
+   the ring takes the panel's own ground instead, which is the same colour
+   pair the theme already uses for its OWN focus ring drawn on that same
+   ground elsewhere in the workbench. Measured against `--accent` in every
+   default theme: 3.64:1 Dark+, 3.02:1 Light+, 8.18:1 High Contrast Dark,
+   5.47:1 High Contrast Light — all four clear WCAG 2.2 SC 1.4.11's 3:1 floor.
+   A theme whose own focus ring falls under 3:1 against this ground stays
+   under it here too. The offset is pulled in further than the unpressed
+   ring's `-1px`: a hairline ring at only 1px inside a saturated fill is
+   itself easy to lose, where 3px reads as a deliberate frame. */
 .scaleBtn[aria-pressed="true"]:focus-visible {
   outline-color: var(--surface-bg);
   outline-offset: -3px;
@@ -197,6 +194,61 @@
 .scaleBtn[aria-pressed="true"] {
   background: var(--accent);
   color: var(--accent-fg);
+}
+
+/* CORRECTED RECORD — read this before touching either token here. Round 2
+   claimed no VS Code token reads dark enough against `--accent` in
+   Dark+/Light+ without being a bare literal; that claim was wrong.
+   `terminal.ansiBlack` (core-registered) reaches 4.99:1 Dark+ / 6.26:1
+   Light+ / 8.18:1 High Contrast Dark, and round 3 adopted it on that basis.
+   Its real cost surfaced only afterwards: VS Code's actual out-of-the-box
+   default (2026 Dark — distinct from the registerColor() defaults just
+   named, with its OWN translucent focusBorder) fell from 5.52:1 with
+   `--accent-fg` (white) to 3.80:1 with ansiBlack. Weighed against every
+   theme VS Code currently ships by default — Dark Modern 4.53:1, Light
+   Modern 6.31:1, 2026 Dark 5.52:1, 2026 Light 5.39:1, High Contrast Light
+   5.47:1, all already passing with plain `--accent-fg` — ansiBlack bought
+   three themes retired since VS Code 1.74 (Dark+, Light+, and this file's
+   own High Contrast Dark fix, which still applies below) at the cost of the
+   one theme people actually run. DECISION: `--accent-fg` (white) stays.
+   Dark+ (4.21:1) and Light+ (3.35:1) are an ACCEPTED, DECLINED shortfall —
+   ansiBlack was evaluated and is not taken, not because no fix exists, but
+   because the fix that exists costs more than the two themes it helps are
+   worth. An accent-coloured underline instead of a filled pressed state was
+   also considered and not taken: this toggle is slated for removal, not
+   worth a second visual language for its remaining lifetime. Do not
+   reinstate the "no token exists" claim in either direction — it was false
+   the first time and the corrected reason (real-world theme coverage, not
+   token availability) is the one that must survive here. */
+
+/* High Contrast Dark still needs its own fix: `--accent-fg` (white) reads
+   only 2.57:1 there, because focusBorder is uncharacteristically BRIGHT in
+   that one theme (an orange, not the moderate blue every other theme tested
+   above uses) — this is the one place white's real-world-favouring case
+   does not hold, and it is fixed rather than left, not merely disclosed.
+   `--surface-bg` (sideBar.background) is pure black in High Contrast Dark
+   specifically: 8.18:1 against `--accent` there.
+
+   BLOCKER, once already found and fixed here: an earlier version of this
+   rule targeted plain `body.vscode-high-contrast` and was DEAD CODE — this
+   is a CSS Module, so an unwrapped class name is hashed at build time into
+   something no host ever writes onto <body>. Still wrapped in
+   `:global(...)` here for that reason.
+
+   MAJOR, still true and still guarded against: High Contrast Light ALSO
+   carries the plain `vscode-high-contrast` class — VS Code's webview
+   bootstrap (`pre/index.html`) adds it for backwards compatibility whenever
+   the active theme is High Contrast Light, alongside its own `-light`
+   class. Unguarded, this rule would repaint High Contrast Light's pressed
+   text to `--surface-bg` too. In the CURRENT default theme that happens to
+   be harmless (`--surface-bg` and `--accent-fg` are both white there), but
+   a third-party High Contrast Light theme with a non-white
+   `sideBar.background` would get its pressed text silently repainted for no
+   reason — `:not(:global(.vscode-high-contrast-light))` excludes it
+   explicitly rather than relying on that coincidence. */
+body:global(.vscode-high-contrast):not(:global(.vscode-high-contrast-light))
+  .scaleBtn[aria-pressed="true"] {
+  color: var(--surface-bg);
 }
 
 .band[data-selected],

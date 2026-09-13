@@ -36,6 +36,47 @@
   released version — the memory map itself landed after `0.6.0` with no
   CHANGELOG entry of its own; this is its first.
 
+- **The Build Plan panel's Memory chart fixes four WCAG contrast failures.**
+  Every chart-series band/marker label used to fill with its own series
+  colour on top of that series' own 30%-opacity band fill — a self-defeating
+  pairing that failed 4.5:1 for all six series, both themes, without
+  exception. Labels now share one `--chart-label-fg` token
+  (`tab.activeForeground`) that clears 4.5:1 against every series' band fill
+  in every default theme; the series colour still carries the band's own
+  fill and stroke. `--chart-3` pointed at `charts.orange`, whose own
+  registered default is never opaque (~33% alpha, VS Code's own design); it
+  now points at `terminal.ansiCyan`, a core-registered, always-opaque token
+  distinct in hue from `--chart-5`. The memory chart's rail frame, axis ticks
+  and inter-rail bracket used `--border-default` (`panel.border`, ~35% alpha
+  in Dark+/Light+) — 1.45-1.59:1 against their backdrop, under the 3:1
+  non-text floor for a stroke that carries meaning; a new `--border-chart`
+  token (`descriptionForeground`) clears 3:1 in every default theme.
+  `.regionFrame`'s own stroke and every decorative `--border-default` use are
+  untouched.
+
+  The pressed scale-toggle button's fill stays `--accent` (DESIGN.md's
+  Selected-Not-Suggested Rule); its text stays `--accent-fg` (white). An
+  interim build on this branch tried `terminal.ansiBlack` instead — an
+  opaque core token that reaches 4.99:1 Dark+, 6.26:1 Light+ and 8.18:1 High
+  Contrast Dark, all unaided — but it was evaluated and declined once its
+  cost was measured against the themes VS Code actually ships by default:
+  it regresses 2026 Dark from 5.52:1 (white) to 3.80:1, and VS Code exposes
+  no CSS class fine enough to scope a fix around that one theme without
+  also affecting Dark+ or Dark Modern. Weighed against every current
+  default (Dark Modern 4.53:1, Light Modern 6.31:1, 2026 Dark 5.52:1, 2026
+  Light 5.39:1, High Contrast Light 5.47:1, all passing with white), keeping
+  `--accent-fg` covers more real themes; Dark+ (4.21:1) and Light+ (3.35:1),
+  retired as VS Code's own default since 1.74, are an accepted, declined
+  shortfall, not an unfixable one. High Contrast Dark alone still needs (and
+  gets) a scoped fix — `--surface-bg` is pure black there specifically
+  (8.18:1) — written with `:global(.vscode-high-contrast):not(.vscode-high-
+  contrast-light)` and verified against the built `dist/main.css`: CSS
+  Modules hashes an unwrapped class name, and the host writes
+  `vscode-high-contrast` onto `<body>` literally, so an earlier, unshipped
+  version of this fix that omitted the wrapper never actually matched
+  anything. The exclusion matters because High Contrast Light also carries
+  the plain `vscode-high-contrast` class for backwards compatibility.
+
 ## 0.6.0
 
 **Stable.** First even-minor cut since `0.4.0`, so `release-vsix.yml` publishes
