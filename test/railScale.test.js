@@ -93,7 +93,9 @@ test("segment heights sum to plot height when fixed > plotHeight", async () => {
 
 test("piecewise mapping: gap and extent with same size get different heights", async () => {
   const { layoutRail, GAP_PX, MIN_EXTENT_PX } = await load();
-  // Build a rail with a 1 MiB gap and a 1 MiB extent, so they can't be confused by size.
+  // Build a rail with a 1 MiB extent, two adjacent 1 MiB gap segments (1-3 MiB),
+  // and another 1 MiB extent, so gap and extent sizes are identical and can't be
+  // confused by proportional distribution.
   const MiB = 0x100000;
   const layout = layoutRail(
     { lo: 0, hi: 4 * MiB },
@@ -130,8 +132,8 @@ test("piecewise mapping: gap and extent with same size get different heights", a
     "gap and equal-size extent must differ",
   );
 
-  // Verify the yOf mapping respects the piecewise structure: a 1MiB gap
-  // (occupying 12px) and a 1MiB extent must map to different y-spans.
+  // Verify the yOf mapping respects the piecewise structure: the gap
+  // (occupying 12px) and a same-sized extent must map to different y-spans.
   const gapSpan = Math.abs(layout.yOf(gap.hi) - layout.yOf(gap.lo));
   const extentSpan = Math.abs(layout.yOf(extent1.hi) - layout.yOf(extent1.lo));
   assert.notEqual(
@@ -139,6 +141,51 @@ test("piecewise mapping: gap and extent with same size get different heights", a
     extentSpan,
     `gap yOf span ${gapSpan}px must differ from extent span ${extentSpan}px`,
   );
+});
+
+test("yOf is strictly monotonic across segment boundaries and round-trips through addressAt", async () => {
+  const { layoutRail } = await load();
+  // Use the gap-bearing fixture from test 1: 0-0x10000 (extent), 0x10000-0x110000 (gap), 0x110000-0x120000 (extent)
+  const layout = layoutRail(
+    { lo: 0x80000000, hi: 0x80120000 },
+    [0x80000000, 0x80010000, 0x80110000, 0x80120000],
+    0,
+    300,
+    [
+      { lo: 0x80000000, hi: 0x80010000 },
+      { lo: 0x80110000, hi: 0x80120000 },
+    ],
+  );
+
+  // Collect addresses to test: all boundaries plus interior points of each segment
+  const addresses = [
+    0x80000000, // boundary: start of extent 0
+    0x80008000, // interior: middle of extent 0
+    0x80010000, // boundary: end of extent 0 / start of gap
+    0x80088000, // interior: middle of gap
+    0x80110000, // boundary: end of gap / start of extent 1
+    0x80118000, // interior: middle of extent 1
+    0x80120000, // boundary: end of extent 1
+  ];
+
+  // Verify yOf is strictly decreasing (high addresses at top, low at bottom)
+  const yValues = addresses.map((addr) => layout.yOf(addr));
+  for (let i = 1; i < yValues.length; i++) {
+    assert.ok(
+      yValues[i] < yValues[i - 1],
+      `yOf must be strictly decreasing: yOf(0x${addresses[i].toString(16)})=${yValues[i]} should be < yOf(0x${addresses[i - 1].toString(16)})=${yValues[i - 1]}`,
+    );
+  }
+
+  // Verify round-trip: addressAt(yOf(a)) === a (within 1, accounting for rounding)
+  for (const addr of addresses) {
+    const y = layout.yOf(addr);
+    const recovered = layout.addressAt(y);
+    assert.ok(
+      Math.abs(recovered - addr) <= 1,
+      `addressAt(yOf(0x${addr.toString(16)})) must recover the address: got 0x${recovered.toString(16)}, expected 0x${addr.toString(16)}`,
+    );
+  }
 });
 
 test("a window with no interior boundary is one extent segment, no gaps", async () => {
