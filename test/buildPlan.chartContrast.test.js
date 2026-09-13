@@ -272,8 +272,10 @@ const VSCODE_DEFAULTS = {
     // ansiBlack's own hcLight default is a dark grey, not black — HC
     // Light's own chrome is black-on-white everywhere else, and VS Code did
     // not chase pure #000000 for the terminal palette in this one theme.
-    // This is exactly why the pressed button needs a scoped override back
-    // to --accent-fg (white) in High Contrast Light specifically.
+    // It is recorded because ansiBlack was evaluated as the pressed-text
+    // colour (round 3) and declined (round 4): #292929 on HC Light's accent
+    // reaches only 2.66:1, while the --accent-fg white that ships reads
+    // 5.47:1 there unaided. No HC Light override exists or is needed.
     "--vscode-terminal-ansiBlack": "#292929",
     "--vscode-tab-activeForeground": "#292929",
   },
@@ -740,6 +742,22 @@ test("--accent-fg (white) vs --accent: six real/current themes pass; Dark+/Light
   // opaque white in every one of these, confirmed by each theme JSON
   // explicitly restating "button.foreground": "#FFFFFF" rather than
   // overriding it.
+  //
+  // The white literal below is therefore a property of `button.foreground`,
+  // NOT of `--accent-fg`. Guard the link between them: without this, a
+  // repoint of --accent-fg to some other --vscode-* variable would leave
+  // these three arms happily asserting a colour the stylesheet no longer
+  // paints. The other arms in this test resolve through VSCODE_DEFAULTS and
+  // catch it; these three cannot, because Dark/Light Modern and 2026 Light
+  // have no VSCODE_DEFAULTS entries (no arm here needs their chart tokens).
+  assert.equal(
+    resolveToVscodeVar(TOKENS_CSS, fg),
+    "--vscode-button-foreground",
+    `${fg} no longer resolves to --vscode-button-foreground, so the white ` +
+      "literal below stopped describing what this control paints — give " +
+      "darkModern/lightModern/light2026 real VSCODE_DEFAULTS entries and " +
+      "resolve through them, or update this arm deliberately",
+  );
   const accentFgWhite = [255, 255, 255];
   const otherShippingThemes = {
     darkModern: "#0078D4",
@@ -906,8 +924,14 @@ test("the region-frame rule (out of scope) still strokes with --border-default",
 // a chart-3-vs-chart-5-shaped collision anywhere else in the six.
 // ---------------------------------------------------------------------------
 
-test("every pair of the six chart-series colours is separated by hue in Dark+ and Light+", () => {
-  for (const theme of ["dark", "light"]) {
+// The 19° floor is calibrated against the tightest gap the palette actually
+// has — chart-1 vs chart-3 at 19.9° in 2026 Dark, VS Code's current
+// out-of-the-box default. Checking only Dark+/Light+ would leave that
+// 0.9°-of-headroom pair ungated in the one theme most users run, which is
+// the same "the gate covers themes nobody runs" mistake this file was
+// rewritten to stop making. So the loop walks every theme the file knows.
+test("every pair of the six chart-series colours is separated by hue in all covered themes", () => {
+  for (const theme of THEMES) {
     const rgbs = {};
     for (let n = 1; n <= 6; n++) {
       rgbs[n] = resolvedOpaqueRgb(theme, `--chart-${n}`, null);
