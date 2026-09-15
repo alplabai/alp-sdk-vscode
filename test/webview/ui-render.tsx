@@ -815,6 +815,19 @@ async function main() {
         // marker is a hairline rather than a block is a CSS class the harness
         // cannot see, since run.mjs stubs CSS modules with a key-echoing Proxy
         // (test/webview.cssModuleKeys.test.js is what covers the class names).
+        // `[data-kind]` lives in the per-row DETAIL, one interaction away
+        // (review round 1) — select a slot-image row first.
+        const slotRow = Array.from(
+          container.querySelectorAll('li[role="option"]'),
+        ).find((li) =>
+          (li.getAttribute("aria-label") || "").startsWith("m55_hp"),
+        );
+        if (!slotRow) {
+          problems.push('build-plan: no row found for "m55_hp"');
+        } else {
+          (slotRow as HTMLLIElement).click();
+          await settle();
+        }
         const markers = Array.from(
           container.querySelectorAll('[data-kind="slot_image"]'),
         );
@@ -1030,6 +1043,7 @@ async function main() {
   // 1` is one character away from `>= 1`, and an older tan that sends no
   // category is exactly the case nobody re-runs by hand.
   {
+    const problemsBefore = problems.length;
     const CHIP_ROW = '[aria-label="Filter examples by domain"]';
     const example = (id: string, group?: string) => ({
       id,
@@ -1142,7 +1156,7 @@ async function main() {
     }
 
     console.log(
-      `  ${problems.length === 0 ? "PASS" : "FAIL"}  example-filter-degrade: the filter row appears only when it can narrow`,
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  example-filter-degrade: the filter row appears only when it can narrow`,
     );
   }
 
@@ -1155,6 +1169,7 @@ async function main() {
   // and assert the panel states it once, in the neutral style, with the actions
   // it cannot drive switched off.
   {
+    const problemsBefore = problems.length;
     const container = document.createElement("div");
     document.body.appendChild(container);
     const refusal = (sub: string) => ({
@@ -1236,7 +1251,7 @@ async function main() {
       problems.push("models-cli-gap: Refresh was disabled, but it still works");
     }
     console.log(
-      `  ${problems.length === 0 ? "PASS" : "FAIL"}  models-cli-gap: one notice, unusable actions disabled`,
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  models-cli-gap: one notice, unusable actions disabled`,
     );
   }
 
@@ -1498,6 +1513,7 @@ async function main() {
   // a boundary rendering a bare "something went wrong" swaps a blank panel for
   // an uninformative one and no bug report survives it.
   {
+    const problemsBefore = problems.length;
     const container = document.createElement("div");
     document.body.appendChild(container);
     function Throws(): React.ReactElement {
@@ -1529,7 +1545,7 @@ async function main() {
       );
     }
     console.log(
-      `  ${problems.length === 0 ? "PASS" : "FAIL"}  error-boundary: caught a throwing render`,
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  error-boundary: caught a throwing render`,
     );
   }
 
@@ -1592,17 +1608,37 @@ async function main() {
       (memoryTab as HTMLButtonElement).click();
       await settle();
       const memText = (container.textContent || "").toLowerCase();
-      for (const needle of [
-        "vendor image · locked", // mcuboot
-        "customer · written at flash time", // he_slot0 / hp_slot0
-        "no writer · reserved", // reserved
-        "customer · writable at runtime", // storage
-        "secure enclave · locked", // atoc
-        "a placeholder, not an address", // mram_main's reason, verbatim
-        "memory map (9)", // the unified table's own heading — 7 regions + 2 placed spans
-      ]) {
-        if (!memText.includes(needle.toLowerCase())) {
-          problems.push(`memory-regions-aen: missing "${needle}"`);
+      if (!memText.includes("memory map (9)")) {
+        problems.push('memory-regions-aen: missing "memory map (9)"');
+      }
+      // The authority label and the reason are now in the per-row DETAIL,
+      // one interaction away rather than always visible (review round 1) —
+      // select the row before checking for the text it reveals.
+      for (const [rowName, needle] of [
+        ["mcuboot", "vendor image · locked"],
+        ["he_slot0", "customer · written at flash time"],
+        ["hp_slot0", "customer · written at flash time"],
+        ["reserved", "no writer · reserved"],
+        ["storage", "customer · writable at runtime"],
+        ["atoc", "secure enclave · locked"],
+        ["mram_main", "a placeholder, not an address"], // its reason, verbatim
+      ] as const) {
+        const rowEl = Array.from(
+          container.querySelectorAll('li[role="option"]'),
+        ).find((li) =>
+          (li.getAttribute("aria-label") || "").startsWith(rowName),
+        );
+        if (!rowEl) {
+          problems.push(`memory-regions-aen: no row found for "${rowName}"`);
+          continue;
+        }
+        (rowEl as HTMLLIElement).click();
+        await settle();
+        const text = (container.textContent || "").toLowerCase();
+        if (!text.includes(needle.toLowerCase())) {
+          problems.push(
+            `memory-regions-aen: selecting "${rowName}" did not reveal "${needle}"`,
+          );
         }
       }
       for (const forbidden of ["free", "remaining"]) {
@@ -1649,9 +1685,25 @@ async function main() {
           "reserved",
           "composite",
         ]) {
+          // A DELIMITED token, not a bare substring: `region.authorityClass`
+          // is joined as its own segment (`joinAccessibleName`'s ", "
+          // separator), so splitting on it and requiring an EXACT segment
+          // match is what actually proves the class reached the accessible
+          // name — a bare `.includes(cls)` is satisfied by the PROSE label
+          // too ("no writer · reserved" contains "reserved"), which is a
+          // different field passing the same check. `.slice(1)` drops the
+          // row's own NAME (segment 0): "reserved" is coincidentally also
+          // this fixture's region name, and a bare-substring check on the
+          // full label would keep passing off that collision alone even
+          // with `authorityClass` deleted from the join.
           const found = Array.from(
             table.querySelectorAll('li[role="option"]'),
-          ).some((li) => (li.getAttribute("aria-label") || "").includes(cls));
+          ).some((li) =>
+            (li.getAttribute("aria-label") || "")
+              .split(", ")
+              .slice(1)
+              .includes(cls),
+          );
           if (!found) {
             problems.push(
               `memory-regions-aen: authority class "${cls}" reaches no row's accessible name — deferred must not mean dropped`,
@@ -1663,6 +1715,37 @@ async function main() {
           problems.push(
             `memory-regions-aen: ${groups.length} tier groups rendered, want exactly 3`,
           );
+        }
+
+        // Membership by NAME, not by count. `byTier[row.tier]` and
+        // `<AuthoritySwatch tier={row.tier}>` read the same field, so a row
+        // misfiled by tier renders a perfectly self-consistent swatch —
+        // `groups.length !== 3` above passes even when every group is
+        // populated wrong. he_slot0/hp_slot0 CONTAIN m55_he/m55_hp's base
+        // addresses (0x80010000, 0x802b0000), so both spans now share their
+        // containing region's "yours" tier — the adjacency this whole table
+        // exists to produce.
+        const expectedByTier: Record<string, string[]> = {
+          yours: ["he_slot0", "m55_he", "hp_slot0", "m55_hp", "storage"],
+          locked: ["mcuboot", "atoc"],
+          unproven: ["reserved", "mram_main"],
+        };
+        for (const [tier, expectedNames] of Object.entries(expectedByTier)) {
+          const group = Array.from(groups).find(
+            (g) => g.getAttribute("data-tier-group") === tier,
+          );
+          const actualNames = group
+            ? Array.from(group.querySelectorAll('li[role="option"]')).map(
+                (li) => (li.getAttribute("aria-label") || "").split(", ")[0],
+              )
+            : [];
+          const sortedActual = [...actualNames].sort();
+          const sortedExpected = [...expectedNames].sort();
+          if (JSON.stringify(sortedActual) !== JSON.stringify(sortedExpected)) {
+            problems.push(
+              `memory-regions-aen: "${tier}" group contains [${actualNames.join(", ")}], want exactly [${expectedNames.join(", ")}]`,
+            );
+          }
         }
 
         // Carried forward from Task 2. Its swatch gate can only read source
@@ -1747,7 +1830,6 @@ async function main() {
       await settle();
       const memText = (container.textContent || "").toLowerCase();
       for (const needle of [
-        "class not proven", // every v2n region's `kind` is "unresolved"
         "ddr_main",
         "ocram_low",
         "m33_tcm",
@@ -1756,6 +1838,43 @@ async function main() {
         if (!memText.includes(needle)) {
           problems.push(`memory-regions-v2n: missing "${needle}"`);
         }
+      }
+      // "class not proven" (every v2n region's `kind` is "unresolved") is
+      // now in the per-row DETAIL, one interaction away — select a region
+      // first (review round 1).
+      const ddrRow = Array.from(
+        container.querySelectorAll('li[role="option"]'),
+      ).find((li) =>
+        (li.getAttribute("aria-label") || "").startsWith("ddr_main"),
+      );
+      if (!ddrRow) {
+        problems.push('memory-regions-v2n: no row found for "ddr_main"');
+      } else {
+        (ddrRow as HTMLLIElement).click();
+        await settle();
+        const text = (container.textContent || "").toLowerCase();
+        if (!text.includes("class not proven")) {
+          problems.push(
+            'memory-regions-v2n: selecting "ddr_main" did not reveal "class not proven"',
+          );
+        }
+      }
+      // `unstated` — asserted nowhere before round 1, though all three v2n
+      // regions carry it (no `write_authority` key at all). A delimited
+      // token, not a bare substring — see the aen pass's own comment for
+      // why a substring check is satisfied by prose instead.
+      const hasUnstated = Array.from(
+        container.querySelectorAll('li[role="option"]'),
+      ).some((li) =>
+        (li.getAttribute("aria-label") || "")
+          .split(", ")
+          .slice(1)
+          .includes("unstated"),
+      );
+      if (!hasUnstated) {
+        problems.push(
+          'memory-regions-v2n: authority class "unstated" reaches no row\'s accessible name',
+        );
       }
       // A CURLY apostrophe, not a straight one: MemoryTable.tsx renders this
       // note with `&rsquo;`, which becomes U+2019 (’) in textContent — a
@@ -1859,6 +1978,21 @@ async function main() {
     } else {
       (memoryTab as HTMLButtonElement).click();
       await settle();
+      // "class not proven" is now in the per-row DETAIL, one interaction
+      // away — select odd_region first (review round 1).
+      const oddRow = Array.from(
+        container.querySelectorAll('li[role="option"]'),
+      ).find((li) =>
+        (li.getAttribute("aria-label") || "").startsWith("odd_region"),
+      );
+      if (!oddRow) {
+        problems.push(
+          'memory-regions-unrecognised: no row found for "odd_region"',
+        );
+      } else {
+        (oddRow as HTMLLIElement).click();
+        await settle();
+      }
       const memText = (container.textContent || "").toLowerCase();
       if (!memText.includes("class not proven")) {
         problems.push(
