@@ -1129,7 +1129,8 @@ git commit -q -m "feat(build-plan): measure the rail instead of pinning it to 57
 
 **Changes:**
 - The tab strip gains `ArrowLeft`/`ArrowRight`/`Home`/`End`, roving `tabIndex` (`0` on the selected tab, `-1` on the others), a real `role="tabpanel"` wrapping the rendered content, and `id`/`aria-controls` pairing.
-- The table listbox keeps ONE tab stop; `ArrowUp`/`ArrowDown`/`Home`/`End` move a roving `tabIndex` across rows, crossing group boundaries.
+- **Decide the row's role first, because it decides the rest.** `role="option"` does not support `aria-expanded`, and Task 4's rows expand — a list of rows that expand is semantically a tree, not a listbox. That defect came from this plan's own Task 4 skeleton, not from the implementation. Either keep `role="option"` and express the detail some other way, or move the rows to `role="treeitem"` inside `role="tree"` and take that pattern's keyboard model with it. Task 4 pinned today's behaviour with an assertion that `aria-expanded` and the detail's DOM presence always agree, so whichever way this goes, the coupling cannot break silently while it is decided.
+- The table keeps ONE tab stop; `ArrowUp`/`ArrowDown`/`Home`/`End` move a roving `tabIndex` across rows, crossing group boundaries. Task 4 deliberately left every row at `tabIndex={0}` rather than shipping a half-roving model — a roving `tabIndex` with no handler made one row of nine reachable, which is why this task owns it.
 - Selection stays on `Enter`. Expansion gets its own key and its own `aria-expanded` on the row; the revealed detail is owned by the row, never inserted as new options.
 - A collapsed group's rows leave the option set entirely.
 - `preventDefault()` on `Space` everywhere it is handled.
