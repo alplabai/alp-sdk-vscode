@@ -1622,6 +1622,82 @@ async function main() {
           `memory-regions-aen: chart aria-label "${ariaLabel}" does not span 0x80000000-0x80580000 — the window did not grow over the SoM's regions`,
         );
       }
+
+      // ── #484 phase 3: the two lists collapse into one address-ordered
+      //    table (Task 4) ──
+      const table = container.querySelector('ul[aria-label="Memory map rows"]');
+      if (!table) {
+        problems.push("memory-regions-aen: no unified memory table found");
+      } else {
+        const firstRow = table.querySelector('li[role="option"]');
+        const firstName = (firstRow?.textContent || "").toLowerCase();
+        if (!firstName.includes("he_slot0")) {
+          problems.push(
+            `memory-regions-aen: first row is "${firstName.trim()}" — the writable group must sort first`,
+          );
+        }
+        const columns = firstRow?.querySelectorAll("[data-col]") ?? [];
+        if (columns.length !== 4) {
+          problems.push(
+            `memory-regions-aen: row renders ${columns.length} columns at rest, want exactly 4`,
+          );
+        }
+        for (const cls of [
+          "customer_runtime",
+          "customer_image",
+          "locked",
+          "reserved",
+          "composite",
+        ]) {
+          const found = Array.from(
+            table.querySelectorAll('li[role="option"]'),
+          ).some((li) => (li.getAttribute("aria-label") || "").includes(cls));
+          if (!found) {
+            problems.push(
+              `memory-regions-aen: authority class "${cls}" reaches no row's accessible name — deferred must not mean dropped`,
+            );
+          }
+        }
+        const groups = table.querySelectorAll('[role="group"]');
+        if (groups.length !== 3) {
+          problems.push(
+            `memory-regions-aen: ${groups.length} tier groups rendered, want exactly 3`,
+          );
+        }
+
+        // Carried forward from Task 2. Its swatch gate can only read source
+        // text — `AuthoritySwatch` was mounted nowhere, so there was no
+        // rendered output to assert against, and the review proved three
+        // mutations that kept that gate green: hardcoding `data-tier="yours"`,
+        // dropping the attribute, and returning null. This task is the first
+        // that mounts the component, so it is the first that can check what
+        // actually reaches the DOM.
+        for (const group of Array.from(groups)) {
+          const groupTier = group.getAttribute("data-tier-group");
+          for (const row of Array.from(
+            group.querySelectorAll('li[role="option"]'),
+          )) {
+            const swatches = row.querySelectorAll("[data-tier]");
+            if (swatches.length !== 1) {
+              problems.push(
+                `memory-regions-aen: a row carries ${swatches.length} [data-tier] elements, want exactly 1`,
+              );
+              continue;
+            }
+            const tier = swatches[0].getAttribute("data-tier");
+            if (!["yours", "locked", "unproven"].includes(tier || "")) {
+              problems.push(
+                `memory-regions-aen: a row's swatch reads data-tier="${tier}", which is not one of the three tiers`,
+              );
+            }
+            if (groupTier && tier !== groupTier) {
+              problems.push(
+                `memory-regions-aen: a row in the "${groupTier}" group carries a "${tier}" swatch — the swatch is not following its row's tier`,
+              );
+            }
+          }
+        }
+      }
     }
     console.log(
       `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-aen: the SoM region backdrop`,
