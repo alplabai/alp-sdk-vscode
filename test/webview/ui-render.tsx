@@ -1599,7 +1599,7 @@ async function main() {
         "customer · writable at runtime", // storage
         "secure enclave · locked", // atoc
         "a placeholder, not an address", // mram_main's reason, verbatim
-        "som regions (7)", // the table's own heading
+        "memory map (9)", // the unified table's own heading — 7 regions + 2 placed spans
       ]) {
         if (!memText.includes(needle.toLowerCase())) {
           problems.push(`memory-regions-aen: missing "${needle}"`);
@@ -1751,16 +1751,16 @@ async function main() {
         "ddr_main",
         "ocram_low",
         "m33_tcm",
-        "som regions (3)",
+        "memory map (4)", // 3 regions + 1 placed span (alp_default_rpmsg)
       ]) {
         if (!memText.includes(needle)) {
           problems.push(`memory-regions-v2n: missing "${needle}"`);
         }
       }
-      // A CURLY apostrophe, not a straight one: MemoryRegionTable.tsx
-      // renders this note with `&rsquo;`, which becomes U+2019 (’) in
-      // textContent — a straight `'` here would silently match zero rows
-      // every time, since `String.match` does not fold the two.
+      // A CURLY apostrophe, not a straight one: MemoryTable.tsx renders this
+      // note with `&rsquo;`, which becomes U+2019 (’) in textContent — a
+      // straight `'` here would silently match zero rows every time, since
+      // `String.match` does not fold the two.
       const outsideCount = (memText.match(/outside this map’s window/g) || [])
         .length;
       if (outsideCount !== 2) {
@@ -1963,7 +1963,7 @@ async function main() {
 
       const rows = Array.from(
         container.querySelectorAll(
-          'ul[aria-label="SoM regions"] [role="option"]',
+          'ul[aria-label="Memory map rows"] [role="option"]',
         ),
       );
       if (rows.length !== 2) {
@@ -1974,7 +1974,7 @@ async function main() {
         (rows[0] as HTMLLIElement).click();
         await settle();
         const selectedCount = container.querySelectorAll(
-          'ul[aria-label="SoM regions"] [aria-selected="true"]',
+          'ul[aria-label="Memory map rows"] [aria-selected="true"]',
         ).length;
         if (selectedCount !== 0) {
           problems.push(

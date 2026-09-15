@@ -5,8 +5,10 @@
 // THE SoM's OWN REGION TABLE — mcuboot / slot0 / reserved / storage / the
 // Secure-Enclave ATOC band — now DOES reach this view: alp-sdk#1365 landed
 // `memory[]` on `system-manifest-v1` (alp-sdk#2030), and `MemoryChart`
-// draws each resolved region as a backdrop frame behind the spans, with
-// the table below the map in `MemoryRegionTable`. Absent when the
+// draws each resolved region as a backdrop frame behind the spans. The
+// table below the map is `MemoryTable` (#484 phase 3) — ONE address-ordered
+// table, region rows and placed-span rows together, replacing the two
+// separate lists this file used to render side by side. Absent when the
 // manifest predates that producer, or resolves no regions for this SoM —
 // never guessed, and never read from `metadata/e1m_modules/<SKU>.yaml`,
 // which the manifest's own description still forbids parsing from
@@ -23,7 +25,7 @@
 // fails if this file grows a write path.
 //
 // The picture lives in `MemoryChart` — an SVG with a fixed viewBox, for
-// the reason its own header gives. The table lives in `MemoryRegionTable`.
+// the reason its own header gives. The table lives in `MemoryTable`.
 
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -35,8 +37,8 @@ import type {
 } from "../../types";
 import { formatAddress, formatBytes } from "./format";
 import { MemoryChart } from "./MemoryChart";
-import { MemoryRegionTable } from "./MemoryRegionTable";
-import { budgetEnd, chartWindowOf, endOf } from "./regionWindow";
+import { MemoryTable } from "./MemoryTable";
+import { chartWindowOf } from "./regionWindow";
 import styles from "./MemoryRegions.module.css";
 
 const KIND_LABEL: Record<MemorySpan["kind"], string> = {
@@ -54,72 +56,6 @@ const CONFLICT_TITLE: Record<MemoryConflict["kind"], string> = {
   // Record<MemoryConflict["kind"], string> requires every member.
   outside_region: "lands outside the region it names",
 };
-
-/** One placed extent, with everything the manifest said about it. */
-function SpanRow({
-  span,
-  budget,
-  selected,
-  onSelect,
-}: {
-  span: MemorySpan;
-  budget: SliceSize | undefined;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const end = endOf(span);
-  const budgetTo = budgetEnd(span, budget);
-  return (
-    <li
-      className={styles.row}
-      data-selected={selected || undefined}
-      role="option"
-      aria-selected={selected}
-      tabIndex={0}
-      onClick={onSelect}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onSelect();
-        }
-      }}
-    >
-      <span className={styles.rowName}>{span.label}</span>
-      <span className={styles.kind} data-kind={span.kind}>
-        {KIND_LABEL[span.kind]}
-      </span>
-      <code className={styles.addr}>
-        {span.base !== null
-          ? end !== null
-            ? `${formatAddress(span.base)} – ${formatAddress(end)}`
-            : formatAddress(span.base)
-          : span.deviceOffset !== null
-            ? `+${formatBytes(span.deviceOffset)} in ${span.device ?? "?"}`
-            : "—"}
-      </code>
-      <span className={styles.rowSize}>
-        {span.sizeBytes !== null
-          ? formatBytes(span.sizeBytes)
-          : /* A slot's capacity comes from `tan size`, not the manifest, so it
-             *  is named as a different measurement rather than folded into the
-             *  extent. Gated on the KIND, not on a name match: a partition may
-             *  legally be named after a core. */
-            budgetTo !== null && span.base !== null
-            ? `${formatBytes(budgetTo - span.base)} · tan size`
-            : "—"}
-      </span>
-      <span className={styles.rowMeta}>
-        {span.region && <span>{span.region}</span>}
-        {span.fs && <span>{span.fs}</span>}
-        {/* A slot image's only core IS its label; printing it again reads as
-         *  a second fact. */}
-        {span.kind !== "slot_image" && span.cores.length > 0 && (
-          <span>{span.cores.join(" ↔ ")}</span>
-        )}
-      </span>
-    </li>
-  );
-}
 
 /** `from – to` as an address range, or a single address when they're equal.
  *  Shared by `Conflicts`' absolute-address branch and `OutsideRegionNotice`,
@@ -296,28 +232,15 @@ export function MemoryRegions({
               </p>
             </div>
           )}
-          <ul
-            className={styles.rows}
-            role="listbox"
-            aria-label="Placed extents"
-          >
-            {[...placed, ...deviceRelative].map((span) => (
-              <SpanRow
-                key={span.id}
-                span={span}
-                budget={budgetByCore.get(span.label)}
-                selected={selected === span.id}
-                onSelect={() => toggle(span.id)}
-              />
-            ))}
-          </ul>
         </div>
       )}
 
-      {memory.regions && memory.regions.length > 0 && (
-        <MemoryRegionTable
-          regions={memory.regions}
+      {(memory.spans.length > 0 ||
+        (memory.regions && memory.regions.length > 0)) && (
+        <MemoryTable
+          regions={memory.regions ?? []}
           spans={memory.spans}
+          budgets={budgetByCore}
           window={chartWindow}
           selected={selected}
           onSelect={toggle}

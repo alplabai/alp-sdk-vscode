@@ -22,10 +22,9 @@ import { budgetEnd, duplicatedNames, endOf, type Window } from "./regionWindow";
 import { formatAddress, formatBytes } from "./format";
 import styles from "./MemoryTable.module.css";
 
-/** Spec table (#484 §2), verbatim — carried over from MemoryRegionTable.tsx
- *  unchanged. `write_authority` null is "absent"; its label depends on
- *  `source`, which the class itself does not (see `authorityClassOf` in
- *  core). */
+/** Spec table (#484 §2), verbatim. `write_authority` null is "absent" —
+ *  its label depends on `source`, which the class itself does not (see
+ *  `authorityClassOf` in core). */
 function authorityLabel(region: MemoryRegion): string {
   const { writeAuthority, source } = region;
   if (writeAuthority === null) {
@@ -54,7 +53,7 @@ function authorityLabel(region: MemoryRegion): string {
 /** `flash` / `ram` render as themselves; `unclassified`, `unresolved`, or
  *  anything this build has never seen renders "class not proven" — an
  *  open `kind` this wide cannot be read as RAM just because it is not the
- *  word "flash". Carried over from MemoryRegionTable.tsx unchanged. */
+ *  word "flash". */
 function kindLabel(kind: string): string {
   return kind === "flash" || kind === "ram" ? kind : "class not proven";
 }
@@ -79,8 +78,9 @@ const SPAN_KIND_LABEL: Record<MemorySpan["kind"], string> = {
 // are ambiguous.
 
 /** The labels of every resolved carve-out or partition that names this
- *  region. Carried over from MemoryRegionTable.tsx unchanged — see its own
- *  doc for why this is never called for a duplicated name. */
+ *  region — never called for a region whose name is in `duplicatedNames()`;
+ *  the caller renders the shared-name note instead, the same refusal
+ *  `findOutsideRegion` applies in core. */
 function usersOf(region: MemoryRegion, spans: MemorySpan[]): string[] {
   return spans
     .filter((s) => s.region === region.name || s.device === region.name)
@@ -88,7 +88,8 @@ function usersOf(region: MemoryRegion, spans: MemorySpan[]): string[] {
 }
 
 /** Every distinct `flash_device` a resolved partition names that has no
- *  matching region row. Carried over from MemoryRegionTable.tsx unchanged. */
+ *  matching region row — a controller instance is not a region and has no
+ *  base to show. */
 function devicesWithNoRegion(
   spans: MemorySpan[],
   regionNames: Set<string>,
@@ -109,8 +110,8 @@ function devicesWithNoRegion(
 interface Row {
   /** Unique React key. A duplicate-named region shares its `id` with every
    *  other row of that name (see `MemoryRegion.id`'s own doc), so the key
-   *  carries the row's index too — the same trick MemoryRegionTable.tsx
-   *  used to keep React from colliding on it. */
+   *  carries the row's index too — `id` alone would collide as a React
+   *  key. */
   key: string;
   /** The real selection id (`region.id` or `span.id`) — NOT guaranteed
    *  unique for a duplicated region name, on purpose: every row sharing
@@ -132,6 +133,10 @@ interface Row {
    *  "extent from region …" / an unresolved-join sentence (span). */
   note: string | null;
   kindText: string;
+  /** A span's raw `kind` (`slot_image` / `carve_out` / `partition`), or
+   *  null for a region row — drives the detail row's `[data-kind]`, the
+   *  marker a placed image is findable by on the map. */
+  rawKind: MemorySpan["kind"] | null;
   authorityText: string | null;
   /** Drives `.authority[data-class]`'s locked/customer_image styling in the
    *  detail row — the region's own class, or the class of the region a
@@ -175,8 +180,11 @@ function regionRow(
       ? formatBytes(region.sizeBytes)
       : "size not pinned by this manifest";
   // A region with a base but no resolved size is marked outside only when
-  // its base alone already clears `window.hi` — see MemoryRegionTable.tsx's
-  // retired copy of this same comment for the lower-half reasoning.
+  // its base alone already clears `window.hi`. The LOWER half needs a real
+  // extent to know the region fully clears `window.lo` rather than merely
+  // starting before it, and a sizeless region has none: its true reach is
+  // unknown, so it is never claimed to be outside on the lower side — it
+  // could still extend into the window.
   const outside =
     window !== null &&
     region.base !== null &&
@@ -216,6 +224,7 @@ function regionRow(
     reason: region.reason,
     note,
     kindText,
+    rawKind: null,
     authorityText,
     authorityClassAttr: region.authorityClass,
     outside,
@@ -299,6 +308,7 @@ function spanRow(
     reason: null,
     note,
     kindText,
+    rawKind: span.kind,
     authorityText,
     authorityClassAttr: match ? match.authorityClass : null,
     outside: false,
@@ -333,7 +343,9 @@ function compareRows(a: Row, b: Row): number {
 function RowDetail({ row }: { row: Row }) {
   return (
     <div className={styles.detail}>
-      <span className={styles.detailKind}>{row.kindText}</span>
+      <span className={styles.detailKind} data-kind={row.rawKind ?? undefined}>
+        {row.kindText}
+      </span>
       {row.authorityText && (
         <span
           className={styles.detailAuthority}

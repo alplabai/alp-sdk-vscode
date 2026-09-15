@@ -872,7 +872,7 @@ export interface MemorySpan {
    *  is device-relative, and the device's own base is a SEPARATE mirrored
    *  type (`MemoryRegion`, below) that this field never joins in — a
    *  reader wanting it joins `MemorySpan.device` to a `MemoryRegion.name`
-   *  by hand, the way `MemoryRegionTable` does. */
+   *  by hand, the way `MemoryTable` does. */
   base: number | null;
   deviceOffset: number | null;
   /** Null when a base is pinned but no size is — the normal state of a

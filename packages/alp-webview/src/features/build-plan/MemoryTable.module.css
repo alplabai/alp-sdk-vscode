@@ -13,7 +13,7 @@
 }
 
 /* md, one rung above the base rows it heads and one below the panel's own
- * title — the same treatment MemoryRegionTable.module.css gave `.title`. */
+ * title. */
 .title {
   margin: 0;
   font-size: var(--font-size-md);
@@ -75,8 +75,7 @@
 }
 
 /* A duplicate-named row is inert: no click does anything, so the pointer
- * must not promise one. MemoryRegionTable.module.css never gave
- * `[aria-disabled]` its own cursor (#664) — this table starts with it. */
+ * must not promise one (#664). */
 .row[aria-disabled] {
   cursor: default;
 }

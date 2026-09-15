@@ -44,7 +44,7 @@ const REPO = path.join(__dirname, "..");
 const VIEW_FILES = [
   "MemoryRegions.tsx",
   "MemoryChart.tsx",
-  "MemoryRegionTable.tsx",
+  "MemoryTable.tsx",
   "AuthoritySwatch.tsx",
 ].map((name) =>
   path.join(

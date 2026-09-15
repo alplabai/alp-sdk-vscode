@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The memory-region window helpers (#484 phase 2): pure address and pixel
-// arithmetic, no React and no CSS import, so a table (MemoryRegionTable.tsx)
+// arithmetic, no React and no CSS import, so a table (MemoryTable.tsx)
 // and the chart (MemoryChart.tsx) both pull from one place rather than
 // drifting apart with two copies of the same rule. `Window`, `endOf`,
 // `budgetEnd` and `windowOf` live here for the same reason: both
@@ -159,7 +159,7 @@ export function regionsInWindow(
  *  to its id (`memory:<name>`) — for a duplicated name that id belongs to
  *  every row sharing it, so a click could highlight all of them at once
  *  unless the caller refuses the join. The single source of truth for that
- *  refusal: `MemoryRegionTable.tsx` imports this instead of keeping its own
+ *  refusal: `MemoryTable.tsx` imports this instead of keeping its own
  *  copy, so the chart frame, the aperture bar and the table row all refuse
  *  the same names the same way. */
 export function duplicatedNames(regions: MemoryRegion[]): Set<string> {
