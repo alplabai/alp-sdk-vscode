@@ -802,15 +802,10 @@ async function main() {
           // folded into the address beside it.
           "5.50 mib · tan size",
           "peer slice skipped", // a degraded link's reason, verbatim
-          // D3: true scale by default, with the fixed magnified top band
-          // beside it and Equalized offered as a labelled alternative.
-          "true scale",
-          // The window runs from the lowest pinned base to the furthest reach,
-          // budgets included: 0x80010000 (m55_he's load address) to
-          // 0x802b0000 + 5 767 168 B (m55_hp's tan-size budget) = 0x80830000.
-          // A 22x rail covers 1/22 of that = 387 258.18 B, floored to 387 258.
-          "22× top 378.2 kib",
-          "equalized",
+          // #484 phase 4: the single piecewise rail's own caption — never
+          // "true scale"/"equalized" (both retired with the second rail) and
+          // never a "22×" magnification factor (retired with DETAIL_FACTOR).
+          "piecewise scale",
           // D4: the conflict the allocator never checks, stated before the
           // picture — a carve-out pinned onto the HP image slot.
           "covers an image load address",
@@ -823,10 +818,35 @@ async function main() {
             problems.push(`build-plan: memory tab missing "${needle}"`);
           }
         }
+        // #484 phase 4: a run neither a span nor a region occupies is
+        // COMPRESSED and MARKED, never silently drawn to scale or dropped.
+        // This manifest carries no `memory:` region table at all, so the
+        // 0x2a0000 B run between m55_he's own load address (0x80010000)
+        // and the start of m55_hp's own slot / tan-size budget (0x802b0000)
+        // is covered by nothing — a real gap, not a contrived one. Mutation
+        // this catches: a `layoutRail` (or its caller) that treats an
+        // uncovered run as just another extent, which would silently draw
+        // it to scale instead of announcing the compression.
+        const gapMarks = container.querySelectorAll('[data-segment="gap"]');
+        if (gapMarks.length === 0) {
+          problems.push("build-plan: no compressed gap was marked on the rail");
+        }
+        for (const mark of Array.from(gapMarks)) {
+          const label =
+            mark.getAttribute("aria-label") || mark.textContent || "";
+          if (!/\d/.test(label)) {
+            problems.push(
+              "build-plan: a compressed gap does not state how much it compressed",
+            );
+          }
+        }
         // An address is an integer or it is not an address. `0x80291745.d`
-        // reached a real screen: the detail window was computed as
-        // `hi - (hi - lo) / 22`, which is almost never whole, and
-        // `toString(16)` renders the remainder as hex digits after a dot.
+        // reached a real screen under the old fixed-magnification detail
+        // rail: its window was computed as `hi - (hi - lo) / 22`, almost
+        // never whole, and `toString(16)` rendered the remainder as hex
+        // digits after a dot. That arithmetic is gone with the rail
+        // (#484 phase 4), but the piecewise rail does its own division
+        // (`layoutRail`'s `addressAt`) and this regression guard stays.
         //
         // Checked per LEAF ELEMENT, not on `container.textContent`: that glues
         // adjacent elements with no separator, so a legitimate
@@ -886,8 +906,10 @@ async function main() {
               problems.push(`build-plan: notes tab missing "${needle}"`);
             }
           }
-          // The map must not be on screen at the same time.
-          if (notes.includes("22× top")) {
+          // The map must not be on screen at the same time. "piecewise
+          // scale" is the rail's own caption (#484 phase 4) — present only
+          // while the chart itself is mounted.
+          if (notes.includes("piecewise scale")) {
             problems.push("build-plan: the notes tab still renders the map");
           }
         }
@@ -1694,6 +1716,86 @@ async function main() {
         problems.push(
           `memory-regions-aen: chart aria-label "${ariaLabel}" does not span 0x80000000-0x80580000 — the window did not grow over the SoM's regions`,
         );
+      }
+
+      // ── #484 phase 4: one piecewise rail, not two fixed-magnification
+      //    ones (Task 5) ──
+      const svgs = container.querySelectorAll("svg");
+      if (svgs.length !== 1) {
+        problems.push(
+          `memory-regions-aen: ${svgs.length} rails drawn, want exactly 1`,
+        );
+      }
+      if ((container.textContent || "").includes("22×")) {
+        problems.push(
+          "memory-regions-aen: the fixed 22× magnification caption survived",
+        );
+      }
+      // The span `<g>`s used to carry `role="button"` + `tabIndex={0}` — a
+      // second, competing keyboard target for what the table already
+      // exposes as an `option`. Mutation this catches: reinstating either
+      // attribute on the rail's own hit targets.
+      const focusableInSvg = container.querySelectorAll("svg [tabindex]");
+      if (focusableInSvg.length !== 0) {
+        problems.push(
+          `memory-regions-aen: ${focusableInSvg.length} focusable descendants inside svg[role=img]`,
+        );
+      }
+      // NO GAP CHECK HERE, ON PURPOSE. rpmsg-aen's six regions
+      // (mcuboot..atoc) tile the window end to end — mcuboot's own end IS
+      // he_slot0's own base, and so on down to atoc — so there is nothing
+      // for the piecewise scale to compress in THIS fixture; asserting a
+      // gap here would be asserting something this data cannot produce.
+      // The gap-marking assertion runs instead in the "build-plan" pass
+      // below, whose hand-built manifest carries a real one: m55_he's own
+      // load address and m55_hp's slot sit 0x2a0000 B apart with nothing
+      // declared between them.
+      //
+      // Axis ticks land ONLY at declared boundaries — checked against an
+      // INDEPENDENT oracle (the unified table's own `[data-col="range"]`
+      // text, a completely different render path from the rail's own tick
+      // computation), not by re-calling layoutRail/binaryTicks here, which
+      // would only prove the test agrees with itself. Every `.tickLabel`
+      // (the primary-ink, "boundary" tick) must format an address that
+      // ALSO appears in some row's own range — a mutation that drew
+      // boundary-ink ticks from `binaryTicks` (arithmetic, power-of-two)
+      // instead of segment endpoints would very likely produce one that
+      // does not.
+      const tableForTicks = container.querySelector(
+        'ul[aria-label="Memory map rows"]',
+      );
+      const rangeAddrs = new Set(
+        Array.from(
+          tableForTicks?.querySelectorAll('[data-col="range"]') ?? [],
+        ).flatMap(
+          (el) => (el.textContent || "").match(/0x[0-9a-fA-F]+/g) ?? [],
+        ),
+      );
+      const boundaryTickLabels = Array.from(
+        container.querySelectorAll('[data-tick="boundary"]'),
+      ).map((g) => (g.textContent || "").trim());
+      if (boundaryTickLabels.length === 0) {
+        problems.push("memory-regions-aen: no boundary tick was drawn");
+      }
+      for (const label of boundaryTickLabels) {
+        if (!rangeAddrs.has(label)) {
+          problems.push(
+            `memory-regions-aen: boundary tick "${label}" is not any row's own address — a declared-boundary tick landed somewhere nothing real begins or ends`,
+          );
+        }
+      }
+      // A computed ("interior") tick must never coincide with a declared
+      // one — that would be the same address drawn twice, once in each
+      // ink, which is indistinguishable from a single mistaken tick.
+      const interiorTickLabels = Array.from(
+        container.querySelectorAll('[data-tick="interior"]'),
+      ).map((g) => (g.textContent || "").trim());
+      for (const label of interiorTickLabels) {
+        if (boundaryTickLabels.includes(label)) {
+          problems.push(
+            `memory-regions-aen: "${label}" is drawn as both a boundary and an interior tick`,
+          );
+        }
       }
 
       // ── #484 phase 3: the two lists collapse into one address-ordered
