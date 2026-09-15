@@ -65,7 +65,12 @@ const {
   contrast,
 } = require("./helpers/vscodeThemes");
 const { swatchInk } = require("./helpers/swatchInk");
-const { gutterInk } = require("./helpers/gutterInk");
+const {
+  gutterInk,
+  gutterSelectionRingRgb,
+  hatchPatternIdInTsx,
+  hatchPatternIdInCss,
+} = require("./helpers/gutterInk");
 
 const BUILD_PLAN_DIR = path.join(
   __dirname,
@@ -305,4 +310,45 @@ test("the gutter's three tiers are pairwise distinguishable in every covered the
       );
     }
   }
+});
+
+// Round 1 fix review found the SELECTED state's own ring under this same 3:1
+// floor: `--border-focus` (== --accent) measured as low as 1.85:1 (Light+)
+// against the "yours" fill, four of five covered themes under the bar this
+// file already holds the fills themselves to. A same-family accent ring on
+// an accent-adjacent fill is not a channel a reader can rely on — this is
+// the "ring vs fill" measurement that inference alone (ring vs ground) does
+// not prove, because a selected region's ring sits ON the fill, not beside
+// the panel ground.
+test("the gutter's selection ring clears 3:1 against every tier's own fill in every covered theme", () => {
+  for (const theme of THEMES) {
+    const ring = gutterSelectionRingRgb(theme);
+    for (const tier of ["yours", "locked", "unproven"]) {
+      const fill = gutterInk(theme, tier).rgb;
+      const ratio = contrast(ring, fill);
+      assert.ok(
+        ratio >= 3,
+        `gutter selection ring vs "${tier}" fill in ${theme}: ` +
+          `${ratio.toFixed(2)}:1, need >= 3:1`,
+      );
+    }
+  }
+});
+
+// `gutterInk` above reads ONLY MemoryChart.module.css's side of the hatch:
+// `.hatchStroke`'s own colour. It cannot see the OTHER half of the linkage —
+// whether `.gutter[data-tier="unproven"]`'s `fill: url(#...)` id actually
+// matches the `<pattern id="...">` MemoryChart.tsx mounts in `<defs>`. Break
+// that link (rename `HATCH_PATTERN_ID` in MemoryChart.tsx, leave the CSS
+// alone) and every test above still passes, while the "unproven" tier paints
+// nothing at all in a real browser: an unresolvable SVG paint reference with
+// no fallback renders as `none`, not as a default colour.
+test("the hatch pattern id MemoryChart.tsx mounts matches the id MemoryChart.module.css references", () => {
+  assert.equal(
+    hatchPatternIdInTsx(),
+    hatchPatternIdInCss(),
+    "MemoryChart.tsx's HATCH_PATTERN_ID and MemoryChart.module.css's " +
+      '.gutter[data-tier="unproven"] { fill: url(#...) } have drifted apart ' +
+      "— the unproven tier would paint nothing at all",
+  );
 });

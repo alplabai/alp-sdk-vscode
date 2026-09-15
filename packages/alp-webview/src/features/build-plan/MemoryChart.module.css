@@ -261,8 +261,18 @@
   fill: url(#memory-authority-hatch);
 }
 
+/* GROUND-COLOURED, not accent. `--border-focus` (== --accent) measured
+   1.85:1 (Light+) to 3.00:1 (2026 Dark) against the "yours" fill it sits on
+   — under the 3:1 floor this task holds the gutter's own three fills to,
+   in four of five covered themes. `--surface-bg` clears it in every one: it
+   is the SAME comparison the gutter-vs-ground test already makes for every
+   tier (contrast is symmetric — ground-vs-fill and fill-vs-ground are one
+   number), just read from the other side. See
+   test/buildPlan.swatchContrast.test.js's "selection ring vs every tier's
+   own fill" arm, which asserts this directly rather than trusting the
+   inference. */
 .gutter[data-selected] {
-  outline: 1.5px solid var(--border-focus);
+  outline: 1.5px solid var(--surface-bg);
   outline-offset: -1px;
 }
 
