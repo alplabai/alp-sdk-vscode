@@ -1741,7 +1741,7 @@ async function main() {
           `memory-regions-aen: ${focusableInSvg.length} focusable descendants inside svg[role=img]`,
         );
       }
-      // NO GAP CHECK HERE, ON PURPOSE. rpmsg-aen's six regions
+      // NO POSITIVE GAP CHECK HERE, ON PURPOSE. rpmsg-aen's six regions
       // (mcuboot..atoc) tile the window end to end — mcuboot's own end IS
       // he_slot0's own base, and so on down to atoc — so there is nothing
       // for the piecewise scale to compress in THIS fixture; asserting a
@@ -1750,6 +1750,22 @@ async function main() {
       // below, whose hand-built manifest carries a real one: m55_he's own
       // load address and m55_hp's slot sit 0x2a0000 B apart with nothing
       // declared between them.
+      //
+      // A NEGATIVE gap check DOES belong here, and only here: aen is the
+      // only fixture with a resolved region table, so it is the only one
+      // that can catch a mutation dropping region intervals out of
+      // `occupied` (`railBoundaries`, MemoryChart.tsx) — that would spawn
+      // SPURIOUS gaps across these six tiled regions, and the "build-plan"
+      // manifest below has no region table to exercise that path at all.
+      // Do not "fix" this back into a positive assertion — the tiling is
+      // the reason it must stay negative.
+      if (container.querySelectorAll('[data-segment="gap"]').length !== 0) {
+        problems.push(
+          "memory-regions-aen: a gap was marked where the six regions tile " +
+            "the window end to end — occupied coverage from the region " +
+            "table was dropped somewhere",
+        );
+      }
       //
       // Axis ticks land ONLY at declared boundaries — checked against an
       // INDEPENDENT oracle (the unified table's own `[data-col="range"]`
