@@ -2367,6 +2367,128 @@ async function main() {
     );
   }
 
+  // ── a region table AND a genuine uncovered run, together (#484 phase 4,
+  //    round-2 fix review) ──
+  // Neither vendored fixture can prove this: rpmsg-aen's six regions tile
+  // its window end to end (zero gaps, by construction of that data), and
+  // the "build-plan" pass's hand-built manifest has NO region table at all
+  // (its own gap comes entirely from a span's own budget interval). A
+  // mutation dropping `occupied.push({ lo: r.lo, hi: r.hi })` out of
+  // `railBoundaries` (MemoryChart.tsx) is invisible to BOTH: aen already
+  // asserts zero gaps either way, and "build-plan" has no region interval to
+  // drop in the first place. This manifest is built so the ONLY occupied
+  // coverage in its window comes from a RESOLVED REGION — two marker spans
+  // (a base each, no size, no budget) that pin the window's own ends but
+  // contribute no interval of their own — so dropping the region's interval
+  // is the one mutation this pass exists to catch.
+  //
+  //   gap_region (region, resolved):  0x80000000 – 0x80010000  (64 KiB)
+  //   core_a  (marker span):          0x80000000
+  //   core_b  (marker span):                                    0x80030000
+  //
+  // Window = [0x80000000, 0x80030000] (from the two markers). occupied =
+  // [gap_region's own interval] only. One segment is covered
+  // (0x80000000–0x80010000, the region), one is not
+  // (0x80010000–0x80030000, 0x20000 B = 128 KiB) — exactly one gap.
+  {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const problemsBefore = problems.length;
+    const root = createRoot(container);
+    root.render(
+      React.createElement(
+        AppProvider,
+        null,
+        React.createElement(BuildPlanView),
+      ),
+    );
+    await settle();
+    feedState();
+    await settle();
+    feedState();
+    await settle();
+
+    const manifest = {
+      schema_version: 1,
+      generated_by: "scripts/alp_orchestrate.py",
+      hw_info: { sku: "TEST-GAP-FIXTURE", silicon: "test:test:test" },
+      slices: [
+        {
+          core_id: "core_a",
+          os: "zephyr",
+          status: "ok",
+          flash_args: { slot0_load_address: "0x80000000" },
+        },
+        {
+          core_id: "core_b",
+          os: "zephyr",
+          status: "ok",
+          flash_args: { slot0_load_address: "0x80030000" },
+        },
+      ],
+      ipc: [],
+      helper_mcus: [],
+      boot_order: [],
+      memory: [
+        {
+          name: "gap_region",
+          source: "som_preset",
+          kind: "flash",
+          status: "ok",
+          base: 0x80000000,
+          size_bytes: 0x00010000,
+          write_authority: "customer_runtime",
+          accessible_from: ["core_a"],
+        },
+      ],
+    };
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "systemManifestData",
+      postBuild: true,
+      manifest,
+      provenance: null,
+      memory: buildMemoryView(manifest as never),
+    });
+    await settle();
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "sliceSizesData",
+      report: {
+        schema: "alp-size/1",
+        slices: [],
+        summary: { over_budget: [], unknown_budget: [] },
+      },
+    });
+    await settle();
+
+    const tabs = Array.from(container.querySelectorAll('button[role="tab"]'));
+    const memoryTab = tabs.find((b) =>
+      (b.textContent || "").toLowerCase().includes("memory"),
+    );
+    if (!memoryTab) {
+      problems.push("memory-regions-gap-fixture: no Memory tab found");
+    } else {
+      (memoryTab as HTMLButtonElement).click();
+      await settle();
+
+      const gapMarks = container.querySelectorAll('[data-segment="gap"]');
+      if (gapMarks.length !== 1) {
+        problems.push(
+          `memory-regions-gap-fixture: ${gapMarks.length} gap segment(s) marked, want exactly 1 (0x80010000–0x80030000, the only run neither the region nor a span covers)`,
+        );
+      } else {
+        const label = gapMarks[0].getAttribute("aria-label") || "";
+        if (label !== "128.0 KiB empty, compressed") {
+          problems.push(
+            `memory-regions-gap-fixture: the gap's own aria-label reads "${label}", want exactly "128.0 KiB empty, compressed"`,
+          );
+        }
+      }
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-gap-fixture: a region interval is the only thing standing between one gap and zero`,
+    );
+  }
+
   console.log(
     `\nwebview-ui: ${rendered}/${VIEWS.length} views rendered, ` +
       `${totalClicked}/${totalButtons} buttons clicked, ${problems.length} problem(s)`,
