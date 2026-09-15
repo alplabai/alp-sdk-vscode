@@ -111,83 +111,85 @@ export function MemoryTable({
         ))}
       </div>
       <ul className={styles.rows} role="listbox" aria-label="Memory map rows">
-        {TIERS.map(
-          (tier) =>
-            open[tier] && (
-              <li
-                key={tier}
-                id={`memory-table-group-${tier}`}
-                role="group"
-                data-tier-group={tier}
-                aria-label={`${TIER_LABEL[tier]} (${byTier[tier].length})`}
-              >
-                <ul className={styles.groupRows} role="presentation">
-                  {byTier[tier].map((row) => {
-                    // A duplicated region can never select (`row.inert`), so
-                    // it can never expand through the click below either —
-                    // its detail (the "name shared by N rows" note is the
-                    // only thing explaining WHY it is inert) stays visible
-                    // unconditionally instead. Every other row's detail is
-                    // one interaction away: `aria-expanded` and the DOM
-                    // both agree with `row.selected`, so a screen reader is
-                    // never told "collapsed" while the content sits in the
-                    // tree anyway.
-                    const showDetail = row.selected || row.inert;
-                    return (
-                      <li
-                        key={row.key}
-                        className={styles.row}
-                        role="option"
-                        aria-selected={row.selected}
-                        aria-expanded={showDetail}
-                        aria-disabled={row.inert || undefined}
-                        aria-label={row.accessibleName}
-                        data-selected={row.selected || undefined}
-                        // Task 9 owns the real roving-tabindex model
-                        // (ArrowUp/ArrowDown/Home/End). Until it lands,
-                        // every row stays reachable by Tab — the same
-                        // tabIndex={0} both deleted lists used — rather
-                        // than leaving eight of nine rows unreachable.
-                        tabIndex={0}
-                        onClick={() => {
-                          if (!row.inert) onSelect(row.id);
-                        }}
-                        onKeyDown={(e) => {
-                          if (row.inert) return;
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            onSelect(row.id);
-                          }
-                        }}
-                      >
-                        <span data-col="swatch">
-                          <AuthoritySwatch tier={row.tier} />
+        {TIERS.map((tier) => (
+          // The group stays MOUNTED regardless of `open[tier]` — only its
+          // rows are conditional. A toggle button's `aria-controls` names
+          // this element's `id`; unmounting the group along with its rows
+          // left that id resolving to nothing the instant a tier collapsed.
+          // Collapsing removes rows from the option set, never the group.
+          <li
+            key={tier}
+            id={`memory-table-group-${tier}`}
+            role="group"
+            data-tier-group={tier}
+            aria-label={`${TIER_LABEL[tier]} (${byTier[tier].length})`}
+          >
+            {open[tier] && (
+              <ul className={styles.groupRows} role="presentation">
+                {byTier[tier].map((row) => {
+                  // A duplicated region can never select (`row.inert`), so
+                  // it can never expand through the click below either —
+                  // its detail (the "name shared by N rows" note is the
+                  // only thing explaining WHY it is inert) stays visible
+                  // unconditionally instead. Every other row's detail is
+                  // one interaction away: `aria-expanded` and the DOM both
+                  // agree with `showDetail` (not merely `row.selected`), so
+                  // a screen reader is never told "collapsed" while the
+                  // content sits in the tree anyway.
+                  const showDetail = row.selected || row.inert;
+                  return (
+                    <li
+                      key={row.key}
+                      className={styles.row}
+                      role="option"
+                      aria-selected={row.selected}
+                      aria-expanded={showDetail}
+                      aria-disabled={row.inert || undefined}
+                      aria-label={row.accessibleName}
+                      data-selected={row.selected || undefined}
+                      // Task 9 owns the real roving-tabindex model
+                      // (ArrowUp/ArrowDown/Home/End). Until it lands, every
+                      // row stays reachable by Tab — the same tabIndex={0}
+                      // both deleted lists used — rather than leaving eight
+                      // of nine rows unreachable.
+                      tabIndex={0}
+                      onClick={() => {
+                        if (!row.inert) onSelect(row.id);
+                      }}
+                      onKeyDown={(e) => {
+                        if (row.inert) return;
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onSelect(row.id);
+                        }
+                      }}
+                    >
+                      <span data-col="swatch">
+                        <AuthoritySwatch tier={row.tier} />
+                      </span>
+                      <span data-col="name" className={styles.name}>
+                        {row.name}
+                        <span className={styles.producer}>{row.producer}</span>
+                      </span>
+                      <code data-col="range" className={styles.range}>
+                        {row.range}
+                      </code>
+                      <span data-col="size" className={styles.size}>
+                        {row.size}
+                      </span>
+                      {row.outside && (
+                        <span className={styles.outsideFlag}>
+                          outside this map&rsquo;s window
                         </span>
-                        <span data-col="name" className={styles.name}>
-                          {row.name}
-                          <span className={styles.producer}>
-                            {row.producer}
-                          </span>
-                        </span>
-                        <code data-col="range" className={styles.range}>
-                          {row.range}
-                        </code>
-                        <span data-col="size" className={styles.size}>
-                          {row.size}
-                        </span>
-                        {row.outside && (
-                          <span className={styles.outsideFlag}>
-                            outside this map&rsquo;s window
-                          </span>
-                        )}
-                        {showDetail && <RowDetail row={row} />}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </li>
-            ),
-        )}
+                      )}
+                      {showDetail && <RowDetail row={row} />}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </li>
+        ))}
       </ul>
       {orphanDevices.map((name) => (
         <p key={name} className={styles.footerNote}>
