@@ -171,34 +171,3 @@ export function duplicatedNames(regions: MemoryRegion[]): Set<string> {
   }
   return dupes;
 }
-
-/**
- * How many label-line steps a region's label must drop to stay clear of
- * every OTHER top already claiming its own row — a band's, a budget's, or
- * an earlier region's, in draw order. Returns one count per entry in
- * `regionTops`, aligned by index: the number of `otherTops` entries within
- * `tolerance` of it, plus the number of EARLIER `regionTops` entries
- * (lower index — the same array's own draw order) within `tolerance`.
- *
- * A region whose top matches nothing gets 0 and keeps today's baseline.
- * Two regions sharing a top — including a `composite` region nested over
- * another region at the same address — resolve too: index order IS draw
- * order regardless of nesting, so the later one always gets the deeper
- * level.
- */
-export function regionLabelLevels(
-  regionTops: number[],
-  otherTops: number[],
-  tolerance = 1,
-): number[] {
-  return regionTops.map((top, i) => {
-    let level = 0;
-    for (const other of otherTops) {
-      if (Math.abs(other - top) <= tolerance) level++;
-    }
-    for (let j = 0; j < i; j++) {
-      if (Math.abs(regionTops[j] - top) <= tolerance) level++;
-    }
-    return level;
-  });
-}

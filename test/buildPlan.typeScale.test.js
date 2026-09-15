@@ -916,8 +916,8 @@ test("finalClassOf matches the selector CHROME actually names", () => {
       "the quoted value inside it must not be mistaken for one either",
   );
   assert.equal(
-    finalClassOf(".scaleBtn:last-child"),
-    ".scaleBtn",
+    finalClassOf(".sliceBtn:hover"),
+    ".sliceBtn",
     "a pseudo-class is not a class selector and must not change which class " +
       "is final",
   );
