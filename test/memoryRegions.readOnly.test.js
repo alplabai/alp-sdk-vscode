@@ -45,6 +45,7 @@ const VIEW_FILES = [
   "MemoryRegions.tsx",
   "MemoryChart.tsx",
   "MemoryTable.tsx",
+  "memoryTableRows.ts",
   "AuthoritySwatch.tsx",
 ].map((name) =>
   path.join(

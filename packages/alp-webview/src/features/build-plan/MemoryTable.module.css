@@ -30,6 +30,15 @@
   gap: var(--space-4);
 }
 
+/* The per-tier toggle buttons — rendered as the listbox's sibling, not its
+ * child (review round 1: a button is not a valid listbox/group/option
+ * participant). */
+.groupToggles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
 .groupHead {
   display: block;
   width: 100%;

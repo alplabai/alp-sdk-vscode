@@ -338,10 +338,8 @@ body:global(.vscode-high-contrast):not(:global(.vscode-high-contrast-light))
   color: var(--text-primary);
 }
 
-/* Sizes, region, filesystem and cores: values from the manifest, read the same
-   way the address is. `.rowSize` also carries the "· tan size" branch, where
-   the number came from a different measurement than the extent. */
-.rowSize,
+/* Cores and other row metadata: values from the manifest, read the same
+   way the address is. */
 .rowMeta {
   font-size: var(--font-size-base);
   color: var(--text-secondary);
