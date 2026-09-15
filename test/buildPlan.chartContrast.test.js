@@ -98,6 +98,27 @@ function readDistCss() {
   }
 }
 
+/** The exact (hashed) local class name the BUILT `dist/main.css` uses for
+ * `.gutter`'s own BASE rule (`pointer-events: none` — its full body, and the
+ * one declaration unique to it in the whole bundle). Matching on this,
+ * rather than on any hashed class followed by `[data-tier=...]`, is what
+ * keeps the [data-tier] test below from being satisfied by a DIFFERENT
+ * class that happens to share the same attribute vocabulary —
+ * `AuthoritySwatch.module.css`'s `.swatch[data-tier="…"]` rules do exactly
+ * that, and a round-2 fix review proved the unscoped regex passed against
+ * them even with every `.gutter[data-tier]` rule deleted from source. */
+function builtGutterClass(distCss) {
+  const re = /\._([\w-]+)\{pointer-events:none\}/;
+  const m = re.exec(distCss);
+  if (!m) {
+    throw new Error(
+      "could not find the built .gutter base rule (pointer-events: none) " +
+        "in dist/main.css — run `pnpm run compile`",
+    );
+  }
+  return m[1];
+}
+
 // ---------------------------------------------------------------------------
 // Colour math (ports contrast.py's maths verbatim — same formulas, same
 // rounding behaviour, so a ratio computed here matches the audit's).
@@ -459,9 +480,21 @@ test("--chart-3's fallback literal is held to the same bar as the variable", () 
 // value) — the same round-4 record the original `.scaleBtn` audit reached,
 // re-measured against `.btn[data-appearance="accent"]` now that the toggle
 // itself is gone.
+//
+// High Contrast Dark is NOT part of that retired-theme record — it is a
+// CURRENT theme, and a round-2 fix review found it measures 2.57:1 here,
+// below even the 3:1 non-text floor. The retired `.scaleBtn` control had a
+// real, built-artifact-verified `:global(.vscode-high-contrast)` override
+// that reached >=4.5:1 there (round 4 of the original audit); the shared
+// `Button` component this pair now ships on has NO such override, and this
+// branch does not add one (touching the shared Button component is outside
+// its scope — see this task's report for the follow-up recorded against
+// it). hcDark is pinned below at its exact measured value so a further
+// regression, or a silent "fix" that assumes parity with what `.scaleBtn`
+// shipped, cannot pass unnoticed.
 // ---------------------------------------------------------------------------
 
-test("--accent-fg (white) vs --accent: six real/current themes pass; Dark+/Light+ are an accepted, declined shortfall pinned exactly", () => {
+test("--accent-fg (white) vs --accent: six real/current themes pass; Dark+/Light+/hcDark are pinned shortfalls, none silently reintroduced worse", () => {
   const { bg, fg } = accentButtonTokens();
   assert.equal(bg, "--accent");
   assert.equal(fg, "--accent-fg");
@@ -480,6 +513,31 @@ test("--accent-fg (white) vs --accent: six real/current themes pass; Dark+/Light
         "declined shortfall (retired as VS Code's own default since 1.74); " +
         "any drift, better or worse, must be re-justified, not silently " +
         "absorbed",
+    );
+  }
+
+  // High Contrast Dark, pinned SEPARATELY from the loop above: unlike
+  // Dark+/Light+, this is a CURRENT theme, not a retired one, and the
+  // `.scaleBtn` control this pair now audits used to clear >=4.5:1 here via
+  // a real `:global(.vscode-high-contrast)` override. `Button`'s shared
+  // `.btn[data-appearance="accent"]` carries NO such override, so this
+  // measures worse than what shipped before — 2.57:1, under even the 3:1
+  // non-text floor — and stays that way until the Button component itself
+  // grows one (out of scope here; see this task's report).
+  {
+    const hcDarkPin = "2.57";
+    const bgRgb = resolvedOpaqueRgb("hcDark", bg, null);
+    const fgRgb = resolvedOpaqueRgb("hcDark", fg, null);
+    const ratio = contrast(fgRgb, bgRgb);
+    assert.equal(
+      ratio.toFixed(2),
+      hcDarkPin,
+      `accent button text (${fg}) vs its fill (${bg}) in High Contrast ` +
+        `Dark moved to ${ratio.toFixed(2)}:1 (was ${hcDarkPin}:1) — this ` +
+        "control has NO High-Contrast-Dark override, unlike the retired " +
+        ".scaleBtn control it replaced (which reached >=4.5:1 there); do " +
+        "not assume parity with what shipped in the original audit, and " +
+        "re-justify any drift rather than silently absorbing it",
     );
   }
 
@@ -529,16 +587,23 @@ test("--accent-fg (white) vs --accent: six real/current themes pass; Dark+/Light
 // demonstrated — a CSS Modules class is hashed, so only the compiled output
 // can tell a working selector from dead markup — restored here against
 // something this branch actually ships: the authority gutter's three
-// `[data-tier]` rules. CSS Modules hashes only the CLASS half of a selector,
-// never an attribute selector, so a hashed survivor of `.gutter` paired with
-// its literal `[data-tier=...]` is directly detectable in the built CSS.
+// `[data-tier]` rules. SCOPED to `.gutter`'s own hashed class
+// (`builtGutterClass`, above), not to "any hashed class at all" — an
+// unscoped `\._[\w-]+\[data-tier=...\]` is satisfied independently by
+// `AuthoritySwatch.module.css`'s `.swatch[data-tier="…"]` rules, which share
+// the identical attribute vocabulary: a round-2 fix review deleted every
+// `.gutter[data-tier]` rule from source, rebuilt, and the unscoped version
+// of this test still passed 19/19.
 test("the gutter's three [data-tier] rules survive the build (verified against the built artifact, not just source)", () => {
   const distCss = readDistCss();
+  const gutterClass = builtGutterClass(distCss);
   for (const tier of ["yours", "locked", "unproven"]) {
-    const re = new RegExp(`\\._[\\w-]+\\[data-tier=(?:"${tier}"|${tier})\\]`);
+    const re = new RegExp(
+      `\\._${escapeForRegExp(gutterClass)}\\[data-tier=(?:"${tier}"|${tier})\\]`,
+    );
     assert.ok(
       re.test(distCss),
-      `dist/main.css has no hashed .gutter[data-tier=${tier}] rule — CSS ` +
+      `dist/main.css has no ._${gutterClass}[data-tier=${tier}] rule — CSS ` +
         "Modules source alone cannot show this: the class is hashed at " +
         "build time and only the compiled output proves the rule reaches " +
         "a real selector",
