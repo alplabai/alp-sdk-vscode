@@ -162,7 +162,6 @@ export function MemoryRegions({
   memory: MemoryView | null;
   sizes: SliceSize[];
 }) {
-  const [equalized, setEqualized] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   if (!memory) return null;
   const budgetByCore = new Map(sizes.map((s) => [s.core_id, s]));
@@ -196,39 +195,19 @@ export function MemoryRegions({
         <div className={styles.map}>
           {placed.length > 0 && (
             <div className={styles.mapSide}>
-              <div className={styles.scaleRow}>
-                <button
-                  type="button"
-                  className={styles.scaleBtn}
-                  aria-pressed={!equalized}
-                  onClick={() => setEqualized(false)}
-                >
-                  True scale
-                </button>
-                <button
-                  type="button"
-                  className={styles.scaleBtn}
-                  aria-pressed={equalized}
-                  onClick={() => setEqualized(true)}
-                >
-                  Equalized
-                </button>
-              </div>
               <div className={styles.chartScroll}>
                 <MemoryChart
                   spans={memory.spans}
                   apertures={memory.apertures}
                   regions={memory.regions ?? []}
                   budgets={budgetByCore}
-                  equalized={equalized}
                   selected={selected}
                   onSelect={toggle}
                 />
               </div>
               <p className={styles.legend}>
-                {equalized
-                  ? "Not to scale — every entry given equal height."
-                  : "Bands are extents, lines are a base with no size. Colour groups by region, device or core."}
+                Bands are extents, lines are a base with no size. Colour groups
+                by region, device or core.
               </p>
             </div>
           )}
