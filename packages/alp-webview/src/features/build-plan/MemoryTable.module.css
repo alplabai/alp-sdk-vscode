@@ -1,0 +1,173 @@
+/* SPDX-License-Identifier: Apache-2.0
+ *
+ * The unified, address-ordered memory map (#484 phase 3) — one row per SoM
+ * region and one per placed extent, grouped by write-authority tier rather
+ * than by which producer emitted the row. Reads the same way the two lists
+ * it replaces did: mono for hex, reading size throughout, a hairline around
+ * the selected row. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* md, one rung above the base rows it heads and one below the panel's own
+ * title — the same treatment MemoryRegionTable.module.css gave `.title`. */
+.title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--text-section-header);
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.groupHead {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: var(--space-1) 0;
+  margin: 0;
+  font: inherit;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text-section-header);
+  cursor: pointer;
+}
+
+.groupHead:hover {
+  color: var(--text-primary);
+}
+
+.groupRows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.row[data-selected] {
+  border-color: var(--border-focus);
+  background: var(--surface-hover);
+}
+
+/* A duplicate-named row is inert: no click does anything, so the pointer
+ * must not promise one. MemoryRegionTable.module.css never gave
+ * `[aria-disabled]` its own cursor (#664) — this table starts with it. */
+.row[aria-disabled] {
+  cursor: default;
+}
+
+.name {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+
+/* The producer — "SoM region" or "placed image" — is the only thing
+ * stopping two adjacent rows from reading as one fact, so it stays at
+ * reading size rather than shrinking into a caption; italic and secondary
+ * colour are enough to mark it as metadata beside the name. */
+.producer {
+  font-size: var(--font-size-base);
+  font-weight: 400;
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+.range {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+}
+
+.size {
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+}
+
+/* "outside this map's window" — at the Title register (md, weight 600, the
+ * same size/weight `.title` above takes) with a status colour, replacing
+ * the old trailing-italic treatment: this is a flag, not a footnote. */
+.outsideFlag {
+  flex-basis: 100%;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--status-warn);
+}
+
+.detail {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-4);
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+}
+
+.detailKind {
+  color: var(--text-secondary);
+}
+
+/* The write-authority label. Colour only distinguishes "locked" from the
+ * rest; never the six-colour chart series, which stays with the spans it
+ * distinguishes. */
+.detailAuthority[data-class="locked"] {
+  color: var(--text-primary);
+}
+
+/* customer_image vs. customer_runtime: the label text already says which
+ * is which, but the chart's backdrop frame ALSO tells them apart by stroke
+ * pattern (dashed vs. solid) — this italic gives the table the same
+ * non-colour distinction (#484 §2's "stay visually distinct"). */
+.detailAuthority[data-class="customer_image"] {
+  font-style: italic;
+}
+
+.detailCores,
+.detailNote {
+  color: var(--text-secondary);
+}
+
+.detailReason {
+  flex-basis: 100%;
+  font-family: var(--font-family-mono);
+  white-space: pre-wrap;
+}
+
+.footerNote {
+  margin: 0;
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+}
+
+.footerNote code {
+  font-family: var(--font-family-mono);
+}

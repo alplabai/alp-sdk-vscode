@@ -658,9 +658,9 @@ test("chrome stays below the reading size", () => {
 // `.unresolvedTitle` is the <p> over the `.unresolved` list whose rows carry
 // `.rowName` and `.reason`; `.conflictsTitle` sits over `.conflictRow` items
 // carrying `.rowName` and `.conflictKind`; MemoryNotes' `.title` is the <h4>
-// of a `<section class=note>` whose paragraphs are `.note p`; MemoryRegionTable's
-// `.title` is the <p> over the "SoM regions" listbox whose options carry
-// `.rowName` and `.reason`.
+// of a `<section class=note>` whose paragraphs are `.note p`; MemoryTable's
+// `.title` is the <h3> over the unified "Memory map rows" listbox whose
+// options carry `.name` and `.range`.
 
 const SUB_HEADINGS = [
   {
@@ -682,10 +682,10 @@ const SUB_HEADINGS = [
     why: "the <h4> over each note section, in a tab that is nothing but prose",
   },
   {
-    file: "MemoryRegionTable.module.css",
+    file: "MemoryTable.module.css",
     selector: ".title",
-    heads: [".rowName", ".reason"],
-    why: "'SoM regions (N)' — the heading over the SoM's own region table",
+    heads: [".name", ".range"],
+    why: "'Memory map (N)' — the heading over the unified, address-ordered table",
   },
 ];
 
