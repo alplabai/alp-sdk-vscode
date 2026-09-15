@@ -620,6 +620,38 @@ function feedState() {
   });
 }
 
+/**
+ * Every `li[role="option"]` in `container` must have `aria-expanded="true"`
+ * IF AND ONLY IF its detail (`MemoryTable.tsx`'s `RowDetail`, stubbed CSS
+ * modules render as literal `class="detail"` in this harness — see
+ * `test/webview/run.mjs`'s css-module-stub) is actually present in the DOM.
+ * `showDetail` feeds both the attribute and the render gate today, so they
+ * agree by construction — but nothing asserted they MUST until this: the
+ * reviewer proved `aria-expanded={row.selected}` (reverting only the
+ * attribute, leaving the render gate at `showDetail`) reintroduces an inert
+ * row that visibly renders its detail while announcing collapsed, and nothing
+ * in the suite noticed.
+ */
+function checkAriaExpandedMatchesDetail(
+  container: HTMLElement,
+  passName: string,
+  problems: string[],
+) {
+  for (const li of Array.from(
+    container.querySelectorAll('li[role="option"]'),
+  )) {
+    const announced = li.getAttribute("aria-expanded") === "true";
+    const hasDetail = li.querySelector(".detail") !== null;
+    if (announced !== hasDetail) {
+      problems.push(
+        `${passName}: a row announces aria-expanded="${announced}" but its detail is ${
+          hasDetail ? "present" : "absent"
+        } in the DOM — the two must always agree`,
+      );
+    }
+  }
+}
+
 const VIEWS: Array<[string, React.FC]> = [
   ["overview", OverviewView],
   ["sidebar-hub", SidebarHubView],
@@ -1641,6 +1673,11 @@ async function main() {
           );
         }
       }
+      // mram_main is selected (the last click above) and every other row is
+      // not — an ordinary selected row and eight ordinary unselected rows,
+      // checked in one pass: `aria-expanded` must match detail presence for
+      // every one of them.
+      checkAriaExpandedMatchesDetail(container, "memory-regions-aen", problems);
       for (const forbidden of ["free", "remaining"]) {
         if (memText.includes(forbidden)) {
           problems.push(
@@ -1778,6 +1815,82 @@ async function main() {
                 `memory-regions-aen: a row in the "${groupTier}" group carries a "${tier}" swatch — the swatch is not following its row's tier`,
               );
             }
+          }
+        }
+
+        // The collapse toggle — clicked nowhere in this suite before round
+        // 2, which is exactly how a dangling `aria-controls` (the group
+        // unmounting along with its rows) went unnoticed. Collapse
+        // "unproven": its rows must leave the option set, the OTHER two
+        // groups must still validate by name, and `aria-controls` must
+        // still resolve to a MOUNTED element (the group itself, empty of
+        // rows — not gone). Reopen and check the rows return.
+        const unprovenToggle = Array.from(
+          container.querySelectorAll("button[aria-controls]"),
+        ).find(
+          (b) =>
+            b.getAttribute("aria-controls") === "memory-table-group-unproven",
+        );
+        if (!unprovenToggle) {
+          problems.push(
+            'memory-regions-aen: no toggle button controls "memory-table-group-unproven"',
+          );
+        } else {
+          const controlsId = unprovenToggle.getAttribute("aria-controls")!;
+          (unprovenToggle as HTMLButtonElement).click();
+          await settle();
+
+          const collapsedGroup = container.querySelector(`#${controlsId}`);
+          if (!collapsedGroup) {
+            problems.push(
+              `memory-regions-aen: collapsing "unproven" left aria-controls="${controlsId}" resolving to nothing`,
+            );
+          } else {
+            const rowsWhileCollapsed =
+              collapsedGroup.querySelectorAll('li[role="option"]').length;
+            if (rowsWhileCollapsed !== 0) {
+              problems.push(
+                `memory-regions-aen: "unproven" still has ${rowsWhileCollapsed} row(s) in the option set while collapsed, want 0`,
+              );
+            }
+          }
+
+          const groupsWhileCollapsed = table.querySelectorAll('[role="group"]');
+          if (groupsWhileCollapsed.length !== 3) {
+            problems.push(
+              `memory-regions-aen: ${groupsWhileCollapsed.length} groups remain mounted while one is collapsed, want 3`,
+            );
+          }
+          for (const tier of ["yours", "locked"] as const) {
+            const group = Array.from(groupsWhileCollapsed).find(
+              (g) => g.getAttribute("data-tier-group") === tier,
+            );
+            const actualNames = group
+              ? Array.from(group.querySelectorAll('li[role="option"]')).map(
+                  (li) => (li.getAttribute("aria-label") || "").split(", ")[0],
+                )
+              : [];
+            const sortedActual = [...actualNames].sort();
+            const sortedExpected = [...expectedByTier[tier]].sort();
+            if (
+              JSON.stringify(sortedActual) !== JSON.stringify(sortedExpected)
+            ) {
+              problems.push(
+                `memory-regions-aen: while "unproven" is collapsed, "${tier}" group contains [${actualNames.join(", ")}], want exactly [${expectedByTier[tier].join(", ")}]`,
+              );
+            }
+          }
+
+          (unprovenToggle as HTMLButtonElement).click();
+          await settle();
+          const reopenedGroup = container.querySelector(`#${controlsId}`);
+          const rowsAfterReopen = reopenedGroup
+            ? reopenedGroup.querySelectorAll('li[role="option"]').length
+            : 0;
+          if (rowsAfterReopen !== expectedByTier.unproven.length) {
+            problems.push(
+              `memory-regions-aen: reopening "unproven" restored ${rowsAfterReopen} row(s), want ${expectedByTier.unproven.length}`,
+            );
           }
         }
       }
@@ -2121,6 +2234,14 @@ async function main() {
             'memory-regions-duplicate: missing "name shared by 2 rows, not joined"',
           );
         }
+        // Both rows here are `inert` (a duplicated name) — the ONLY case
+        // whose detail shows without ever being selected. `aria-expanded`
+        // must still agree with that.
+        checkAriaExpandedMatchesDetail(
+          container,
+          "memory-regions-duplicate",
+          problems,
+        );
       }
     }
     console.log(
