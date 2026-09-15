@@ -944,7 +944,7 @@ git commit -q -m "feat(build-plan): draw one piecewise rail and drop the fixed 2
 ### Task 6: Compose the tab — findings up, modes gone
 
 **Files:**
-- Modify: `packages/alp-webview/src/features/build-plan/MemoryRegions.tsx`, `MemoryRegions.module.css`, `test/webview/ui-render.tsx`, `test/buildPlan.typeScale.test.js`
+- Modify: `packages/alp-webview/src/features/build-plan/MemoryRegions.tsx`, `MemoryRegions.module.css`, `test/webview/ui-render.tsx`, `test/buildPlan.typeScale.test.js`, `test/buildPlan.swatchContrast.test.js`
 
 **Interfaces:**
 - Consumes: `MemoryTable` (Task 4), `MemoryChart` (Task 5), `AuthorityLegend` (Task 2).
