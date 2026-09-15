@@ -227,4 +227,14 @@ function swatchInk(theme, tier) {
   return { rgb: resolvedOpaqueRgb(theme, name, null), pattern };
 }
 
-module.exports = { swatchInk };
+module.exports = {
+  swatchInk,
+  // Exported for gutterInk.js (the memory chart's authority gutter, which
+  // reads `fill:` off a different stylesheet rather than `background:` off
+  // this one) to reuse rather than re-derive: the gutter and the swatch use
+  // the exact same two colour shapes, and a second hand-written regex is how
+  // the two would silently drift apart the first time either file's syntax
+  // changed.
+  varNameIn,
+  compositeColorMix,
+};

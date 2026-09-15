@@ -4,10 +4,7 @@
 // Build Plan panel's colour-contrast audit (assessment §4) and two review
 // rounds, not re-deriving them from memory: every ratio below is computed
 // from the CSS's OWN declared tokens (read straight out of tokens.css /
-// MemoryChart.module.css / MemoryRegions.module.css — and, for the pressed
-// button's High-Contrast-Light override, the BUILT dist/main.css, since a
-// CSS Modules class is hashed and only the built artifact can tell a working
-// selector from dead markup), resolved to VS Code's canonical
+// MemoryChart.module.css), resolved to VS Code's canonical
 // Dark+/Light+/High-Contrast-Dark/High-Contrast-Light registerColor()
 // defaults plus one real shipping default (2026 Dark, which has a
 // TRANSLUCENT focusBorder — the other four themes' is opaque). If a future
@@ -23,24 +20,19 @@
 //      gitDecoration.modifiedResourceForeground was opaque but
 //      extension-contributed AND too close in hue to --chart-5; now:
 //      terminal.ansiCyan — core, opaque, ~145° from --chart-5's hue).
-//   3. The pressed scale-toggle button's fill stays --accent (DESIGN.md's
-//      Selected-Not-Suggested Rule; round 1's re-point to button.background
-//      regressed High Contrast Dark). Round 2 wrongly claimed no token could
-//      fix --accent-fg's shortfall against --accent; round 3 adopted
-//      terminal.ansiBlack on that basis, then found its cost afterwards —
-//      it regresses VS Code's actual out-of-the-box default (2026 Dark,
-//      translucent focusBorder) from 5.52:1 to 3.80:1. Round 4: --accent-fg
-//      (white) stays. Weighed against every theme VS Code ships by default
-//      (Dark Modern, Light Modern, 2026 Dark, 2026 Light, High Contrast
-//      Light), white already passes everywhere that matters; only Dark+ and
-//      Light+ — retired as defaults since 1.74 — fail, an ACCEPTED, DECLINED
-//      shortfall, pinned at its exact value rather than hidden. High
-//      Contrast Dark alone still needs (and gets) a scoped, `:global(...)`,
-//      built-artifact-verified override, guarded against High Contrast
-//      Light's shared `vscode-high-contrast` class.
-//   4. The chart's meaning-bearing strokes (rail frame, tick, bracket)
-//      against their backdrop (was: --border-default; now: --border-chart),
-//      holding in every theme this file tests.
+//   3. The chart's meaning-bearing strokes (rail frame, tick) against their
+//      backdrop (was: --border-default; now --border-chart, or, for a
+//      DECLARED axis boundary, --text-primary), holding in every theme this
+//      file tests.
+//
+// RETIRED, #484 phase 4: the pressed scale-toggle button (`.scaleBtn`), the
+// inter-rail bracket (`.bracket`) and the region-frame authority encoding
+// (`.regionFrame`) this file used to pin contrast fixes for are all deleted
+// along with the second rail and the equalized-mode toggle — the CONTROLS
+// this section audited no longer exist, not merely moved. Their tests are
+// removed with them, not adapted: there is no fill/token left to re-derive a
+// ratio from. See MemoryChart.tsx/MemoryRegions.tsx's own history (git log)
+// for the original audit if the reasoning is ever needed again.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -63,33 +55,6 @@ const CHART_CSS = fs.readFileSync(
   path.join(SRC, "features", "build-plan", "MemoryChart.module.css"),
   "utf8",
 );
-const REGIONS_CSS = fs.readFileSync(
-  path.join(SRC, "features", "build-plan", "MemoryRegions.module.css"),
-  "utf8",
-);
-const DIST_CSS_PATH = path.join(SRC, "..", "dist", "main.css");
-
-/** The BUILT stylesheet — required for anything that depends on how CSS
- * Modules hashes a class name, because the source alone cannot show
- * whether a host-injected class (`vscode-high-contrast-light`) survives
- * unhashed or was silently turned into dead markup. `pnpm test` always
- * compiles first, so this is normally present; run `pnpm run compile` before
- * running this file standalone. */
-function readDistCss() {
-  try {
-    return fs.readFileSync(DIST_CSS_PATH, "utf8");
-  } catch {
-    throw new Error(
-      `${DIST_CSS_PATH} is missing — run \`pnpm run compile\` first. This ` +
-        "file asserts the pressed button's High-Contrast-Light override " +
-        "against the BUILT artifact, not the CSS Modules source: a class " +
-        "name is hashed at build time, and the host-injected " +
-        "`vscode-high-contrast-light` class only matches what shipped if " +
-        "the source wrapped it in :global(...) — reading only the source " +
-        "cannot tell a working override from dead markup.",
-    );
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Colour math (ports contrast.py's maths verbatim — same formulas, same
@@ -243,70 +208,6 @@ function strokeTokenFor(selector) {
   );
   const m = re.exec(CHART_CSS);
   if (!m) throw new Error(`could not find a stroke rule for ${selector}`);
-  return m[1];
-}
-
-/** `{ bg, fg }` tokens for `.scaleBtn[aria-pressed="true"] { ... }` (NOT its
- * `:focus-visible` sibling or the HC-Dark-scoped override), read out of
- * MemoryRegions.module.css. */
-function pressedButtonTokens() {
-  const re = /(?:^|\n)\.scaleBtn\[aria-pressed="true"\]\s*\{([^}]*)\}/;
-  const m = re.exec(REGIONS_CSS);
-  if (!m) throw new Error("pressed .scaleBtn rule not found");
-  const bg = /background:\s*var\((--[\w-]+)/.exec(m[1]);
-  const fg = /color:\s*var\((--[\w-]+)/.exec(m[1]);
-  if (!bg || !fg) {
-    throw new Error("pressed .scaleBtn rule is missing background/color var()");
-  }
-  return { bg: bg[1], fg: fg[1] };
-}
-
-/** The `outline-color` token for the pressed button's own `:focus-visible`. */
-function pressedFocusRingToken() {
-  const re = /\.scaleBtn\[aria-pressed="true"\]:focus-visible\s*\{([^}]*)\}/;
-  const m = re.exec(REGIONS_CSS);
-  if (!m) throw new Error("pressed .scaleBtn:focus-visible rule not found");
-  const oc = /outline-color:\s*var\((--[\w-]+)/.exec(m[1]);
-  if (!oc) throw new Error("outline-color var() not found");
-  return oc[1];
-}
-
-/** The `color` token the High-Contrast-Dark-scoped override paints the
- * pressed button's text with, read from SOURCE (`body:global(.vscode-high-
- * contrast):not(:global(.vscode-high-contrast-light)) .scaleBtn[...]`).
- * This only confirms the source intends an override — it cannot confirm the
- * override actually matches anything once CSS Modules hashes `.scaleBtn`;
- * that is what `builtScaleBtnPressedClass` + the dist-based tests check. */
-function hcDarkPressedTextToken() {
-  const re =
-    /body:global\(\.vscode-high-contrast\):not\(:global\(\.vscode-high-contrast-light\)\)\s+\.scaleBtn\[aria-pressed="true"\]\s*\{([^}]*)\}/;
-  const m = re.exec(REGIONS_CSS);
-  if (!m) {
-    throw new Error(
-      "High-Contrast-Dark pressed-text override rule not found (expected " +
-        "body:global(.vscode-high-contrast):not(:global(.vscode-high-contrast-light)) " +
-        ".scaleBtn[...])",
-    );
-  }
-  const c = /color:\s*var\((--[\w-]+)/.exec(m[1]);
-  if (!c) throw new Error("High-Contrast-Dark override has no color var()");
-  return c[1];
-}
-
-/** The exact (hashed) local class name the BUILT `dist/main.css` uses for
- * `.scaleBtn`'s base pressed-state rule
- * (`background: var(--accent); color: var(--accent-fg)`). */
-function builtScaleBtnPressedClass(distCss) {
-  const re =
-    /\._([\w-]+)\[aria-pressed=true\]\{background:var\(--accent\);color:var\(--accent-fg\)\}/;
-  const m = re.exec(distCss);
-  if (!m) {
-    throw new Error(
-      "could not find the built base pressed-button rule " +
-        "(background: var(--accent); color: var(--accent-fg)) in " +
-        "dist/main.css — run `pnpm run compile`",
-    );
-  }
   return m[1];
 }
 
@@ -482,210 +383,11 @@ test("--chart-3's fallback literal is held to the same bar as the variable", () 
 });
 
 // ---------------------------------------------------------------------------
-// Defect 3 — the pressed scale-toggle button stays on --accent (user
-// decision), text stays --accent-fg (white, reinstated in round 4 — see the
-// header comment for why ansiBlack was evaluated and declined). Six themes
-// pass (asserted); Dark+/Light+ are an accepted, declined shortfall (pinned
-// at their exact value). High Contrast Dark still needs, and gets, a real,
-// built-artifact-verified `:global(...)` override.
+// Defect 3 — the chart's meaning-bearing strokes (rail frame, tick).
 // ---------------------------------------------------------------------------
 
-test("the pressed scale-toggle button's fill is --accent and its text is --accent-fg (DESIGN.md's Selected-Not-Suggested Rule)", () => {
-  const { bg, fg } = pressedButtonTokens();
-  assert.equal(
-    bg,
-    "--accent",
-    "the pressed/selected scale-toggle marks 'currently selected', which " +
-      "DESIGN.md reserves --accent for; button.background regressed High " +
-      "Contrast Dark (pure black there, identical to the panel ground)",
-  );
-  assert.equal(
-    fg,
-    "--accent-fg",
-    "terminal.ansiBlack was evaluated (round 3) and declined (round 4): it " +
-      "buys the registerColor() defaults but regresses VS Code's actual " +
-      "out-of-the-box default (2026 Dark, 5.52:1 -> 3.80:1) — --accent-fg " +
-      "covers more real themes and is the token that ships",
-  );
-});
-
-test("--accent-fg (white) vs --accent: six real/current themes pass; Dark+/Light+ are an accepted, declined shortfall pinned exactly", () => {
-  const { bg, fg } = pressedButtonTokens();
-  assert.equal(fg, "--accent-fg");
-
-  // registerColor()-default themes already in VSCODE_DEFAULTS/THEMES.
-  const declined = { dark: "4.21", light: "3.35" };
-  for (const [theme, pin] of Object.entries(declined)) {
-    const bgRgb = resolvedOpaqueRgb(theme, bg, null);
-    const fgRgb = resolvedOpaqueRgb(theme, fg, null);
-    const ratio = contrast(fgRgb, bgRgb);
-    assert.equal(
-      ratio.toFixed(2),
-      pin,
-      `pressed .scaleBtn text (${fg}) vs its fill (${bg}) in ${theme} moved ` +
-        `to ${ratio.toFixed(2)}:1 (was ${pin}:1) — this is an ACCEPTED, ` +
-        "declined shortfall (retired as VS Code's own default since 1.74); " +
-        "any drift, better or worse, must be re-justified, not silently " +
-        "absorbed",
-    );
-  }
-
-  const passingCore = ["hcLight", "dark2026"]; // already full THEMES/VSCODE_DEFAULTS members
-  for (const theme of passingCore) {
-    const sbRgb = resolvedOpaqueRgb(theme, "--surface-bg", null);
-    const bgRgb = resolvedOpaqueRgb(theme, bg, sbRgb); // composited if translucent (dark2026)
-    const fgRgb = resolvedOpaqueRgb(theme, fg, null);
-    const ratio = contrast(fgRgb, bgRgb);
-    assert.ok(
-      ratio >= 4.5,
-      `pressed .scaleBtn text (${fg}) vs its fill (${bg}) in ${theme}: ` +
-        `${ratio.toFixed(2)}:1, need >= 4.5:1`,
-    );
-  }
-
-  // Dark Modern / Light Modern / 2026 Light: real, current VS Code theme
-  // JSON defaults (extensions/theme-defaults/themes/*.json), not
-  // registerColor() defaults — not given full VSCODE_DEFAULTS/THEMES entries
-  // (this file's other arms do not need chart-token data for them), so
-  // resolved directly here. `button.foreground` (--accent-fg) is a SINGLE,
-  // non-per-kind VS Code default (`Color.white`, inputColors.ts) — always
-  // opaque white in every one of these, confirmed by each theme JSON
-  // explicitly restating "button.foreground": "#FFFFFF" rather than
-  // overriding it.
-  //
-  // The white literal below is therefore a property of `button.foreground`,
-  // NOT of `--accent-fg`. Guard the link between them: without this, a
-  // repoint of --accent-fg to some other --vscode-* variable would leave
-  // these three arms happily asserting a colour the stylesheet no longer
-  // paints. The other arms in this test resolve through VSCODE_DEFAULTS and
-  // catch it; these three cannot, because Dark/Light Modern and 2026 Light
-  // have no VSCODE_DEFAULTS entries (no arm here needs their chart tokens).
-  assert.equal(
-    resolveToVscodeVar(TOKENS_CSS, fg),
-    "--vscode-button-foreground",
-    `${fg} no longer resolves to --vscode-button-foreground, so the white ` +
-      "literal below stopped describing what this control paints — give " +
-      "darkModern/lightModern/light2026 real VSCODE_DEFAULTS entries and " +
-      "resolve through them, or update this arm deliberately",
-  );
-  const accentFgWhite = [255, 255, 255];
-  const otherShippingThemes = {
-    darkModern: "#0078D4",
-    lightModern: "#005FB8",
-    light2026: "#0069CC",
-  };
-  for (const [name, accentHex] of Object.entries(otherShippingThemes)) {
-    const ratio = contrast(accentFgWhite, parseColor(accentHex).slice(0, 3));
-    assert.ok(
-      ratio >= 4.5,
-      `--accent-fg (white) vs --accent (${accentHex}) in ${name}: ` +
-        `${ratio.toFixed(2)}:1, need >= 4.5:1`,
-    );
-  }
-});
-
-test("High Contrast Dark's override actually fires (verified against the built artifact, not just source)", () => {
-  // Source-level: the override exists and names the right token.
-  const sourceToken = hcDarkPressedTextToken();
-  assert.equal(sourceToken, "--surface-bg");
-  const { bg } = pressedButtonTokens();
-  const bgRgb = resolvedOpaqueRgb("hcDark", bg, null); // --accent is opaque in hcDark
-  const fgRgb = resolvedOpaqueRgb("hcDark", sourceToken, null);
-  const ratio = contrast(fgRgb, bgRgb);
-  assert.ok(
-    ratio >= 4.5,
-    `High Contrast Dark override text (${sourceToken}) vs --accent: ` +
-      `${ratio.toFixed(2)}:1, need >= 4.5:1`,
-  );
-
-  // Built-artifact level: source alone cannot show whether the host-injected
-  // `vscode-high-contrast` class survived unhashed. A CSS Modules class name
-  // embeds its original text inside an underscore-delimited local
-  // identifier, so a hashed survivor of the literal class name is
-  // detectable directly.
-  const distCss = readDistCss();
-  assert.equal(
-    /_vscode-high-contrast/.test(distCss),
-    false,
-    "a CSS-Modules-hashed `vscode-high-contrast` class survives in the " +
-      "built CSS — VS Code writes this class onto <body> LITERALLY, so a " +
-      "hashed version can never match it; wrap the class in :global(...)",
-  );
-  const scaleBtnClass = builtScaleBtnPressedClass(distCss);
-  const builtOverrideRe = new RegExp(
-    `body\\.vscode-high-contrast:not\\(\\.vscode-high-contrast-light\\) ` +
-      `\\._${escapeForRegExp(scaleBtnClass)}` +
-      `\\[aria-pressed=true\\]\\{color:var\\(--surface-bg\\)\\}`,
-  );
-  assert.ok(
-    builtOverrideRe.test(distCss),
-    "dist/main.css has no " +
-      `\`body.vscode-high-contrast:not(.vscode-high-contrast-light) ._${scaleBtnClass}` +
-      "[aria-pressed=true]{color:var(--surface-bg)}\` rule — the source's " +
-      ":global(...) wrapper is missing or the build did not pick it up; " +
-      "run `pnpm run compile` and re-check",
-  );
-});
-
-test("High Contrast Light is NOT repainted by the High-Contrast-Dark override", () => {
-  // High Contrast Light also carries the plain `vscode-high-contrast` class
-  // (VS Code's webview bootstrap adds it for backwards compatibility) — the
-  // `:not(.vscode-high-contrast-light)` guard must survive in the BUILT
-  // artifact, not just be intended in source.
-  const distCss = readDistCss();
-  const scaleBtnClass = builtScaleBtnPressedClass(distCss);
-  const unguardedRe = new RegExp(
-    `body\\.vscode-high-contrast \\._${escapeForRegExp(scaleBtnClass)}` +
-      `\\[aria-pressed=true\\]\\{color:var\\(--surface-bg\\)\\}`,
-  );
-  assert.equal(
-    unguardedRe.test(distCss),
-    false,
-    "an UNGUARDED `body.vscode-high-contrast ._" +
-      scaleBtnClass +
-      "[aria-pressed=true]{color:var(--surface-bg)}` rule exists — this " +
-      "would also repaint High Contrast Light's pressed text",
-  );
-});
-
-test("the pressed scale-toggle button's own focus ring clears 3:1 against --accent in every theme this file tests, including a translucent --accent", () => {
-  const { bg } = pressedButtonTokens();
-  const ringToken = pressedFocusRingToken();
-  for (const theme of THEMES) {
-    const sbRgb = resolvedOpaqueRgb(theme, "--surface-bg", null);
-    const bgRgb = resolvedOpaqueRgb(theme, bg, sbRgb); // --accent, composited if translucent
-    const ringRgb = resolvedOpaqueRgb(theme, ringToken, null);
-    const ratio = contrast(ringRgb, bgRgb);
-    assert.ok(
-      ratio >= 3,
-      `pressed .scaleBtn focus ring (${ringToken}) vs its fill (${bg}) in ` +
-        `${theme}: ${ratio.toFixed(2)}:1, need >= 3:1`,
-    );
-  }
-});
-
-test("Light+'s focus-ring headroom above 3:1 is thin — pinned so a future token change cannot quietly cross the floor", () => {
-  const { bg } = pressedButtonTokens();
-  const ringToken = pressedFocusRingToken();
-  const bgRgb = resolvedOpaqueRgb("light", bg, null); // opaque in Light+
-  const ringRgb = resolvedOpaqueRgb("light", ringToken, null);
-  const ratio = contrast(ringRgb, bgRgb);
-  assert.equal(
-    ratio.toFixed(2),
-    "3.02",
-    `Light+ focus ring (${ringToken}) vs --accent moved to ` +
-      `${ratio.toFixed(2)}:1 (was 3.02:1, under 1% above the 3:1 floor) — ` +
-      "re-verify it did not cross under 3:1 before updating this pin",
-  );
-  assert.ok(ratio >= 3, "must not have crossed the 3:1 floor");
-});
-
-// ---------------------------------------------------------------------------
-// Defect 4 — the chart's meaning-bearing strokes (rail frame, tick, bracket).
-// ---------------------------------------------------------------------------
-
-test("the rail frame, the axis ticks and the inter-rail bracket use a stroke token that clears 3:1 in every default theme", () => {
-  for (const selector of [".railFrame", ".tick", ".bracket"]) {
+test("the rail frame and the axis ticks use a stroke token that clears 3:1 in every default theme", () => {
+  for (const selector of [".railFrame", ".tick"]) {
     const token = strokeTokenFor(selector);
     assert.notEqual(
       token,
@@ -712,21 +414,6 @@ test("the rail frame, the axis ticks and the inter-rail bracket use a stroke tok
       );
     }
   }
-});
-
-test("the region-frame rule (out of scope) still strokes with --border-default", () => {
-  // Pins that the fix did NOT blanket-replace every --border-default use:
-  // the region-frame authority encoding is being deleted by a separate
-  // redesign and must be left untouched here.
-  const re = /\.regionFrame\s*\{[^}]*stroke:\s*var\((--[\w-]+)/;
-  const m = re.exec(CHART_CSS);
-  assert.ok(m, ".regionFrame base rule not found");
-  assert.equal(
-    m[1],
-    "--border-default",
-    ".regionFrame's own stroke must stay --border-default — it is out of " +
-      "scope for this fix",
-  );
 });
 
 // ---------------------------------------------------------------------------

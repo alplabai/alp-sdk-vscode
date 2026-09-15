@@ -49,6 +49,11 @@
 // source-text only (no render, no React, no jsdom — the component is
 // mounted nowhere yet; a real render assertion belongs to the task that
 // first mounts it), each tied to one of those three mutations.
+//
+// A fifth pair, also below, holds the memory chart's authority GUTTER
+// (MemoryChart.module.css) to rules 1 and 2 above — the same three-tier
+// vocabulary, painted as SVG `fill` rather than swatch `background`, would
+// otherwise ship with no contrast gate of its own at all.
 
 const fs = require("node:fs");
 const path = require("node:path");
@@ -60,6 +65,7 @@ const {
   contrast,
 } = require("./helpers/vscodeThemes");
 const { swatchInk } = require("./helpers/swatchInk");
+const { gutterInk } = require("./helpers/gutterInk");
 
 const BUILD_PLAN_DIR = path.join(
   __dirname,
@@ -243,4 +249,60 @@ test("AuthoritySwatch actually renders a <span className={styles.swatch}> — ki
       "— it may return null (or something else) and paint nothing the CSS " +
       "module's rules can ever match",
   );
+});
+
+// ---------------------------------------------------------------------------
+// The memory chart's authority GUTTER (#484 phase 4) — a second reader of the
+// identical three-tier vocabulary, in `MemoryChart.module.css` rather than
+// `AuthoritySwatch.module.css`, drawn as SVG `fill` rather than CSS
+// `background`. It is held to the SAME two criteria as the swatch above: on
+// its own, each tier clears 3:1 against the panel ground; pairwise, two tiers
+// sharing a pattern (only `yours` vs `locked`, a flat fill both times) still
+// need 1.5:1 of their own. Introducing a THIRD colour surface for the same
+// three tiers, with no test reading what it actually paints, is exactly the
+// kind of gap a gate that only ever looked at `AuthoritySwatch.module.css`
+// would never see — see `gutterInk.js`'s own header for why this reuses
+// `swatchInk.js`'s parsing rather than a second hand-rolled regex.
+
+test("each gutter tier clears 3:1 against the panel ground in every covered theme", () => {
+  for (const theme of THEMES) {
+    const ground = resolvedOpaqueRgb(theme, "--surface-bg", null);
+    for (const tier of ["yours", "locked", "unproven"]) {
+      const ratio = contrast(gutterInk(theme, tier).rgb, ground);
+      assert.ok(
+        ratio >= 3,
+        `gutter tier ${tier} vs panel ground in ${theme}: ${ratio.toFixed(2)}:1, need >= 3:1`,
+      );
+    }
+  }
+});
+
+test("the gutter's three tiers are pairwise distinguishable in every covered theme", () => {
+  for (const theme of THEMES) {
+    const tiers = {
+      yours: gutterInk(theme, "yours"),
+      locked: gutterInk(theme, "locked"),
+      unproven: gutterInk(theme, "unproven"),
+    };
+    for (const [a, b] of [
+      ["yours", "locked"],
+      ["yours", "unproven"],
+      ["locked", "unproven"],
+    ]) {
+      const A = tiers[a];
+      const B = tiers[b];
+      if (A.pattern !== B.pattern) {
+        // Different pattern (solid vs hatch) is its own distinguishing
+        // channel — no ink separation is required or expected.
+        continue;
+      }
+      const ratio = contrast(A.rgb, B.rgb);
+      assert.ok(
+        ratio >= 1.5,
+        `gutter tiers ${a} and ${b} are both "${A.pattern}" and contrast at ` +
+          `${ratio.toFixed(2)}:1 in ${theme} — two tiers may share a colour ` +
+          "only when their patterns differ",
+      );
+    }
+  }
 });
