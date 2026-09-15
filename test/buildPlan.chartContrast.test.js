@@ -4,12 +4,15 @@
 // Build Plan panel's colour-contrast audit (assessment §4) and two review
 // rounds, not re-deriving them from memory: every ratio below is computed
 // from the CSS's OWN declared tokens (read straight out of tokens.css /
-// MemoryChart.module.css), resolved to VS Code's canonical
-// Dark+/Light+/High-Contrast-Dark/High-Contrast-Light registerColor()
-// defaults plus one real shipping default (2026 Dark, which has a
-// TRANSLUCENT focusBorder — the other four themes' is opaque). If a future
-// edit repoints one of these rules at an unsafe token, this recomputes and
-// fails — it does not compare against a hardcoded "was" value.
+// MemoryChart.module.css / Button.module.css — and, for the accent button's
+// `[data-tier]` survival, the BUILT dist/main.css, since a CSS Modules class
+// is hashed and only the built artifact can tell a working selector from
+// dead markup), resolved to VS Code's canonical Dark+/Light+/High-Contrast-
+// Dark/High-Contrast-Light registerColor() defaults plus one real shipping
+// default (2026 Dark, which has a TRANSLUCENT focusBorder — the other four
+// themes' is opaque). If a future edit repoints one of these rules at an
+// unsafe token, this recomputes and fails — it does not compare against a
+// hardcoded "was" value.
 //
 // Defects pinned:
 //   1. Every chart-series band/marker LABEL against its own series' 30%
@@ -20,19 +23,34 @@
 //      gitDecoration.modifiedResourceForeground was opaque but
 //      extension-contributed AND too close in hue to --chart-5; now:
 //      terminal.ansiCyan — core, opaque, ~145° from --chart-5's hue).
-//   3. The chart's meaning-bearing strokes (rail frame, tick) against their
-//      backdrop (was: --border-default; now --border-chart, or, for a
-//      DECLARED axis boundary, --text-primary), holding in every theme this
-//      file tests.
+//   3. --accent-fg (white) vs --accent: six real/current themes pass;
+//      Dark+/Light+ are an accepted, declined shortfall pinned exactly (the
+//      round-4 record from the pressed scale-toggle button audit).
+//   4. The chart's meaning-bearing strokes (rail frame, tick, the computed-
+//      mark tick) against their backdrop (was: --border-default; now
+//      --border-chart, or, for a DECLARED axis boundary, --text-primary),
+//      holding in every theme this file tests.
 //
 // RETIRED, #484 phase 4: the pressed scale-toggle button (`.scaleBtn`), the
 // inter-rail bracket (`.bracket`) and the region-frame authority encoding
 // (`.regionFrame`) this file used to pin contrast fixes for are all deleted
-// along with the second rail and the equalized-mode toggle — the CONTROLS
-// this section audited no longer exist, not merely moved. Their tests are
-// removed with them, not adapted: there is no fill/token left to re-derive a
-// ratio from. See MemoryChart.tsx/MemoryRegions.tsx's own history (git log)
-// for the original audit if the reasoning is ever needed again.
+// along with the second rail and the equalized-mode toggle. Their SELECTOR-
+// specific tests (the pressed-fill/pressed-text-role check, both focus-ring
+// checks, the region-frame out-of-scope pin) are removed with them, not
+// adapted — there is no fill/token left on those selectors to re-derive a
+// ratio from.
+//
+// NOT RETIRED, ONLY RETARGETED (fix round 1 caught this): the
+// `--accent-fg`/`--accent` PAIR itself did not die with `.scaleBtn` — it
+// still ships on `.btn[data-appearance="accent"]` (Button.module.css), the
+// "toggles / segmented controls" appearance that inherited the deleted
+// toggle's role. Defect 3 below reads THAT selector. The High-Contrast-Dark
+// `:global(...)` override was genuinely `.scaleBtn`-specific (no such
+// override exists on the button component) and stays gone — but the
+// BUILT-ARTIFACT verification method it demonstrated (a CSS Modules class is
+// hashed, so only the compiled output can tell a working selector from dead
+// markup) is restored below against something this branch actually ships:
+// the authority gutter's three `[data-tier]` rules surviving Vite.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -55,6 +73,30 @@ const CHART_CSS = fs.readFileSync(
   path.join(SRC, "features", "build-plan", "MemoryChart.module.css"),
   "utf8",
 );
+const BUTTON_CSS = fs.readFileSync(
+  path.join(SRC, "shared", "ui", "Button", "Button.module.css"),
+  "utf8",
+);
+const DIST_CSS_PATH = path.join(SRC, "..", "dist", "main.css");
+
+/** The BUILT stylesheet — required for anything that depends on how CSS
+ * Modules hashes a class name, because the source alone cannot show whether
+ * a rule actually reaches a real selector once built. `pnpm test` always
+ * compiles first, so this is normally present; run `pnpm run compile` before
+ * running this file standalone. */
+function readDistCss() {
+  try {
+    return fs.readFileSync(DIST_CSS_PATH, "utf8");
+  } catch {
+    throw new Error(
+      `${DIST_CSS_PATH} is missing — run \`pnpm run compile\` first. This ` +
+        "file asserts the gutter's [data-tier] rules against the BUILT " +
+        "artifact, not the CSS Modules source: a class name is hashed at " +
+        "build time, and reading only the source cannot tell a working " +
+        "selector from dead markup.",
+    );
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Colour math (ports contrast.py's maths verbatim — same formulas, same
@@ -209,6 +251,34 @@ function strokeTokenFor(selector) {
   const m = re.exec(CHART_CSS);
   if (!m) throw new Error(`could not find a stroke rule for ${selector}`);
   return m[1];
+}
+
+/** The token a bare `selector { fill: var(...) }` rule uses. */
+function fillTokenFor(selector) {
+  const re = new RegExp(
+    `${escapeForRegExp(selector)}\\s*\\{[^}]*fill:\\s*var\\((--[\\w-]+)`,
+  );
+  const m = re.exec(CHART_CSS);
+  if (!m) throw new Error(`could not find a fill rule for ${selector}`);
+  return m[1];
+}
+
+/** `{ bg, fg }` tokens for `.btn[data-appearance="accent"] { ... }`, read out
+ * of Button.module.css — the "toggles / segmented controls" appearance that
+ * inherited the deleted scale-toggle's role, and so inherited its
+ * --accent/--accent-fg audit too (round-1 fix review). */
+function accentButtonTokens() {
+  const re = /\.btn\[data-appearance="accent"\]\s*\{([^}]*)\}/;
+  const m = re.exec(BUTTON_CSS);
+  if (!m) throw new Error('.btn[data-appearance="accent"] rule not found');
+  const bg = /background:\s*var\((--[\w-]+)/.exec(m[1]);
+  const fg = /color:\s*var\((--[\w-]+)/.exec(m[1]);
+  if (!bg || !fg) {
+    throw new Error(
+      '.btn[data-appearance="accent"] rule is missing background/color var()',
+    );
+  }
+  return { bg: bg[1], fg: fg[1] };
 }
 
 /** The literal hex a `var(--name, #literal)` declaration falls back to. */
@@ -383,11 +453,106 @@ test("--chart-3's fallback literal is held to the same bar as the variable", () 
 });
 
 // ---------------------------------------------------------------------------
-// Defect 3 — the chart's meaning-bearing strokes (rail frame, tick).
+// Defect 3 — --accent-fg (white) vs --accent, on the appearance that
+// inherited the deleted scale-toggle's role. Six themes pass (asserted);
+// Dark+/Light+ are an accepted, declined shortfall (pinned at their exact
+// value) — the same round-4 record the original `.scaleBtn` audit reached,
+// re-measured against `.btn[data-appearance="accent"]` now that the toggle
+// itself is gone.
 // ---------------------------------------------------------------------------
 
-test("the rail frame and the axis ticks use a stroke token that clears 3:1 in every default theme", () => {
-  for (const selector of [".railFrame", ".tick"]) {
+test("--accent-fg (white) vs --accent: six real/current themes pass; Dark+/Light+ are an accepted, declined shortfall pinned exactly", () => {
+  const { bg, fg } = accentButtonTokens();
+  assert.equal(bg, "--accent");
+  assert.equal(fg, "--accent-fg");
+
+  // registerColor()-default themes already in VSCODE_DEFAULTS/THEMES.
+  const declined = { dark: "4.21", light: "3.35" };
+  for (const [theme, pin] of Object.entries(declined)) {
+    const bgRgb = resolvedOpaqueRgb(theme, bg, null);
+    const fgRgb = resolvedOpaqueRgb(theme, fg, null);
+    const ratio = contrast(fgRgb, bgRgb);
+    assert.equal(
+      ratio.toFixed(2),
+      pin,
+      `accent button text (${fg}) vs its fill (${bg}) in ${theme} moved to ` +
+        `${ratio.toFixed(2)}:1 (was ${pin}:1) — this is an ACCEPTED, ` +
+        "declined shortfall (retired as VS Code's own default since 1.74); " +
+        "any drift, better or worse, must be re-justified, not silently " +
+        "absorbed",
+    );
+  }
+
+  const passingCore = ["hcLight", "dark2026"]; // already full THEMES/VSCODE_DEFAULTS members
+  for (const theme of passingCore) {
+    const sbRgb = resolvedOpaqueRgb(theme, "--surface-bg", null);
+    const bgRgb = resolvedOpaqueRgb(theme, bg, sbRgb); // composited if translucent (dark2026)
+    const fgRgb = resolvedOpaqueRgb(theme, fg, null);
+    const ratio = contrast(fgRgb, bgRgb);
+    assert.ok(
+      ratio >= 4.5,
+      `accent button text (${fg}) vs its fill (${bg}) in ${theme}: ` +
+        `${ratio.toFixed(2)}:1, need >= 4.5:1`,
+    );
+  }
+
+  // Dark Modern / Light Modern / 2026 Light: real, current VS Code theme
+  // JSON defaults, not registerColor() defaults — resolved directly here,
+  // same as the original audit. `button.foreground` (--accent-fg) is a
+  // SINGLE, non-per-kind VS Code default (Color.white), always opaque white
+  // in every one of these.
+  assert.equal(
+    resolveToVscodeVar(TOKENS_CSS, fg),
+    "--vscode-button-foreground",
+    `${fg} no longer resolves to --vscode-button-foreground, so the white ` +
+      "literal below stopped describing what this control paints — give " +
+      "darkModern/lightModern/light2026 real VSCODE_DEFAULTS entries and " +
+      "resolve through them, or update this arm deliberately",
+  );
+  const accentFgWhite = [255, 255, 255];
+  const otherShippingThemes = {
+    darkModern: "#0078D4",
+    lightModern: "#005FB8",
+    light2026: "#0069CC",
+  };
+  for (const [name, accentHex] of Object.entries(otherShippingThemes)) {
+    const ratio = contrast(accentFgWhite, parseColor(accentHex).slice(0, 3));
+    assert.ok(
+      ratio >= 4.5,
+      `--accent-fg (white) vs --accent (${accentHex}) in ${name}: ` +
+        `${ratio.toFixed(2)}:1, need >= 4.5:1`,
+    );
+  }
+});
+
+// The built-artifact verification method the retired HC-Dark override test
+// demonstrated — a CSS Modules class is hashed, so only the compiled output
+// can tell a working selector from dead markup — restored here against
+// something this branch actually ships: the authority gutter's three
+// `[data-tier]` rules. CSS Modules hashes only the CLASS half of a selector,
+// never an attribute selector, so a hashed survivor of `.gutter` paired with
+// its literal `[data-tier=...]` is directly detectable in the built CSS.
+test("the gutter's three [data-tier] rules survive the build (verified against the built artifact, not just source)", () => {
+  const distCss = readDistCss();
+  for (const tier of ["yours", "locked", "unproven"]) {
+    const re = new RegExp(`\\._[\\w-]+\\[data-tier=(?:"${tier}"|${tier})\\]`);
+    assert.ok(
+      re.test(distCss),
+      `dist/main.css has no hashed .gutter[data-tier=${tier}] rule — CSS ` +
+        "Modules source alone cannot show this: the class is hashed at " +
+        "build time and only the compiled output proves the rule reaches " +
+        "a real selector",
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Defect 4 — the chart's meaning-bearing strokes (rail frame, declared-
+// boundary tick, computed-mark tick).
+// ---------------------------------------------------------------------------
+
+test("the rail frame and both axis-tick registers use a stroke token that clears 3:1 in every default theme", () => {
+  for (const selector of [".railFrame", ".tick", ".tickMinor"]) {
     const token = strokeTokenFor(selector);
     assert.notEqual(
       token,
@@ -414,6 +579,28 @@ test("the rail frame and the axis ticks use a stroke token that clears 3:1 in ev
       );
     }
   }
+});
+
+// A computed, power-of-two mark and a declared span/budget/region boundary
+// share every other visual property (position math, label anchor, dominant
+// baseline) — ink is the ONLY channel that tells them apart, which is the
+// whole reason the old single-register axis was a defect this task set out
+// to fix. Promoting `.tickLabelMinor` back to `--text-primary` (matching
+// `.tickLabel`) would make a computed mark typographically identical to an
+// authored address again, and nothing above would notice: the stroke-token
+// loop checks CONTRAST against a background, never one tick label against
+// the other.
+test(".tickLabel and .tickLabelMinor resolve to different fill tokens", () => {
+  const primary = fillTokenFor(".tickLabel");
+  const secondary = fillTokenFor(".tickLabelMinor");
+  assert.notEqual(
+    primary,
+    secondary,
+    "a DECLARED boundary's tick label and a COMPUTED power-of-two mark's " +
+      "must not share an ink token, or a computed mark becomes " +
+      "indistinguishable from a declared one — the exact defect this " +
+      "task's axis rewrite exists to fix",
+  );
 });
 
 // ---------------------------------------------------------------------------
