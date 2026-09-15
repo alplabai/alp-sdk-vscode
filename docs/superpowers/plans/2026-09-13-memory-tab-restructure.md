@@ -674,7 +674,11 @@ git commit -q -m "feat(build-plan): add the rail's piecewise scale with announce
 - Produces: `<MemoryTable regions spans budgets window selected onSelect />`.
 - Carried over verbatim from the deleted file — these strings do not change: `authorityLabel`, `kindLabel`, `usersOf`, `devicesWithNoRegion`, and their outputs `"vendor image · locked"`, `"customer · written at flash time"`, `"customer · writable at runtime"`, `"no writer · reserved"`, `"Secure Enclave · locked"`, `"composite · see the contained regions"`, `"not authored · SoC-derived table"`, `"authority not declared"`, `` `${writeAuthority} · unrecognised` ``, `"class not proven"`.
 
-**Row model.** One row per SoM region and one per placed span, sorted by `compareByTierThenAddress` within a tier group. A span has no `authorityClass`: it takes the tier of the region it names (`span.region`) when that name is unambiguous, `"unproven"` otherwise. At an equal base the region sorts before the spans that land in it.
+**Row model.** One row per SoM region and one per placed span, sorted by `compareByTierThenAddress` within a tier group. At an equal base the region sorts before the spans that land in it.
+
+A span has no `authorityClass`. **It takes the tier of the region whose extent CONTAINS its base address** — not of a name match. The first draft matched `span.region` by name, and that broke the one thing this table exists to do: `m55_he` and `he_slot0` begin at the same address `0x80010000`, but the span resolved no region name, so it landed in `unproven` while the region sat in `yours`, two groups apart with `Locked` between them. Containment puts them back together, and it asks the question the reader is actually asking — which region does my image fall into.
+
+Where no resolved region covers the address, or more than one does, the span stays **`"unproven"`**, fail-closed. Do not pick a winner among overlapping regions; that is the same refusal-to-guess the rest of this view already applies, and it is pinned by test.
 
 - [ ] **Step 1: Write the failing harness assertions**
 
