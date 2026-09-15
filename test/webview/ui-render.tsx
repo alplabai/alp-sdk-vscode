@@ -2368,28 +2368,45 @@ async function main() {
   }
 
   // ── a region table AND a genuine uncovered run, together (#484 phase 4,
-  //    round-2 fix review) ──
+  //    round-2 + round-3 fix review) ──
   // Neither vendored fixture can prove this: rpmsg-aen's six regions tile
   // its window end to end (zero gaps, by construction of that data), and
   // the "build-plan" pass's hand-built manifest has NO region table at all
-  // (its own gap comes entirely from a span's own budget interval). A
-  // mutation dropping `occupied.push({ lo: r.lo, hi: r.hi })` out of
-  // `railBoundaries` (MemoryChart.tsx) is invisible to BOTH: aen already
-  // asserts zero gaps either way, and "build-plan" has no region interval to
-  // drop in the first place. This manifest is built so the ONLY occupied
-  // coverage in its window comes from a RESOLVED REGION — two marker spans
-  // (a base each, no size, no budget) that pin the window's own ends but
-  // contribute no interval of their own — so dropping the region's interval
-  // is the one mutation this pass exists to catch.
+  // (its own gap comes entirely from a span's own budget interval). Round 2
+  // isolated the REGION source of `railBoundaries`'s `occupied` array this
+  // way. Round 3 found the other two sources still unguarded EVERYWHERE —
+  // deleting either one's `occupied.push` line alone produced 0 problems
+  // across the whole harness — so this fixture now carries THREE separate
+  // islands, one per `occupied` source, each the SOLE cover of its own run:
   //
-  //   gap_region (region, resolved):  0x80000000 – 0x80010000  (64 KiB)
-  //   core_a  (marker span):          0x80000000
-  //   core_b  (marker span):                                    0x80030000
+  //   gap_region (region, resolved):        0x80000000 – 0x80010000  (64 KiB)
+  //   core_anchor (marker span):             0x80000000
+  //   [uncovered]                            0x80010000 – 0x80030000 (128 KiB)
+  //   carve_c (carve-out span, own extent):  0x80030000 – 0x80048000  (96 KiB)
+  //   [uncovered]                            0x80048000 – 0x80054000  (48 KiB)
+  //   core_budget (slot image, tan-size):    0x80054000 – 0x80068000  (80 KiB)
   //
-  // Window = [0x80000000, 0x80030000] (from the two markers). occupied =
-  // [gap_region's own interval] only. One segment is covered
-  // (0x80000000–0x80010000, the region), one is not
-  // (0x80010000–0x80030000, 0x20000 B = 128 KiB) — exactly one gap.
+  // `core_anchor` is a MARKER (base only, no size, no budget): it pins the
+  // window's low end down to `gap_region`'s own base without contributing
+  // an interval of its own, so `gap_region`'s occupied.push is the ONLY
+  // thing covering 0x80000000–0x80010000. `carve_c` is an IPC carve-out
+  // with a resolved `carve_out_size`, so `endOf(carve_c)` resolves and its
+  // own `occupied.push({ lo: s.base, hi: end }` (the span's SIZE-RESOLVED
+  // end, MemoryChart.tsx) is the only thing covering 0x80030000–0x80048000
+  // — it carries no `tan size` budget, so the budget-end push never fires
+  // for it. `core_budget` is a slot image with NO `size_bytes` of its own
+  // (`endOf` is null) but a `tan size` budget (posted below) that resolves
+  // to 0x80068000, so its `occupied.push({ lo: s.base, hi: bEnd }` (the
+  // BUDGET-end push) is the only thing covering 0x80054000–0x80068000.
+  //
+  // The two ALWAYS-uncovered runs (128 KiB and 48 KiB) are the fixture's
+  // own control: they must stay gaps regardless of which source is
+  // mutated, so a check that only ever counted gaps could not tell "the
+  // right two gaps" from "the wrong three". Each of the three per-source
+  // checks below instead asserts that ONE SPECIFIC byte size is ABSENT
+  // from the gap set — the byte size that run would carry if its own
+  // source were dropped — which is exactly what changes under each of the
+  // three single-line mutations and nothing else.
   {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -2414,19 +2431,29 @@ async function main() {
       hw_info: { sku: "TEST-GAP-FIXTURE", silicon: "test:test:test" },
       slices: [
         {
-          core_id: "core_a",
+          core_id: "core_anchor",
           os: "zephyr",
           status: "ok",
           flash_args: { slot0_load_address: "0x80000000" },
         },
         {
-          core_id: "core_b",
+          core_id: "core_budget",
           os: "zephyr",
           status: "ok",
-          flash_args: { slot0_load_address: "0x80030000" },
+          flash_args: { slot0_load_address: "0x80054000" },
         },
       ],
-      ipc: [],
+      ipc: [
+        {
+          name: "carve_c",
+          kind: "raw_shmem",
+          endpoints: ["core_anchor"],
+          carve_out_base: "0x80030000",
+          carve_out_size: "0x00018000",
+          cacheable: false,
+          mailbox_channel: 0,
+        },
+      ],
       helper_mcus: [],
       boot_order: [],
       memory: [
@@ -2438,7 +2465,7 @@ async function main() {
           base: 0x80000000,
           size_bytes: 0x00010000,
           write_authority: "customer_runtime",
-          accessible_from: ["core_a"],
+          accessible_from: ["core_anchor"],
         },
       ],
     };
@@ -2454,7 +2481,16 @@ async function main() {
       type: "sliceSizesData",
       report: {
         schema: "alp-size/1",
-        slices: [],
+        slices: [
+          {
+            core_id: "core_budget",
+            os: "zephyr",
+            status: "ok",
+            flash: { used: 40000, total: 0x00014000, pct: 48.8 },
+            ram: { used: null, total: null, pct: null },
+            source: "size-tool",
+          },
+        ],
         summary: { over_budget: [], unknown_budget: [] },
       },
     });
@@ -2470,22 +2506,58 @@ async function main() {
       (memoryTab as HTMLButtonElement).click();
       await settle();
 
-      const gapMarks = container.querySelectorAll('[data-segment="gap"]');
-      if (gapMarks.length !== 1) {
-        problems.push(
-          `memory-regions-gap-fixture: ${gapMarks.length} gap segment(s) marked, want exactly 1 (0x80010000–0x80030000, the only run neither the region nor a span covers)`,
-        );
-      } else {
-        const label = gapMarks[0].getAttribute("aria-label") || "";
-        if (label !== "128.0 KiB empty, compressed") {
+      const gapLabels = Array.from(
+        container.querySelectorAll('[data-segment="gap"]'),
+      ).map((el) => el.getAttribute("aria-label") || "");
+
+      const alwaysGaps = [
+        "128.0 KiB empty, compressed", // 0x80010000–0x80030000, covered by nothing ever
+        "48.0 KiB empty, compressed", // 0x80048000–0x80054000, covered by nothing ever
+      ];
+      for (const want of alwaysGaps) {
+        if (!gapLabels.includes(want)) {
           problems.push(
-            `memory-regions-gap-fixture: the gap's own aria-label reads "${label}", want exactly "128.0 KiB empty, compressed"`,
+            `memory-regions-gap-fixture: expected gap "${want}" not found — gaps present: [${gapLabels.join(", ")}]`,
           );
         }
       }
+
+      // Each entry: which `occupied` source covers the run, the run's own
+      // address range, and the byte-size text that run would carry if THIS
+      // mutation (and only this one) turned it into a gap too.
+      const perSourcePins: Array<[string, string, string]> = [
+        [
+          "the region push (occupied.push({ lo: r.lo, hi: r.hi }))",
+          "0x80000000–0x80010000",
+          "64.0 KiB empty, compressed",
+        ],
+        [
+          "the span's own size-resolved-end push (occupied.push({ lo: s.base, hi: end }))",
+          "0x80030000–0x80048000",
+          "96.0 KiB empty, compressed",
+        ],
+        [
+          "the budget-end push (occupied.push({ lo: s.base, hi: bEnd }))",
+          "0x80054000–0x80068000",
+          "80.0 KiB empty, compressed",
+        ],
+      ];
+      for (const [source, range, wouldBeGap] of perSourcePins) {
+        if (gapLabels.includes(wouldBeGap)) {
+          problems.push(
+            `memory-regions-gap-fixture: ${range} is marked as a gap ("${wouldBeGap}") — ${source} is not covering it`,
+          );
+        }
+      }
+
+      if (gapLabels.length !== 2) {
+        problems.push(
+          `memory-regions-gap-fixture: ${gapLabels.length} gap segment(s) marked, want exactly 2 — [${gapLabels.join(", ")}]`,
+        );
+      }
     }
     console.log(
-      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-gap-fixture: a region interval is the only thing standing between one gap and zero`,
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-gap-fixture: all three occupied sources (region, span-own-end, budget-end) are individually load-bearing`,
     );
   }
 
