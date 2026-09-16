@@ -2368,23 +2368,26 @@ async function main() {
   }
 
   // ── a region table AND a genuine uncovered run, together (#484 phase 4,
-  //    round-2 + round-3 fix review) ──
+  //    round-2 + round-3 + round-4 fix review) ──
   // Neither vendored fixture can prove this: rpmsg-aen's six regions tile
   // its window end to end (zero gaps, by construction of that data), and
   // the "build-plan" pass's hand-built manifest has NO region table at all
   // (its own gap comes entirely from a span's own budget interval). Round 2
   // isolated the REGION source of `railBoundaries`'s `occupied` array this
-  // way. Round 3 found the other two sources still unguarded EVERYWHERE —
-  // deleting either one's `occupied.push` line alone produced 0 problems
-  // across the whole harness — so this fixture now carries THREE separate
-  // islands, one per `occupied` source, each the SOLE cover of its own run:
+  // way. Round 3 found the other two `occupied` sources still unguarded
+  // EVERYWHERE — deleting either one's `occupied.push` line alone produced
+  // 0 problems across the whole harness — so this fixture carries THREE
+  // separate islands, one per `occupied` source, each the SOLE cover of its
+  // own run:
   //
   //   gap_region (region, resolved):        0x80000000 – 0x80010000  (64 KiB)
   //   core_anchor (marker span):             0x80000000
-  //   [uncovered]                            0x80010000 – 0x80030000 (128 KiB)
+  //   [uncovered, always]                    0x80010000 – 0x80030000 (128 KiB)
   //   carve_c (carve-out span, own extent):  0x80030000 – 0x80048000  (96 KiB)
-  //   [uncovered]                            0x80048000 – 0x80054000  (48 KiB)
+  //   [uncovered, always]                    0x80048000 – 0x80054000  (48 KiB)
   //   core_budget (slot image, tan-size):    0x80054000 – 0x80068000  (80 KiB)
+  //   [uncovered, always]                    0x80068000 – 0x80072000  (40 KiB)
+  //   core_far (marker span):                                          0x80072000
   //
   // `core_anchor` is a MARKER (base only, no size, no budget): it pins the
   // window's low end down to `gap_region`'s own base without contributing
@@ -2399,14 +2402,34 @@ async function main() {
   // to 0x80068000, so its `occupied.push({ lo: s.base, hi: bEnd }` (the
   // BUDGET-end push) is the only thing covering 0x80054000–0x80068000.
   //
-  // The two ALWAYS-uncovered runs (128 KiB and 48 KiB) are the fixture's
+  // The three ALWAYS-uncovered runs (128, 48 and 40 KiB) are the fixture's
   // own control: they must stay gaps regardless of which source is
   // mutated, so a check that only ever counted gaps could not tell "the
-  // right two gaps" from "the wrong three". Each of the three per-source
-  // checks below instead asserts that ONE SPECIFIC byte size is ABSENT
-  // from the gap set — the byte size that run would carry if its own
-  // source were dropped — which is exactly what changes under each of the
-  // three single-line mutations and nothing else.
+  // right gaps" from "the wrong ones". Each of the three per-source checks
+  // below instead asserts that ONE SPECIFIC byte size is ABSENT from the
+  // gap set — the byte size that run would carry if its own source were
+  // dropped.
+  //
+  // `core_far` (round 4): a marker PAST `core_budget`'s own budget end,
+  // added because `core_budget`'s `bEnd` (0x80068000) used to equal this
+  // window's own `hi` — `windowOf` (regionWindow.ts) takes its `hi` from
+  // the maximum of every end INCLUDING budget ends, so a budget end that
+  // is also the window's own edge gets seeded into `layoutRail`'s `marks`
+  // for free (`marks = [...new Set([win.lo, win.hi, ...boundaries])]`,
+  // railScale.ts) — deleting `boundaries.push(bEnd)` alone then produced 0
+  // problems, because the address survived by coincidence, not because
+  // anything actually declared it. `core_far` pushes the window's own edge
+  // out to 0x80072000, so 0x80068000 is now STRICTLY INTERIOR and has no
+  // way to appear except through its own `boundaries.push`.
+  //
+  // The INVARIANT below (round 4) is the fix for the CLASS this and round
+  // 3's finding are both instances of, not a fourth per-source pin: every
+  // declared address strictly inside the window — collected the same way
+  // `railBoundaries` collects them (span bases, span ends, budget ends,
+  // region lo/hi) — must appear as some segment's own boundary. That holds
+  // for any missing `boundaries.push`, including ones nobody has named yet,
+  // and does not depend on any one address happening to coincide with the
+  // window's own edge.
   {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -2441,6 +2464,15 @@ async function main() {
           os: "zephyr",
           status: "ok",
           flash_args: { slot0_load_address: "0x80054000" },
+        },
+        {
+          // Round 4: pushes the window's own edge past core_budget's own
+          // `bEnd` (0x80068000), so that address is strictly interior and
+          // cannot survive a deleted `boundaries.push(bEnd)` by coincidence.
+          core_id: "core_far",
+          os: "zephyr",
+          status: "ok",
+          flash_args: { slot0_load_address: "0x80072000" },
         },
       ],
       ipc: [
@@ -2513,6 +2545,7 @@ async function main() {
       const alwaysGaps = [
         "128.0 KiB empty, compressed", // 0x80010000–0x80030000, covered by nothing ever
         "48.0 KiB empty, compressed", // 0x80048000–0x80054000, covered by nothing ever
+        "40.0 KiB empty, compressed", // 0x80068000–0x80072000, covered by nothing ever
       ];
       for (const want of alwaysGaps) {
         if (!gapLabels.includes(want)) {
@@ -2550,14 +2583,61 @@ async function main() {
         }
       }
 
-      if (gapLabels.length !== 2) {
+      if (gapLabels.length !== 3) {
         problems.push(
-          `memory-regions-gap-fixture: ${gapLabels.length} gap segment(s) marked, want exactly 2 — [${gapLabels.join(", ")}]`,
+          `memory-regions-gap-fixture: ${gapLabels.length} gap segment(s) marked, want exactly 3 — [${gapLabels.join(", ")}]`,
         );
+      }
+
+      // ── round 4: the CLASS, not another instance ──
+      // Every declared address strictly inside the window must be some
+      // segment's own boundary — collected the same way `railBoundaries`
+      // (MemoryChart.tsx) collects them: span bases, a span's own
+      // size-resolved end, a budget end, and a resolved region's lo/hi.
+      // This is an INDEPENDENT list, reasoned by hand from the manifest
+      // above, not a re-derivation of railBoundaries's own output — the
+      // point is to check what the rail actually RENDERED against what the
+      // manifest actually DECLARED, not to check the code against itself.
+      const svg = container.querySelector('svg[role="img"]');
+      const windowMatch = /from (0x[0-9a-f]+) to (0x[0-9a-f]+)/i.exec(
+        svg?.getAttribute("aria-label") || "",
+      );
+      if (!windowMatch) {
+        problems.push(
+          "memory-regions-gap-fixture: could not read the window's own lo/hi off the chart's aria-label",
+        );
+      } else {
+        const winLo = parseInt(windowMatch[1], 16);
+        const winHi = parseInt(windowMatch[2], 16);
+        const declared = [
+          0x80000000, // core_anchor's base; also gap_region's own lo
+          0x80010000, // gap_region's own hi
+          0x80030000, // carve_c's base
+          0x80048000, // carve_c's own resolved end (base + carve_out_size)
+          0x80054000, // core_budget's base
+          0x80068000, // core_budget's own budget end (base + tan-size total)
+          0x80072000, // core_far's base
+        ];
+        const interior = [
+          ...new Set(declared.filter((a) => a > winLo && a < winHi)),
+        ];
+        const renderedBoundaries = new Set(
+          Array.from(container.querySelectorAll('[data-tick="boundary"]')).map(
+            (el) => (el.textContent || "").trim().toLowerCase(),
+          ),
+        );
+        for (const addr of interior) {
+          const hex = `0x${addr.toString(16).padStart(8, "0")}`;
+          if (!renderedBoundaries.has(hex)) {
+            problems.push(
+              `memory-regions-gap-fixture: declared address ${hex} is strictly inside the window [${windowMatch[1]}, ${windowMatch[2]}] but is not the boundary of any rendered segment`,
+            );
+          }
+        }
       }
     }
     console.log(
-      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-gap-fixture: all three occupied sources (region, span-own-end, budget-end) are individually load-bearing`,
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-gap-fixture: all three occupied sources are individually load-bearing, and every declared interior address is a rendered boundary`,
     );
   }
 
