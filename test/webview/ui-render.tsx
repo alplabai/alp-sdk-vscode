@@ -2402,6 +2402,120 @@ async function main() {
     );
   }
 
+  // ── a resolved region with ZERO placed spans (#484 Task 8) ──
+  // No fixture anywhere else in this file reaches `hasSpans === false &&
+  // hasRegions === true` — the ONE combination Task 8's own `.map`
+  // restructuring had to keep rendering both halves of (the "pins no
+  // address" paragraph, unconditional on regions, AND a region-only table),
+  // since before that task they were two SEPARATE conditions and after it
+  // they share one `.map` container. `memory: [...]` with no `ipc`, no
+  // `storage` and `slices: []` is the minimal manifest that reaches it: no
+  // carve-out, partition or slot image anywhere gives `buildMemoryView`
+  // nothing to place, while the one `memory[]` row still resolves.
+  {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const problemsBefore = problems.length;
+    const root = createRoot(container);
+    root.render(
+      React.createElement(
+        AppProvider,
+        null,
+        React.createElement(BuildPlanView),
+      ),
+    );
+    await settle();
+    feedState();
+    await settle();
+    feedState();
+    await settle();
+
+    const manifest = {
+      schema_version: 1,
+      generated_by: "scripts/alp_orchestrate.py",
+      hw_info: { sku: "E1M-AEN801", silicon: "alif:ensemble:e8" },
+      slices: [],
+      // `SystemManifestSection` (BuildPlanView.tsx) reads `manifest.ipc
+      // .length` and `manifest.helper_mcus.length` UNGUARDED on the Slices
+      // tab, so these three have to be real empty arrays, not simply
+      // absent — the same shape the "unrecognised kind" fixture above
+      // already carries for the same reason.
+      ipc: [],
+      helper_mcus: [],
+      boot_order: [],
+      memory: [
+        {
+          name: "mram_main",
+          source: "som_preset",
+          kind: "flash",
+          status: "ok",
+          base: 0x80000000,
+          size_bytes: 0x00100000,
+          write_authority: "vendor",
+        },
+      ],
+    };
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "systemManifestData",
+      postBuild: true,
+      manifest,
+      provenance: null,
+      memory: buildMemoryView(manifest as never),
+    });
+    await settle();
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "sliceSizesData",
+      report: {
+        schema: "alp-size/1",
+        slices: [],
+        summary: { over_budget: [], unknown_budget: [] },
+      },
+    });
+    await settle();
+
+    const tabs = Array.from(container.querySelectorAll('button[role="tab"]'));
+    const memoryTab = tabs.find((b) =>
+      (b.textContent || "").toLowerCase().includes("memory"),
+    );
+    if (!memoryTab) {
+      problems.push("memory-regions-region-only: no Memory tab found");
+    } else {
+      (memoryTab as HTMLButtonElement).click();
+      await settle();
+      const memText = (container.textContent || "").toLowerCase();
+      if (!memText.includes("this manifest pins no address")) {
+        problems.push(
+          "memory-regions-region-only: the empty-paragraph text did not render for a manifest with zero spans",
+        );
+      }
+      if (!memText.includes("memory map (1)")) {
+        problems.push(
+          'memory-regions-region-only: no "memory map (1)" — the region-only table did not render beside the empty paragraph',
+        );
+      }
+      if (!memText.includes("mram_main")) {
+        problems.push(
+          "memory-regions-region-only: the one resolved region's own name is missing from the table",
+        );
+      }
+      // No placed span means no rail: `.mapSide` (and therefore the chart)
+      // must not mount at all, not merely render empty.
+      if (container.querySelector('svg[role="img"]')) {
+        problems.push(
+          "memory-regions-region-only: a rail rendered with zero placed spans to draw",
+        );
+      }
+    }
+    for (const err of drainErrors()) {
+      problems.push(
+        `memory-regions-region-only: error reported during render — ${err}`,
+      );
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-region-only: a resolved region with zero placed spans still renders beside the (absent) rail`,
+    );
+  }
+
   // ── duplicate region names refuse the selection join, everywhere (#484
   //    phase 2 — the same refusal `findOutsideRegion` applies in core and
   //    `duplicatedNames` applies in the webview) ──
