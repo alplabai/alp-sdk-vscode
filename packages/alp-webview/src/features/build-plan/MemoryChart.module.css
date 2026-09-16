@@ -10,32 +10,35 @@
  * editor theme. */
 
 /* SVG font-size is in viewBox USER UNITS, so a drawing scaled to fit its
-   column scales its type by the same factor. `.mapSide` is
-   `flex: 0 1 auto; min-width: 0` (MemoryRegions.module.css) and can shrink
-   below the drawing's own width, so a `max-width: 100%` cap would draw this
-   578-unit map at ~0.69x in a 420px-wide panel (the chart column measures
-   396px there), rendering a 13px address at ~8.9px — below base, and
-   invisible to the type-scale gate, because the stylesheet would still say
-   `base`. So `max-width: none` is stated rather than deleted, the box keeps
-   the width and height the <svg>'s own attributes give it, and
-   `.chartScroll` scrolls instead.
+   column scales its type by the same factor. Since Task 8 the `width` and
+   `height` attributes ARE the caller's own measured chart-column width
+   (MemoryRegions.tsx's `ResizeObserver`) plus the fixed `H` — in the STEADY
+   STATE, after that observer's first callback, the box's intrinsic size
+   already equals its rendered size, so an external `max-width` cap would be
+   inert there. It is not inert on the FIRST paint: before that callback
+   fires the drawing renders at `FALLBACK_WIDTH` (MemoryChart.tsx, 578),
+   which can be wider than a narrow column, and a `max-width: 100%` cap
+   during that one frame would scale a 13px address down with the box,
+   below base and invisible to the type-scale gate (the stylesheet would
+   still say `base`). So `max-width: none` stays stated rather than
+   deleted — the box always keeps the width and height the <svg>'s own
+   attributes give it, transient frame included.
 
-   `.svg` sits in a plain block box (`.chartScroll`, MemoryRegions.module.css)
-   and carries no `flex` property of its own — a `flex` value stated here
-   would be inert, since only a flex item reads one. The SQUASHED-HEIGHT
-   guard lives one level up instead: `flex: none` on `.chartScroll` — the
-   flex item in `.mapSide`'s column — stops a height-constrained column
-   squashing it into a short vertical scroller.
+   `.svg` is now a direct child of `.mapSide` (MemoryRegions.module.css) — a
+   flex column — and carries no `flex` property of its own; a `flex` value
+   stated here would be inert, since only a flex item reads one. `.mapSide`
+   itself is the flex item that matters: see its own comment for why it
+   still needs `min-width: 0` even though nothing here scrolls any more.
 
-   `overflow: visible` stops the SVG VIEWPORT from clipping, and nothing
-   more: `.chartScroll` (MemoryRegions.module.css), which wraps this SVG
-   directly, is `overflow-x: auto`, which makes it a scroll container, and a
-   scroll container clips its descendants' ink at its own padding box
-   regardless. Ink
-   past the right edge of that box is at least reachable by scrolling; ink past
-   the LEFT edge is not in the scrollable overflow region at all, so it is
-   simply gone. Nothing drawn today reaches either edge — the `W` docblock in
-   MemoryChart.tsx carries the address width that would. */
+   `overflow: visible` stops the SVG VIEWPORT from clipping content that
+   spills past the viewBox — a band label past the rail's own edge, say.
+   Task 8 removed the ONE thing that used to clip beyond that
+   (`.chartScroll`'s `overflow-x: auto`, MemoryRegions.module.css); nothing
+   wraps this element in a scroll container any more, so ink that spills
+   past the box's own edges now simply overlaps whatever sits beside it in
+   the page, rather than being unreachable. Nothing drawn today reaches
+   either edge — the width docblock in MemoryChart.tsx carries the address
+   width that would. */
 .svg {
   display: block;
   max-width: none;
@@ -139,11 +142,10 @@
    ~18 glyphs at base in the 143 units it has to run in, and every name this
    manifest actually produces is shorter than that. A longer one spills into
    white space and then overprints its neighbour rather than being cut — that
-   ink is still inside the viewBox, and the scroll container around this drawing
-   loses only what falls off the box's inline-start edge. The arithmetic, the
-   goldens it was checked against, and why buying glyphs nobody has spent costs
-   horizontal scrolling all live with the constants the numbers come from: the
-   `W` docblock in MemoryChart.tsx.
+   ink is still inside the viewBox and, since Task 8, nothing around this
+   drawing clips it either (`.svg`'s own comment above). The arithmetic and
+   the goldens it was checked against live with the constants the numbers
+   come from: the width docblock in MemoryChart.tsx.
 
    FILL IS NOT THE SERIES COLOUR, on purpose: it used to be (one rule per
    `data-series`, matching `.band`/`.marker` below), and every one of the six
@@ -178,9 +180,10 @@
    at RAIL_X - 8, which is 88 units from the edge of the viewBox: the 88-unit
    gutter holds a 10-glyph address up to ~14.6px, clearing base (13px). AT LEAST
    10 is doing work in that sentence: the pad is a floor, not a width, so an
-   address past 2^32 is wider — and past 2^36 it outruns the gutter and is
-   CLIPPED, unreachably. The `W` docblock in MemoryChart.tsx carries that case
-   and why no scrollbar gets to it.
+   address past 2^32 is wider — and past 2^36 it outruns the gutter and bleeds
+   past the panel's own left edge, unclipped (`overflow: visible` on `.svg`
+   above, and nothing wraps it that clips any more). The width docblock in
+   MemoryChart.tsx carries that case and why it does not arise today.
 
    PRIMARY INK, same reasoning as `.tick`: this labels a DECLARED boundary,
    never a computed one — see `.tickMinor`/`.tickLabelMinor` below for the

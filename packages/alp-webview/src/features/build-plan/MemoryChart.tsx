@@ -69,19 +69,18 @@ import {
  * AT LEAST 10, because the pad in `formatAddress` is a FLOOR: it pads to eight
  * hex digits and does not truncate to them, so an address past 2^32 prints 11
  * glyphs (~86 units — still inside the gutter) and one past 2^36 prints 12
- * (~94 — not, overrunning the box's left edge by ~6). THE TWELFTH IS CLIPPED,
- * and silently. `.svg` sets `overflow: visible`, but that only stops the SVG
- * VIEWPORT from clipping: `.chartScroll` (MemoryRegions.module.css), which
- * wraps this SVG directly, is `overflow-x: auto`, which makes it a scroll
- * container, and a scroll container clips its descendants' ink at its own
- * padding box whatever the svg says. Worse, ink past the INLINE-START edge is
- * not in the scrollable overflow region either, so no scrollbar reaches it:
- * such a label would lose most of the leading `0` of its `0x`, on the one
- * screen whose digits are read one at a time. (Ink past the opposite edge IS
- * scrollable, which is why a long band label below is only overprinted.) It
- * cannot arise on what this panel resolves today — MRAM and OCRAM bases come
- * back as 0x0…/0x8…, all ten glyphs — and a 64-bit A-core map is where it
- * would; widening the gutter is that change's job, not this one's.
+ * (~94 — not, overrunning the box's left edge by ~6). `.svg` sets
+ * `overflow: visible`, so that twelfth glyph is not clipped — it is painted
+ * past the SVG's own left edge and, since Task 8 removed the one ancestor
+ * that used to clip it there (`.chartScroll`'s `overflow-x: auto`,
+ * MemoryRegions.module.css — this box now sits directly in `.mapSide`,
+ * which sets no `overflow` of its own), it keeps going: such a label would
+ * bleed past the whole panel's own left edge rather than losing its leading
+ * `0x` to a scrollbar that never reaches it, on the one screen whose digits
+ * are read one at a time. It cannot arise on what this panel resolves
+ * today — MRAM and OCRAM bases come back as 0x0…/0x8…, all ten glyphs — and
+ * a 64-bit A-core map is where it would; widening the gutter is that
+ * change's job, not this one's.
  *
  * THE AUTHORITY GUTTER — a 6-unit tier swatch per resolved region, at
  * `RAIL_X - 10` — sits inside this same margin, between the tick labels and
@@ -94,18 +93,23 @@ import {
  * MemoryChart.module.css's `.gutter` comment for the geometry.
  *
  * RAIL_X is 96, an 88-unit gutter (good to ~14.6px) that clears the 78-unit
- * floor above with margin. APERTURE_X and W are literals, not expressions of
- * RAIL_X — move RAIL_X and both must move with it by hand — and together
- * they set the gaps to the right of the rail: 6 units from the rail's right
- * edge to the first aperture bar, a strip that holds three bars at
- * `APERTURE_W + 14` pitch, and the rest of W for the right-hand margin.
+ * floor above with margin. APERTURE_X is a literal, not an expression of
+ * RAIL_X — move RAIL_X and it must move with it by hand — and together they
+ * set the gaps to the right of the rail: 6 units from the rail's right edge
+ * to the first aperture bar, a strip that holds three bars at
+ * `APERTURE_W + 14` pitch, and whatever is left of the box's own width for
+ * the right-hand margin.
  *
- * W STAYS 578 EVEN THOUGH THE SECOND RAIL IS GONE. Reclaiming the freed
- * width (`DETAIL_X`'s old 318–466 span) for a wider single rail, or for a
- * measured, fluid layout, is a fluid-width redraw of this whole box — that
- * is Task 8's `ResizeObserver` work, not this one's. Drawing the single rail
- * at the SAME `RAIL_X`/`RAIL_W` it already had, inside the SAME 578-unit box,
- * is what keeps this task to "remove the second rail" and nothing wider.
+ * THE BOX'S OWN WIDTH IS MEASURED, NOT A LITERAL (Task 8). `MemoryRegions
+ * .tsx` watches its own chart column with a `ResizeObserver` and hands the
+ * live number down as this component's `width` prop; RAIL_X and RAIL_W stay
+ * the SAME literals they already had, so every glyph-budget claim below
+ * still holds at whatever width a caller reports — Task 8 changes the
+ * MARGIN this box carries beyond the rail, never the rail itself.
+ * `FALLBACK_WIDTH` (578, this file's pre-Task-8 constant) is what a first,
+ * pre-measurement paint draws, and what a caller that measures 0 — no
+ * `ResizeObserver` available, or one that has not fired yet — keeps drawing
+ * at, rather than ever rendering a rail 0 units wide.
  *
  * RAIL_W IS 148, and the names that run inside it are why that width is a
  * decision and not an oversight. A band label starts at `x + 5` and runs
@@ -118,12 +122,12 @@ import {
  * and all of it is still INSIDE the viewBox — the clipping above happens at
  * the BOX's edge, not the rail's — so an 18-glyph name has margin, a
  * 19-glyph one spills into that white, and a 20-glyph one overprints the
- * aperture bar rather than being cut. Widening the rail to buy glyphs nobody
- * has spent is not free either: the drawing renders at its intrinsic size
- * and its column scrolls, so every unit added to W is a unit of horizontal
- * scrolling for everyone.
+ * aperture bar rather than being cut. Widening RAIL_W to buy glyphs nobody
+ * has spent is not free either, and Task 8 leaves that decision alone: it is
+ * still a hand-edit, not something a wider measured box does on its own —
+ * the measured width only grows or shrinks the margin past the rail.
  */
-const W = 578;
+const FALLBACK_WIDTH = 578;
 const H = 300;
 const PLOT_TOP = 18;
 const PLOT_BOTTOM = 258;
@@ -177,8 +181,9 @@ const TICK_LABEL_H = 14;
  *
  * A band shorter than its own label still overflows it, and the overflow is
  * not cut: an SVG shape clips nothing drawn after it, and the spill stays
- * well inside the viewBox, where nothing is lost — the scroll container
- * described above takes only what falls off the BOX's inline-start edge.
+ * well inside the viewBox, where nothing is lost — see the width docblock
+ * above for the one edge (the box's own inline-start) where that stops
+ * being true.
  */
 const BAND_LABEL_DY = 15;
 const LINE_LABEL_DY = -5;
@@ -658,6 +663,7 @@ export function MemoryChart({
   apertures,
   budgets,
   regions = [],
+  width,
   selected,
   onSelect,
 }: {
@@ -669,9 +675,19 @@ export function MemoryChart({
   // say about — passes nothing and gets exactly the pre-region chart, with
   // no window growth and no gutter drawn.
   regions?: MemoryRegion[];
+  /** The caller's OWN measured chart-column width (`MemoryRegions.tsx`'s
+   *  `ResizeObserver`), in the same units the caller's CSS box resolves to.
+   *  This component never measures itself — see the width docblock above
+   *  for why a caller that cannot measure, or has not yet, still gets a
+   *  real drawing rather than one 0 units wide. */
+  width: number;
   selected: string | null;
   onSelect: (id: string) => void;
 }) {
+  // Never the caller's raw number verbatim: a momentary 0 — unmeasured, or a
+  // test harness with no real layout at all — would draw a rail 0 units
+  // wide, a silent failure rather than the honest pre-Task-8 default.
+  const chartWidth = width > 0 ? width : FALLBACK_WIDTH;
   const placed = spans.filter((s) => s.base !== null);
   const resolved = resolvedRegions(regions);
   // Grown to a fixpoint over every resolved region that intersects or
@@ -719,8 +735,8 @@ export function MemoryChart({
   return (
     <svg
       className={styles.svg}
-      viewBox={`0 0 ${W} ${H}`}
-      width={W}
+      viewBox={`0 0 ${chartWidth} ${H}`}
+      width={chartWidth}
       height={H}
       role="img"
       aria-label={`Memory map from ${formatAddress(win.lo)} to ${formatAddress(win.hi)}`}

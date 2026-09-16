@@ -20,6 +20,18 @@
   color: var(--text-secondary);
 }
 
+/* THE No-Breakpoint CONSTRUCTION (DESIGN.md; Task 8, #484 phase 4). Two
+   columns — `.mapSide` (the rail, narrow) and `.tableSide` (the unified
+   table, wide) — with NO width-based media query deciding between them;
+   `test/buildPlan.noBreakpoints.test.js` fails the build on one. Plain
+   `flex-wrap` does the collapsing instead: `.mapSide`'s own flex-basis
+   (400px) plus `.tableSide`'s (360px) plus this gap is the width AT WHICH
+   the second item stops fitting the first item's own line and wraps below
+   it — a continuous function of the container's own width, not a step at a
+   hand-picked viewport size. A 300px sidebar stacks them; a 2000px tab sits
+   them side by side with the table absorbing every extra unit — the same
+   two rules answer both, which is the whole point of the rule this gate
+   enforces. */
 .map {
   display: flex;
   gap: var(--space-5);
@@ -27,91 +39,46 @@
   flex-wrap: wrap;
 }
 
-/* THE COLUMN SHRINKS; THE DRAWING DOES NOT. `flex: none` plus the default
-   `min-width: auto` used to floor this column at the SVG's intrinsic width,
-   which pushed the map off the side of a narrow editor column. Letting the
-   column collapse instead is not the fix either, and a `min-width` floor here
-   cannot be one: SVG type is drawn in viewBox USER UNITS, so a drawing that
-   fits itself to a smaller box takes every label down with it — in a narrow
-   column the axis addresses would render below base while `.tickLabel` still
-   declares `base`, invisible to the type-scale gate.
+/* NARROW AND FLUID, never wide: `flex: 0 1 400px` — no grow — holds this
+   column at its own 400px basis in a wide panel (`.tableSide` alone absorbs
+   growth there) and only ever shrinks it, continuously, as the panel
+   narrows. 400 is not arbitrary: RAIL_X + RAIL_W (MemoryChart.tsx, 96 + 148)
+   plus the 6-unit gap to the aperture strip plus three aperture bars at
+   `APERTURE_W + 14` pitch is ~313 units, so 400 leaves real margin before
+   anything in the rail would visually crowd this column's own edge.
 
-   So the column is free to shrink to nothing, and the picture inside it keeps
-   1:1 and overflows — into `.chartScroll` below, not into this box. `.map`'s
-   `flex-wrap` has by then put the row list on its own line, and this column
-   follows it down to the panel's width instead of flooring at the drawing's
-   and making the WHOLE panel scroll sideways. `min-width: 0` is what zeroes
-   that floor: it is an explicit value, not `auto`, so it wins outright and
-   needs no `overflow` on THIS element to take effect. `.chartScroll` below
-   does wrap the SVG directly, but it does not need this same trick for its
-   OWN width: it is a cross-axis item of this column, so it takes its width by
-   stretching to whatever this element hands it, already zeroed here —
-   `.chartScroll`'s `overflow-x: auto` then turns what's left over (the SVG
-   still wider than that stretched box) into a scrollbar, which is a different
-   job from the one `min-width: 0` does on this element.
-
-   THE SCROLLER USED TO BE THIS WHOLE COLUMN, not just the chart. `overflow-x:
-   auto` sat here directly, and it worked — the drawing scrolled — but it
-   scrolled the one-line legend right along with it: reading a band near the
-   drawing's right edge clipped the legend below against this column's own
-   edge. `.chartScroll` narrows the scroll container to just the chart, so the
-   legend stays whole at every scroll position — it is the scroller's sibling
-   now, not its content. */
+   `min-width: 0` is NOT legacy cruft left over from the old scroll container
+   — Task 8 still needs it, for a bootstrapping reason the old comment here
+   never had to state: on the FIRST paint, before `MemoryChart`'s own
+   `ResizeObserver` has fired once, the chart draws at `FALLBACK_WIDTH`
+   (MemoryChart.tsx, 578) — wider than this column's 400px basis. Without an
+   explicit `min-width: 0`, a flex item's AUTOMATIC minimum is its content's
+   min-content size, and a child with a `width` attribute of 578 contributes
+   that as its own min-content contribution — flooring this column at 578
+   forever, since the observer can then never report anything narrower than
+   the floor its own prior report created. `min-width: 0` breaks that loop
+   before it can start: an explicit value wins outright over the automatic
+   one, so this column is free to render narrower than its own first-paint
+   child, and the NEXT measurement is honest. */
 .mapSide {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  flex: 0 1 auto;
+  flex: 0 1 400px;
   min-width: 0;
 }
 
-/* THE CHART'S OWN SCROLLER, wrapping only `<MemoryChart>` (MemoryRegions.tsx)
-   — not the scale toggle above it, not the legend below. `flex: none` stops
-   this box being squashed in HEIGHT by `.mapSide`'s column layout, which
-   would otherwise turn it into a short vertical scroller rather than a
-   horizontal one. The SVG itself carries no `flex` property of its own
-   (MemoryChart.module.css): its parent here is a plain block box, not a flex
-   container, so a `flex` property stated on the SVG would be inert. This
-   rule is the flex item in the chain, and it is the one that has to hold the
-   guarantee.
-
-   This box is NOT given its own `min-width: 0` — a cross-axis item's
-   automatic minimum is already 0, so an explicit one here would be inert.
-   `.chartScroll` is a flex item of `.mapSide`'s COLUMN, so this box's width
-   is the CROSS axis, not the main one — the flexbox rule that zeroes an
-   item's automatic minimum size when its overflow is not `visible` applies
-   only to a flex item's MAIN axis (here, height), never to its cross axis;
-   the cross axis has no content-based minimum to zero out in the first
-   place. What narrows this box is cross-axis STRETCH: with no width of its
-   own stated, it simply takes whatever width `.mapSide` hands it, which
-   `.mapSide`'s own `min-width: 0` (above) has already let shrink to nothing.
-   `overflow-x: auto` does not size anything either — it only turns what is
-   left over, the SVG still wider than this now-narrow box, into a scrollbar
-   rather than a silent, unreachable overflow. A future non-stretch
-   `align-self` on this box would size it to its own content instead — the
-   SVG's 578px — with or without a `min-width` stated.
-
-   Two consequences of scrolling here rather than in the panel: `overflow-x:
-   auto` computes `overflow-y` to `auto` too, harmless only because this box is
-   auto-height and the chart never overflows vertically. And it works at all
-   only while the svg is allowed to keep its intrinsic width: see `.svg` in
-   MemoryChart.module.css — a `max-width: 100%` there would cap the drawing at
-   this box, so it would scale again and this container would never have
-   anything to scroll.
-
-   AND THIS BOX CLIPS, which `.svg`'s `overflow: visible` does not undo: that
-   declaration stops the SVG's own viewport cutting a label which outruns the
-   viewBox, and stops nothing here. `overflow-x: auto` makes this box a scroll
-   container, and a scroll container clips every descendant at its own padding
-   box — only the END edges stay reachable. Ink past the right edge extends
-   the scrollable area and can be scrolled to; ink past the top or the left
-   edge is cut, with no scroll position that reaches it. A label pushed off
-   those two edges is gone, not merely off-screen. Confined here rather than
-   left on `.mapSide`, that clipping can no longer touch the toggle or the
-   legend — they are outside the box that scrolls. */
-.chartScroll {
-  flex: none;
-  overflow-x: auto;
+/* THE WIDE COLUMN: `flex: 1 1 360px` grows to absorb every unit `.mapSide`
+   (above) does not claim, which is the "table on the right" half of the
+   approved design — a table's own columns benefit from room a rail's fixed
+   RAIL_W never will. `min-width: 0` for the same reason as `.mapSide`'s own:
+   this is a flex item, and its content (MemoryTable's row list) must be free
+   to shrink and wrap below its own min-content width rather than flooring
+   this column — and, through it, the whole panel — at whatever the widest
+   unwrapped row happens to need. */
+.tableSide {
+  flex: 1 1 360px;
+  min-width: 0;
 }
 
 .band[data-selected],

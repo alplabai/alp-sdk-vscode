@@ -24,10 +24,15 @@
 // READ-ONLY IS A GATE, NOT A HABIT: `test/memoryRegions.readOnly.test.js`
 // fails if this file grows a write path.
 //
-// The picture lives in `MemoryChart` — an SVG with a fixed viewBox, for
-// the reason its own header gives. The table lives in `MemoryTable`.
+// The picture lives in `MemoryChart` — an SVG whose viewBox HEIGHT is fixed
+// and whose WIDTH is this file's own measurement (Task 8, #484 phase 4):
+// `.mapSide` below is watched with a `ResizeObserver` and its live width is
+// handed straight down as `MemoryChart`'s `width` prop, so the rail and the
+// unified table (`MemoryTable`) sit beside each other as two breakpoint-free
+// flex columns — narrow rail, wide table — rather than a fixed-width picture
+// a `.chartScroll` used to scroll sideways when the panel ran narrow.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type {
   MemoryConflict,
@@ -243,6 +248,27 @@ export function MemoryRegions({
   sizes: SliceSize[];
 }) {
   const [selected, setSelected] = useState<string | null>(null);
+  // The chart column's OWN live width (Task 8, #484 phase 4) — a callback
+  // ref (`setChartColumn` handed straight to `.mapSide`'s `ref`) rather than
+  // a plain `useRef`, because `.mapSide` mounts and unmounts as `placed`
+  // flips between empty and not: a plain ref's `useEffect([])` would only
+  // ever see whatever `.current` held at THIS component's own first mount,
+  // missing every later mount of `.mapSide` itself. A callback ref re-fires
+  // on every one of those, so the observer below is always attached to
+  // whichever `.mapSide` node currently exists, never a stale or absent one.
+  const [chartColumn, setChartColumn] = useState<HTMLDivElement | null>(null);
+  const [chartWidth, setChartWidth] = useState(0);
+
+  useEffect(() => {
+    if (!chartColumn) return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width !== undefined) setChartWidth(width);
+    });
+    observer.observe(chartColumn);
+    return () => observer.disconnect();
+  }, [chartColumn]);
+
   if (!memory) return null;
   const budgetByCore = new Map(sizes.map((s) => [s.core_id, s]));
   const placed = memory.spans.filter((s) => s.base !== null);
@@ -254,7 +280,6 @@ export function MemoryRegions({
     budgetByCore,
     memory.regions ?? [],
   );
-  const deviceRelative = memory.spans.filter((s) => s.base === null);
   const toggle = (id: string) => setSelected((cur) => (cur === id ? null : id));
   // A blocked entry is the allocator refusing something outright — the same
   // shape of problem `Conflicts`/`OutsideRegionNotice` already flag, so it
@@ -262,6 +287,13 @@ export function MemoryRegions({
   // `unresolved`, …) is not yet placed, not refused, and stays below.
   const blocked = memory.unresolved.filter((e) => e.status === "blocked");
   const notBlocked = memory.unresolved.filter((e) => e.status !== "blocked");
+  // `memory.spans` is placed spans and device-relative ones together, so
+  // this is the SAME check the old two-branch ternary made from its own two
+  // halves (`placed.length === 0 && deviceRelative.length === 0`) — kept as
+  // one named boolean because Task 8 now gates a SECOND, independent thing
+  // (the two-column `.map` below) on it too, alongside `hasRegions`.
+  const hasSpans = memory.spans.length > 0;
+  const hasRegions = !!(memory.regions && memory.regions.length > 0);
 
   return (
     <div className={styles.root}>
@@ -273,46 +305,54 @@ export function MemoryRegions({
       />
       <BlockedFindings findings={blocked} />
 
-      {placed.length === 0 && deviceRelative.length === 0 ? (
+      {!hasSpans && (
         <p className={styles.empty}>
           This manifest pins no address. Every declared carve-out and partition
           is listed below with the reason it did not resolve.
         </p>
-      ) : (
+      )}
+
+      {/* The rail (when there is a placed span to draw) and the unified
+       *  table share this one row — see `.map`'s own comment
+       *  (MemoryRegions.module.css) for the breakpoint-free construction.
+       *  Rendered whenever EITHER would have something to show, independent
+       *  of the empty paragraph above: a manifest with regions but no
+       *  placed span still gets a table of those regions, exactly as
+       *  before Task 8 — only the LAYOUT changed, not which content shows
+       *  when. */}
+      {(hasSpans || hasRegions) && (
         <div className={styles.map}>
           {placed.length > 0 && (
-            <div className={styles.mapSide}>
+            <div className={styles.mapSide} ref={setChartColumn}>
               <AuthorityLegend />
               <p className={styles.legend}>
                 The rail is a schematic: address space with nothing declared
                 compresses to a fixed height and is marked, never drawn to
                 scale.
               </p>
-              <div className={styles.chartScroll}>
-                <MemoryChart
-                  spans={memory.spans}
-                  apertures={memory.apertures}
-                  regions={memory.regions ?? []}
-                  budgets={budgetByCore}
-                  selected={selected}
-                  onSelect={toggle}
-                />
-              </div>
+              <MemoryChart
+                spans={memory.spans}
+                apertures={memory.apertures}
+                regions={memory.regions ?? []}
+                budgets={budgetByCore}
+                width={chartWidth}
+                selected={selected}
+                onSelect={toggle}
+              />
             </div>
           )}
-        </div>
-      )}
 
-      {(memory.spans.length > 0 ||
-        (memory.regions && memory.regions.length > 0)) && (
-        <MemoryTable
-          regions={memory.regions ?? []}
-          spans={memory.spans}
-          budgets={budgetByCore}
-          window={chartWindow}
-          selected={selected}
-          onSelect={toggle}
-        />
+          <div className={styles.tableSide}>
+            <MemoryTable
+              regions={memory.regions ?? []}
+              spans={memory.spans}
+              budgets={budgetByCore}
+              window={chartWindow}
+              selected={selected}
+              onSelect={toggle}
+            />
+          </div>
+        </div>
       )}
 
       {notBlocked.length > 0 && (
