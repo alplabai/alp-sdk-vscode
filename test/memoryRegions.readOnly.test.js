@@ -40,13 +40,22 @@ const path = require("node:path");
 const REPO = path.join(__dirname, "..");
 /** Every file the memory surface is made of. The chart moved into its own
  *  module when the picture became an SVG; a prohibition that named only the
- *  original file would have opened a hole the same day. */
+ *  original file would have opened a hole the same day.
+ *
+ *  `blockedFindingActions.ts` joined this list in #484 Task 7 fix round 1
+ *  (finding 3): the two-actions-through-the-host design put a real
+ *  `postMessage` call in a NEW file the gate did not yet scan, which is
+ *  exactly the same class of hole this comment already warns about — "a
+ *  prohibition that named only the original file". Naming it here, with the
+ *  narrow, explicit allowance just below, is what closes that instead of
+ *  merely moving it. */
 const VIEW_FILES = [
   "MemoryRegions.tsx",
   "MemoryChart.tsx",
   "MemoryTable.tsx",
   "memoryTableRows.ts",
   "AuthoritySwatch.tsx",
+  "blockedFindingActions.ts",
 ].map((name) =>
   path.join(
     REPO,
@@ -59,25 +68,94 @@ const VIEW_FILES = [
   ),
 );
 
+/** The one file this gate lets use the host transport at all (#484 Task 7
+ *  fix round 1, finding 3 — coordinator's ruling). The approved design is
+ *  "open the declaring file, copy its text, both through host messages",
+ *  which needs SOME transport; recording the exception here, scoped to this
+ *  one file and the two message kinds below, is how that need is met
+ *  without silently reopening "the memory view has no path back to the
+ *  host" for the picture/table files this gate exists to keep passive. */
+const SANCTIONED_HOST_FILE = path.join(
+  REPO,
+  "packages",
+  "alp-webview",
+  "src",
+  "features",
+  "build-plan",
+  "blockedFindingActions.ts",
+);
+
+/** The ONLY message `type` literals `SANCTIONED_HOST_FILE` may ever send.
+ *  Neither writes memory-map data: `openBoardYaml` opens a file for editing
+ *  elsewhere (never this view), `copyText` puts text on the clipboard. A
+ *  third type appearing here — a dispatched command, an edit message, an
+ *  unrelated one this list does not name — is exactly the unaudited hole
+ *  this exception must not become. */
+const SANCTIONED_MESSAGE_TYPES = ["openBoardYaml", "copyText"];
+
 const read = (p) => fs.readFileSync(p, "utf8");
 
-test("the memory view has no path back to the host", () => {
+test("the memory view has no path back to the host, except the one sanctioned exception", () => {
   // Act / Assert — every way this webview can ask the extension to do
-  // anything. `postMessage` is the transport; `runCommand` is the allow-listed
-  // command channel; importing the `vscode` shim is how a component reaches
-  // either one.
+  // anything. `postMessage` is the transport; a dispatched command is the
+  // allow-listed command channel; importing the `vscode` shim is how a
+  // component reaches either one. NEITHER is sanctioned anywhere, for any
+  // file — the exception below is for `postMessage` alone, in one file, with
+  // exactly two message kinds.
   for (const file of VIEW_FILES) {
     const source = read(file);
-    for (const forbidden of [
-      "postMessage",
-      "runCommand",
-      'from "../../vscode"',
-    ]) {
-      assert.equal(
-        source.includes(forbidden),
-        false,
-        `${path.basename(file)} must not use ${forbidden} — the view is ` +
-          "read-only until alp-sdk#1365 lands `kind` + `owner`",
+    const isSanctioned = file === SANCTIONED_HOST_FILE;
+
+    assert.equal(
+      source.includes("runCommand"),
+      false,
+      `${path.basename(file)} must not dispatch a runCommand — no file in ` +
+        "this feature gets a command channel, sanctioned or not",
+    );
+
+    if (!isSanctioned) {
+      for (const forbidden of ["postMessage", 'from "../../vscode"']) {
+        assert.equal(
+          source.includes(forbidden),
+          false,
+          `${path.basename(file)} must not use ${forbidden} — the view is ` +
+            "read-only until alp-sdk#1365 lands `kind` + `owner`",
+        );
+      }
+      continue;
+    }
+
+    // The sanctioned file: `postMessage` and the `vscode` import ARE
+    // present — that is the whole point of this file existing — so this
+    // asserts they are actually USED (an unused exception is a stale one)
+    // and that every message it sends is one of the two approved kinds.
+    assert.ok(
+      source.includes("postMessage"),
+      `${path.basename(file)} is the sanctioned host-transport file but ` +
+        "never calls postMessage — the exception is stale; narrow " +
+        "VIEW_FILES back to the original five",
+    );
+    assert.ok(
+      source.includes('from "../../vscode"'),
+      `${path.basename(file)} is the sanctioned host-transport file but ` +
+        'does not import from "../../vscode" — the exception is stale',
+    );
+    const messageTypes = [...source.matchAll(/type:\s*"([^"]+)"/g)].map(
+      (m) => m[1],
+    );
+    assert.ok(
+      messageTypes.length > 0,
+      `${path.basename(file)}: no \`type: "…"\` message literal found — the ` +
+        "scan found nothing to check against SANCTIONED_MESSAGE_TYPES, " +
+        "which would let this test pass vacuously",
+    );
+    for (const type of messageTypes) {
+      assert.ok(
+        SANCTIONED_MESSAGE_TYPES.includes(type),
+        `${path.basename(file)} posts message type "${type}", which is not ` +
+          `one of the sanctioned (${SANCTIONED_MESSAGE_TYPES.join(", ")}) — ` +
+          "an unaudited additional message type from this file is exactly " +
+          "the hole this exception must not open",
       );
     }
   }

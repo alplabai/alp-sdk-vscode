@@ -919,18 +919,21 @@ export interface FlashSliceMessage {
 }
 
 /**
- * Open a file inside the workspace, through the host (#484 Task 7).
+ * Open a WEBVIEW-NAMED, project-relative path inside the workspace, through
+ * the host (#484 Task 7) — a raw `vscode://file` href is not reliable under
+ * the webview CSP, so the webview asks the host to call
+ * `vscode.window.showTextDocument` instead.
  *
- * The Memory tab's promoted blocked-findings alert (`MemoryRegions.tsx`'s
- * `BlockedFindings`) uses this to open the file that declares the finding —
- * a raw `vscode://file` href is not reliable under the webview CSP, so the
- * webview asks the host to call `vscode.window.showTextDocument` instead.
+ * `path` is project-relative (e.g. `"board.yaml"`), never absolute on the
+ * wire. The host resolves it against the workspace root and refuses
+ * anything that resolves outside it — see `BuildPlanPanel.openWorkspaceFile`
+ * (`ideHub/buildPlanPanel.ts`) for the containment check and why a naive
+ * prefix comparison is not enough.
  *
- * `path` is a project-relative path (e.g. `"board.yaml"`), never absolute on
- * the wire. The host still resolves it against the workspace root and
- * refuses anything that resolves outside it — see
- * `BuildPlanPanel.openWorkspaceFile` (`ideHub/buildPlanPanel.ts`) for the
- * containment check and why a naive prefix comparison is not enough.
+ * NOT what the Memory tab's "Open board.yaml" action uses as of fix round 1
+ * — see `OpenBoardYamlMessage` just below for why board.yaml specifically
+ * needs a HOST-resolved path instead of a webview-supplied one. This message
+ * stays for a future control that genuinely names its OWN relative path.
  */
 export interface OpenWorkspaceFileMessage {
   type: "openWorkspaceFile";
@@ -938,11 +941,26 @@ export interface OpenWorkspaceFileMessage {
 }
 
 /**
+ * Open the project's board.yaml, resolved by the HOST (#484 Task 7 fix
+ * round 1, finding 1) — carries no path, unlike `OpenWorkspaceFileMessage`
+ * above, because the webview does not know (and must not guess) where
+ * board.yaml actually is: a custom or absolute `alpSdk.boardYamlPath`, or a
+ * multi-root workspace where it is not under `workspaceFolders[0]`, both
+ * make a webview-side literal wrong. The host answers from
+ * `collectProjectContext().boardYamlPath` — see
+ * `BuildPlanPanel.openBoardYaml` for why that path is trusted directly
+ * rather than run through `openWorkspaceFile`'s containment check.
+ */
+export interface OpenBoardYamlMessage {
+  type: "openBoardYaml";
+}
+
+/**
  * Copy plain text to the system clipboard, through the host (#484 Task 7).
  *
  * The webview cannot reach `navigator.clipboard` reliably under the webview
  * CSP either, so this goes through `vscode.env.clipboard.writeText` the same
- * way `openWorkspaceFile` goes through `showTextDocument`.
+ * way `openWorkspaceFile`/`openBoardYaml` go through `showTextDocument`.
  */
 export interface CopyTextMessage {
   type: "copyText";
@@ -993,6 +1011,7 @@ export type WebviewToExtMessage =
   | RunBuildMessage
   | FlashSliceMessage
   | OpenWorkspaceFileMessage
+  | OpenBoardYamlMessage
   | CopyTextMessage
   | RequestModelsMessage
   | BuildModelMessage

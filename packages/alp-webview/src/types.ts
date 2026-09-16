@@ -1242,13 +1242,22 @@ export interface FlashSliceMessage {
   coreId: string;
 }
 
-/** Open a file inside the workspace, through the host (#484 Task 7) — a raw
- *  `vscode://file` href is not reliable under the webview CSP. `path` is
- *  project-relative; the host refuses anything that resolves outside the
- *  workspace root. */
+/** Open a WEBVIEW-NAMED, project-relative path inside the workspace, through
+ *  the host (#484 Task 7) — a raw `vscode://file` href is not reliable under
+ *  the webview CSP. The host refuses anything that resolves outside the
+ *  workspace root. NOT what "Open board.yaml" uses — see
+ *  `OpenBoardYamlMessage`. */
 export interface OpenWorkspaceFileMessage {
   type: "openWorkspaceFile";
   path: string;
+}
+
+/** Open the project's board.yaml, resolved by the HOST (#484 Task 7 fix
+ *  round 1) — carries no path: the webview does not know (and must not
+ *  guess) where board.yaml actually is under a custom/absolute
+ *  `alpSdk.boardYamlPath` or a multi-root workspace. */
+export interface OpenBoardYamlMessage {
+  type: "openBoardYaml";
 }
 
 /** Copy plain text to the system clipboard, through the host (#484 Task 7). */
@@ -1286,6 +1295,7 @@ export type WebviewToExtMessage =
   | RunBuildMessage
   | FlashSliceMessage
   | OpenWorkspaceFileMessage
+  | OpenBoardYamlMessage
   | CopyTextMessage
   | RequestModelsMessage
   | BuildModelMessage

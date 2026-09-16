@@ -2081,12 +2081,15 @@ async function main() {
         const postedBefore = g.__ALP_POSTED__.length;
         (openFileBtn as HTMLButtonElement).click();
         await tick();
+        // #484 Task 7 fix round 1, finding 1: no `path` field any more — the
+        // host resolves board.yaml itself (`collectProjectContext()
+        // .boardYamlPath`), so the webview no longer names a path at all.
         const openMsg = g.__ALP_POSTED__
           .slice(postedBefore)
-          .find((m: { type: string }) => m.type === "openWorkspaceFile");
-        if (!openMsg || openMsg.path !== "board.yaml") {
+          .find((m: { type: string }) => m.type === "openBoardYaml");
+        if (!openMsg) {
           problems.push(
-            `memory-regions-aen: "Open board.yaml" posted ${JSON.stringify(openMsg)}, want {type:"openWorkspaceFile",path:"board.yaml"}`,
+            `memory-regions-aen: "Open board.yaml" posted ${JSON.stringify(g.__ALP_POSTED__.slice(postedBefore))}, want a {type:"openBoardYaml"} message`,
           );
         }
       }
@@ -2101,9 +2104,27 @@ async function main() {
         const copyMsg = g.__ALP_POSTED__
           .slice(postedBefore)
           .find((m: { type: string }) => m.type === "copyText");
-        if (!copyMsg || !String(copyMsg.text).includes("alp_default_rpmsg")) {
+        // Tightened (fix round 1, minor finding): `blockedFindingText`
+        // composes label, kind, cores AND reason — the old check here only
+        // ever looked for the label, so dropping kind/cores/reason from the
+        // composed string still passed. Every fragment below is real: this
+        // fixture's one blocked finding is `alp_default_rpmsg`, a
+        // `carve_out` (rendered "carve-out") whose endpoints are
+        // `a32_cluster`/`m55_hp`, refused because its region is "ineligible
+        // for an IPC carve-out".
+        const copyText = String((copyMsg as { text?: unknown })?.text ?? "");
+        const expectedFragments = [
+          "alp_default_rpmsg", // label
+          "carve-out", // kind
+          "a32_cluster ↔ m55_hp", // cores
+          "ineligible for an IPC carve-out", // reason, verbatim fragment
+        ];
+        const missing = expectedFragments.filter(
+          (fragment) => !copyText.includes(fragment),
+        );
+        if (!copyMsg || missing.length > 0) {
           problems.push(
-            `memory-regions-aen: "Copy" did not post the finding's own text (got ${JSON.stringify(copyMsg)})`,
+            `memory-regions-aen: "Copy" text missing [${missing.join(", ")}] (got ${JSON.stringify(copyMsg)})`,
           );
         }
       }

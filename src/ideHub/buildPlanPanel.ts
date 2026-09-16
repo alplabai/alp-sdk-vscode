@@ -188,7 +188,10 @@ export class BuildPlanPanel {
         this.handleSliceCommand(msg.coreId);
         break;
       case "openWorkspaceFile":
-        this.openWorkspaceFile(msg.path);
+        void this.openWorkspaceFile(msg.path);
+        break;
+      case "openBoardYaml":
+        void this.openBoardYaml();
         break;
       case "copyText":
         void vscode.env.clipboard.writeText(msg.text);
@@ -623,13 +626,16 @@ export class BuildPlanPanel {
   }
 
   /**
-   * Open a workspace-relative path in the editor (#484 Task 7) — the Memory
-   * tab's promoted blocked-findings alert asks for this so the customer can
-   * jump straight to `board.yaml`, which is the one file every declared
-   * carve-out, partition and slot image comes from (`MemoryUnresolved`
-   * itself carries no per-finding path — see its own doc). A raw
-   * `vscode://file` href is not reliable under the webview CSP, so this
-   * goes through `vscode.window.showTextDocument` instead.
+   * Open a WEBVIEW-SUPPLIED, workspace-relative path in the editor (#484
+   * Task 7). A raw `vscode://file` href is not reliable under the webview
+   * CSP, so this goes through `vscode.window.showTextDocument` instead.
+   *
+   * Kept general-purpose and unused by the Memory tab's own "Open
+   * board.yaml" action as of fix round 1 (see `openBoardYaml` below, and
+   * this method's own containment check is proven and future webview
+   * controls may still need exactly this shape for a path the WEBVIEW
+   * names) — but the security boundary below is unchanged and still
+   * exercised by `test/ideHub.buildPlanPanel.test.js`.
    *
    * REFUSES ANYTHING OUTSIDE THE WORKSPACE ROOT — this is the only place on
    * this branch where a string the webview supplies reaches the filesystem,
@@ -657,10 +663,13 @@ export class BuildPlanPanel {
    * comes back as `undefined` here rather than throwing.
    *
    * Every refusal is logged (`[buildPlan] openWorkspaceFile refused …`) so it
-   * is observable from the outside, not merely silent — see
-   * `test/ideHub.buildPlanPanel.test.js`.
+   * is observable from the outside, not merely silent. A file that IS inside
+   * the workspace but cannot actually be opened (missing, a directory, a
+   * binary VS Code refuses) is a SEPARATE failure — `showTextDocument`
+   * rejects, and that rejection is caught and logged too, not left as an
+   * unhandled promise rejection with a dead button and nothing on screen.
    */
-  private openWorkspaceFile(relativePath: string): void {
+  private async openWorkspaceFile(relativePath: string): Promise<void> {
     const root = collectProjectContext().workspaceRoot;
     if (!root) {
       log(
@@ -681,7 +690,73 @@ export class BuildPlanPanel {
       );
       return;
     }
-    void vscode.window.showTextDocument(vscode.Uri.file(resolved));
+    try {
+      await vscode.window.showTextDocument(vscode.Uri.file(resolved));
+    } catch (err) {
+      log(
+        `[buildPlan] openWorkspaceFile could not open "${resolved}": ${String(err)}`,
+        "warn",
+      );
+    }
+  }
+
+  /**
+   * Open the project's board.yaml — the Memory tab's promoted
+   * blocked-findings alert asks for this so the customer can jump straight
+   * to the one file every declared carve-out, partition and slot image
+   * comes from (`MemoryUnresolved` itself carries no per-finding path — see
+   * its own doc). #484 Task 7 fix round 1, finding 1.
+   *
+   * THE PATH IS `collectProjectContext().boardYamlPath`, NEVER a webview
+   * string and NEVER `path.join(workspaceRoot, "board.yaml")` — the latter
+   * silently gets two real configurations wrong:
+   *
+   *  - `alpSdk.boardYamlPath` (`"scope": "resource"`, settable per folder)
+   *    can be relative (joined against the root, same as a hardcoded
+   *    literal would be — no bug there) OR ABSOLUTE, in which case
+   *    `resolveBoardYamlPath` (`@alp-sdk/core/project/service`) RESETS to
+   *    it rather than joining — a customer who has pointed the setting
+   *    somewhere outside the workspace entirely (a shared board file, say)
+   *    would have this button open the wrong, non-existent
+   *    `<root>/board.yaml` instead.
+   *  - In a multi-root workspace, `resolveWorkspaceRoot` picks whichever
+   *    folder actually contains the configured board.yaml, which need not
+   *    be `workspaceFolders[0]` — the exact bug class `ideHub/vscodeAdapter
+   *    .ts`'s own `boardYamlExists` resolution already warns about next
+   *    door ("NOT workspaceFolders[0] + a hardcoded \"board.yaml\"").
+   *
+   * `collectProjectContext()` already resolves both correctly (it is the
+   * SAME call `boardYamlPath` reaches every other surface through — see
+   * `src/lsp/commands.ts`'s `resolveBoardYamlUri`, `src/statusBar.ts`,
+   * `src/loader.ts`), so reading its `.boardYamlPath` field directly is the
+   * fix — not re-deriving a path this extension has already resolved once.
+   *
+   * NOT RUN THROUGH `openWorkspaceFile`'s CONTAINMENT CHECK, DELIBERATELY.
+   * That check exists for a path the WEBVIEW supplies; `boardYamlPath` is a
+   * path the HOST already resolved, and a legitimately configured absolute
+   * `alpSdk.boardYamlPath` can sit outside the workspace root by design —
+   * validating a host-resolved value as though it were an untrusted webview
+   * string would refuse the customer's own valid configuration. The two
+   * paths through this class of string are kept separate for exactly that
+   * reason: `openWorkspaceFile` above still validates what it is given,
+   * this method trusts what the host itself already computed.
+   */
+  private async openBoardYaml(): Promise<void> {
+    const boardYamlPath = collectProjectContext().boardYamlPath;
+    if (!boardYamlPath) {
+      log(
+        "[buildPlan] openBoardYaml: no board.yaml resolved for this workspace",
+      );
+      return;
+    }
+    try {
+      await vscode.window.showTextDocument(vscode.Uri.file(boardYamlPath));
+    } catch (err) {
+      log(
+        `[buildPlan] openBoardYaml could not open "${boardYamlPath}": ${String(err)}`,
+        "warn",
+      );
+    }
   }
 
   private dispose(): void {

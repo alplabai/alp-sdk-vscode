@@ -1,23 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The only host round-trip in the Memory tab (#484 Task 7) — deliberately
-// kept in its OWN file, outside `test/memoryRegions.readOnly.test.js`'s
-// `VIEW_FILES` (`MemoryRegions.tsx`, `MemoryChart.tsx`, `MemoryTable.tsx`,
-// `memoryTableRows.ts`, `AuthoritySwatch.tsx`). That gate asserts none of
-// those five files' own source text contains `postMessage`, `runCommand` or
-// `from "../../vscode"` — the picture and the table stay provably unable to
-// ask the host to do anything, because nothing in the emitted contract can
-// yet tell a customer-writable band from a Secure-Enclave-owned one (D5),
-// and an edit affordance over that ambiguity is a live hazard (see that
-// file's header).
+// kept in its OWN file, outside `MemoryRegions.tsx`, `MemoryChart.tsx`,
+// `MemoryTable.tsx`, `memoryTableRows.ts` and `AuthoritySwatch.tsx`. Those
+// five stay the picture and the table: they never ask the host to do
+// anything, because nothing in the emitted contract can yet tell a
+// customer-writable band from a Secure-Enclave-owned one (D5), and an edit
+// affordance over that ambiguity is a live hazard (see those files' own
+// headers).
 //
-// The two actions here are not that hazard. Both act on a BLOCKED finding —
-// something the allocator already refused to place — and neither writes a
-// byte of memory-map data:
+// `test/memoryRegions.readOnly.test.js` is what enforces this split, and
+// THIS FILE IS IN ITS SCOPE TOO (fix round 1, finding 3) — the gate bans the
+// host TRANSPORT itself, not just mutation, so relocating the two calls out
+// of the five files above closes nothing on its own. The gate instead names
+// this file explicitly and allows exactly the two message types below
+// (`openBoardYaml`, `copyText`) and nothing else — no dispatched command,
+// no third message type. That allowance is the coordinator's ruling on the
+// design (open-file/copy through host messages needs SOME transport)
+// balanced against the gate's own intent (no UNAUDITED path back to the
+// host); it is not a way around the gate.
 //
-//  - `openDeclaringFile` opens `board.yaml` in the editor, so the customer
-//    can fix the declaration themselves in a real editor, not through this
-//    view.
+// Neither action writes memory-map data — both act on a BLOCKED finding,
+// something the allocator already refused to place:
+//
+//  - `openDeclaringFile` opens board.yaml in the editor, so the customer can
+//    fix the declaration themselves in a real editor, not through this view.
 //  - `copyFindingText` copies the finding's own displayed text to the
 //    clipboard.
 //
@@ -27,19 +34,25 @@
 import { postMessage } from "../../vscode";
 
 /**
- * The one file every `MemoryUnresolved` finding names an entry in.
+ * The label this feature always shows for the "Open" action.
  *
- * IPC carve-outs (`ipc:`) and storage partitions (`storage:`) are both
- * board.yaml root keys (`@alp-sdk/core`'s `BoardConfig`), and slot images
- * come from a core's `app`/`image`, declared there too. `MemoryUnresolved`
- * itself carries no per-finding path — there is exactly one file to open,
- * never a field this module would otherwise have to invent.
+ * IPC carve-outs (`ipc:`) and storage partitions (`storage:`) — the only two
+ * kinds `MemoryUnresolved` ever carries (`slotSpans()` in
+ * `@alp-sdk/core/systemManifest/memoryView` returns spans only; a slot image
+ * can never be a blocked finding) — are both board.yaml root keys
+ * (`@alp-sdk/core`'s `BoardConfig`). There is exactly one file to open,
+ * never a field this module would otherwise have to invent — but it is a
+ * DISPLAY label only. The actual file opened is resolved by the host
+ * (`OpenBoardYamlMessage`, `BuildPlanPanel.openBoardYaml`), which honours a
+ * custom or absolute `alpSdk.boardYamlPath` and a multi-root workspace; this
+ * constant never reaches the wire.
  */
 export const DECLARING_FILE = "board.yaml";
 
-/** Ask the host to open `board.yaml` in the editor. */
+/** Ask the host to open the project's board.yaml — wherever the host itself
+ *  resolves it to be, never a path this module guesses. */
 export function openDeclaringFile(): void {
-  postMessage({ type: "openWorkspaceFile", path: DECLARING_FILE });
+  postMessage({ type: "openBoardYaml" });
 }
 
 /** Ask the host to put `text` on the system clipboard. */

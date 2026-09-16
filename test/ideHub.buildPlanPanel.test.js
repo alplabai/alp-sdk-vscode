@@ -66,19 +66,32 @@ function loadWithStubs(relPath, stubs) {
  * handles to drive it: `requestBuildPlan()` (the webview message) and
  * `fileChanged()` (the board.yaml/system-manifest.yaml watcher firing).
  *
- * `workspaceRoot` defaults to the fixed root every pre-existing test in this
- * file relies on; pass `null` to mount with no workspace folder open at all
- * (#484 Task 7's `openWorkspaceFile` refusal case) — `collectProjectContext`
- * is stubbed directly (see below), so `null` reaches `BuildPlanPanel` the
- * same way an empty `vscode.workspace.workspaceFolders` would through the
- * real resolver.
+ * Every field is independently overridable, since `collectProjectContext()`
+ * is stubbed directly (never the real resolver) and `openBoardYaml`
+ * (#484 Task 7 fix round 1) reads `.boardYamlPath` off that same stub,
+ * separately from `.workspaceRoot`:
+ *
+ *  - `workspaceRoot` defaults to the fixed root every pre-existing test
+ *    relies on; pass `null` for no workspace folder open at all.
+ *  - `boardYamlPath` defaults to the plain join every pre-existing test
+ *    assumed too; pass an explicit value to simulate a custom/absolute
+ *    `alpSdk.boardYamlPath` or a multi-root layout where it does not sit
+ *    under `workspaceRoot` at all — see the `openBoardYaml` tests below.
+ *  - `showTextDocument` defaults to a stub that records into `opened` and
+ *    resolves; pass a rejecting one to exercise the "file could not be
+ *    opened" failure path (finding 2).
  */
-function mountPanel(workspaceRoot = "/home/dev/proj") {
+function mountPanel({
+  workspaceRoot = "/home/dev/proj",
+  boardYamlPath = workspaceRoot ? path.join(workspaceRoot, "board.yaml") : null,
+  showTextDocument: showTextDocumentOverride = null,
+} = {}) {
   const calls = [];
   const posted = [];
-  // #484 Task 7: what `openWorkspaceFile`/`copyText` actually did, captured
-  // the same way `calls`/`posted` capture everything else this panel does —
-  // never inferred from an unchanged count (see the tests below for why).
+  // #484 Task 7: what `openWorkspaceFile`/`openBoardYaml`/`copyText`
+  // actually did, captured the same way `calls`/`posted` capture everything
+  // else this panel does — never inferred from an unchanged count (see the
+  // tests below for why).
   const opened = [];
   const logs = [];
   const clipboard = [];
@@ -102,6 +115,17 @@ function mountPanel(workspaceRoot = "/home/dev/proj") {
     },
   };
 
+  // The default success stub is built HERE, inside the function body, not as
+  // a parameter default — a parameter default's closure cannot see `opened`
+  // (declared above, in the body), only sibling parameters and the outer
+  // module scope.
+  const showTextDocumentStub =
+    showTextDocumentOverride ??
+    ((uri) => {
+      opened.push(uri.fsPath);
+      return Promise.resolve({});
+    });
+
   const { BuildPlanPanel } = loadWithStubs("ideHub/buildPlanPanel.js", {
     // A manifest on disk, so the one remaining spawn (`tan size`) actually
     // runs — see this file's header.
@@ -118,12 +142,10 @@ function mountPanel(workspaceRoot = "/home/dev/proj") {
         workspaceFolders: workspaceRoot
           ? [{ uri: { fsPath: workspaceRoot } }]
           : undefined,
-        // #484 Task 7: `openWorkspaceFile` calls this directly with a `Uri`
-        // (never `openTextDocument` first) — mirrors the brief's own sketch.
-        showTextDocument: (uri) => {
-          opened.push(uri.fsPath);
-          return Promise.resolve({});
-        },
+        // #484 Task 7: `openWorkspaceFile`/`openBoardYaml` call this
+        // directly with a `Uri` (never `openTextDocument` first) — mirrors
+        // the brief's own sketch.
+        showTextDocument: showTextDocumentStub,
       },
       workspace: {
         get workspaceFolders() {
@@ -171,11 +193,14 @@ function mountPanel(workspaceRoot = "/home/dev/proj") {
     // #607: the panel's readers now resolve `cwd` through
     // `collectProjectContext()`, not `workspaceFolders[0]` directly. The real
     // resolver needs `vscode.workspace.getConfiguration`, absent from this
-    // file's `vscode` stub, so it is stubbed here with the same
-    // `workspaceRoot` the old direct read used — `null` when the test wants
-    // no workspace folder open at all.
+    // file's `vscode` stub, so it is stubbed here directly — `workspaceRoot:
+    // null` when the test wants no workspace folder open at all,
+    // `boardYamlPath` independently overridable for #484 Task 7's
+    // `openBoardYaml` (fix round 1, finding 1: NOT re-derived from
+    // `workspaceRoot` by the handler under test, so this stub must not
+    // silently keep them coupled either).
     "../project/vscodeAdapter": {
-      collectProjectContext: () => ({ workspaceRoot }),
+      collectProjectContext: () => ({ workspaceRoot, boardYamlPath }),
     },
     "../util": {
       BUILD_RUN_NAME: "build",
@@ -183,9 +208,10 @@ function mountPanel(workspaceRoot = "/home/dev/proj") {
       isStreamedRunActive: () => false,
       releaseStreamedRun: () => {},
       reserveStreamedRun: () => true,
-      // #484 Task 7: `openWorkspaceFile` logs every refusal — captured here
-      // so a refusal is a POSITIVE, checkable fact, not an inference from a
-      // count that merely did not move.
+      // #484 Task 7: `openWorkspaceFile`/`openBoardYaml` log every refusal
+      // AND every open failure — captured here so both are POSITIVE,
+      // checkable facts, not an inference from a count that merely did not
+      // move.
       log: (message) => logs.push(message),
     },
   });
@@ -202,6 +228,7 @@ function mountPanel(workspaceRoot = "/home/dev/proj") {
     fileChanged: () => watcherHandlers.forEach((handler) => handler()),
     openWorkspaceFile: (relativePath) =>
       onMessage({ type: "openWorkspaceFile", path: relativePath }),
+    openBoardYaml: () => onMessage({ type: "openBoardYaml" }),
     copyText: (text) => onMessage({ type: "copyText", text }),
   };
 }
@@ -319,7 +346,9 @@ test("BuildPlanPanel: no trigger spawns a deferred `tan build` flag, and the pan
 const WORKSPACE_ROOT = "/home/dev/proj";
 
 test("openWorkspaceFile opens a path inside the workspace", async () => {
-  const { opened, logs, openWorkspaceFile } = mountPanel(WORKSPACE_ROOT);
+  const { opened, logs, openWorkspaceFile } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+  });
   openWorkspaceFile("board.yaml");
   await new Promise((resolve) => setImmediate(resolve));
 
@@ -328,7 +357,9 @@ test("openWorkspaceFile opens a path inside the workspace", async () => {
 });
 
 test("openWorkspaceFile refuses a classic ../.. traversal", async () => {
-  const { opened, logs, openWorkspaceFile } = mountPanel(WORKSPACE_ROOT);
+  const { opened, logs, openWorkspaceFile } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+  });
   openWorkspaceFile("../../etc/passwd");
   await new Promise((resolve) => setImmediate(resolve));
 
@@ -342,7 +373,9 @@ test("openWorkspaceFile refuses an absolute path, which discards the workspace r
   // `path.resolve(root, "/etc/passwd")` returns `/etc/passwd` — the root is
   // discarded whenever the second argument is itself absolute — so a check
   // that only looks for ".." in the raw input would never see this one.
-  const { opened, logs, openWorkspaceFile } = mountPanel(WORKSPACE_ROOT);
+  const { opened, logs, openWorkspaceFile } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+  });
   openWorkspaceFile("/etc/passwd");
   await new Promise((resolve) => setImmediate(resolve));
 
@@ -361,7 +394,9 @@ test("openWorkspaceFile refuses a sibling directory that merely shares the root 
   // in this task's report reproduces exactly that swap and shows this case
   // then passes.
   const sibling = `${WORKSPACE_ROOT}-evil/x`;
-  const { opened, logs, openWorkspaceFile } = mountPanel(WORKSPACE_ROOT);
+  const { opened, logs, openWorkspaceFile } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+  });
   openWorkspaceFile(sibling);
   await new Promise((resolve) => setImmediate(resolve));
 
@@ -372,7 +407,9 @@ test("openWorkspaceFile refuses a sibling directory that merely shares the root 
 });
 
 test("openWorkspaceFile refuses everything when no workspace folder is open, without throwing", async () => {
-  const { opened, logs, openWorkspaceFile } = mountPanel(null);
+  const { opened, logs, openWorkspaceFile } = mountPanel({
+    workspaceRoot: null,
+  });
   assert.doesNotThrow(() => openWorkspaceFile("board.yaml"));
   await new Promise((resolve) => setImmediate(resolve));
 
@@ -383,9 +420,140 @@ test("openWorkspaceFile refuses everything when no workspace folder is open, wit
 });
 
 test("copyText writes the given string to the clipboard", async () => {
-  const { clipboard, copyText } = mountPanel(WORKSPACE_ROOT);
+  const { clipboard, copyText } = mountPanel({ workspaceRoot: WORKSPACE_ROOT });
   copyText("alp_default_rpmsg — carve-out — some reason");
   await new Promise((resolve) => setImmediate(resolve));
 
   assert.deepEqual(clipboard, ["alp_default_rpmsg — carve-out — some reason"]);
+});
+
+// ── #484 Task 7 fix round 1, finding 1: `openBoardYaml` ─────────────────────
+//
+// The file opened is `collectProjectContext().boardYamlPath`, resolved by
+// the HOST, never a webview string and never re-derived here as
+// `path.join(workspaceRoot, "board.yaml")` — that join gets a custom or
+// absolute `alpSdk.boardYamlPath`, and a multi-root workspace where
+// board.yaml is not under `workspaceFolders[0]`, silently wrong. Each test
+// below sets `boardYamlPath` independently of `workspaceRoot` in the stub —
+// exactly the coupling a hardcoded join would have assumed.
+
+test("openBoardYaml opens a custom, relative alpSdk.boardYamlPath", async () => {
+  // As if `alpSdk.boardYamlPath` were configured to "config/board.yaml":
+  // resolved relative to the workspace root, but not the plain
+  // "<root>/board.yaml" a hardcoded literal would have joined.
+  const { opened, logs, openBoardYaml } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+    boardYamlPath: path.join(WORKSPACE_ROOT, "config", "board.yaml"),
+  });
+  openBoardYaml();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(opened, [path.join(WORKSPACE_ROOT, "config", "board.yaml")]);
+  assert.deepEqual(logs, []);
+});
+
+test("openBoardYaml opens an absolute alpSdk.boardYamlPath OUTSIDE the workspace root, unrefused", async () => {
+  // The critical case: this path does NOT resolve under WORKSPACE_ROOT at
+  // all — exactly what a legitimately configured absolute
+  // `alpSdk.boardYamlPath` can be. If this went through
+  // `openWorkspaceFile`'s webview-string containment check, it would be
+  // refused as "outside the workspace root"; `openBoardYaml` must open it
+  // anyway, because a HOST-resolved path is not a webview-supplied string.
+  const outsideRoot = "/opt/shared-boards/e1m.board.yaml";
+  const { opened, logs, openBoardYaml } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+    boardYamlPath: outsideRoot,
+  });
+  openBoardYaml();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(opened, [outsideRoot], "must open it, not refuse it");
+  assert.deepEqual(logs, []);
+});
+
+test("openBoardYaml opens the board.yaml of a multi-root workspace, even though it is not under workspaceFolders[0]", async () => {
+  // `resolveWorkspaceRoot` (@alp-sdk/core/project/service) already picks
+  // whichever folder actually holds the configured board.yaml as its
+  // `workspaceRoot` answer — so a naive `workspaceFolders[0]` (here, a
+  // sibling "docs" folder with no board.yaml at all) is never even the
+  // `workspaceRoot` this stub reports. What this test pins is narrower and
+  // still real: `openBoardYaml` must use `boardYamlPath` VERBATIM, never
+  // recompute it from `workspaceRoot` — the two are independently set here,
+  // the same way a real multi-root resolution can hand back a
+  // `workspaceRoot` whose OWN literal "board.yaml" join would still be
+  // right, while a stale local re-derivation elsewhere in this file would
+  // not be.
+  const multiRootWorkspaceRoot = "/home/dev/ws/pkg-b";
+  const { opened, logs, openBoardYaml } = mountPanel({
+    workspaceRoot: multiRootWorkspaceRoot,
+    boardYamlPath: path.join(multiRootWorkspaceRoot, "board.yaml"),
+  });
+  openBoardYaml();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(opened, [path.join(multiRootWorkspaceRoot, "board.yaml")]);
+  assert.deepEqual(logs, []);
+});
+
+test("openBoardYaml refuses (and logs) when no board.yaml is resolved, without throwing", async () => {
+  const { opened, logs, openBoardYaml } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+    boardYamlPath: null,
+  });
+  assert.doesNotThrow(() => openBoardYaml());
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(opened, []);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /no board\.yaml resolved/);
+});
+
+// ── #484 Task 7 fix round 1, finding 2: a rejected `showTextDocument` is
+//    observable, not a silent dead button ──────────────────────────────────
+
+test("openWorkspaceFile logs when the file cannot actually be opened (e.g. it does not exist)", async () => {
+  const rejection = new Error("ENOENT: no such file or directory");
+  const { opened, logs, openWorkspaceFile } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+    showTextDocument: () => Promise.reject(rejection),
+  });
+  openWorkspaceFile("board.yaml");
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(
+    opened,
+    [],
+    "the failing stub never records a successful open",
+  );
+  assert.equal(
+    logs.length,
+    1,
+    "a rejected showTextDocument must be logged, not an unhandled rejection " +
+      "with a dead button and nothing on screen",
+  );
+  assert.match(logs[0], /could not open/);
+  assert.match(
+    logs[0],
+    new RegExp(rejection.message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+  );
+});
+
+test("openBoardYaml logs when the file cannot actually be opened", async () => {
+  const rejection = new Error("ENOENT: no such file or directory");
+  const boardYamlPath = path.join(WORKSPACE_ROOT, "board.yaml");
+  const { opened, logs, openBoardYaml } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+    boardYamlPath,
+    showTextDocument: () => Promise.reject(rejection),
+  });
+  openBoardYaml();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(opened, []);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /could not open/);
+  assert.match(
+    logs[0],
+    new RegExp(rejection.message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+  );
 });
