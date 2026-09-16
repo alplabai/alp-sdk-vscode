@@ -178,7 +178,7 @@ function SystemManifestSection({
   if (!manifest) {
     return notes.length > 0 ? (
       <section className={styles.section}>
-        <p className={styles.sectionTitle}>System manifest</p>
+        <h2 className={styles.sectionTitle}>System manifest</h2>
         {/* Keyed by position, not by the note text: the two notes fall back to
          *  the same `outcome.message` when tan itself is what failed, and React
          *  calls a repeated key unsupported ("may cause children to be
@@ -195,7 +195,7 @@ function SystemManifestSection({
   }
   return (
     <section className={styles.section}>
-      <p className={styles.sectionTitle}>
+      <h2 className={styles.sectionTitle}>
         System manifest{" "}
         {/* The badge now carries the VERDICT, not just "a file exists".
             `post-build` used to be asserted from `fs.existsSync` alone, so an
@@ -214,7 +214,7 @@ function SystemManifestSection({
             the fact this side can always support, and it lets the reader draw
             the conclusion the host refuses to draw for them. */}
         {age && <span className={styles.manifestAge}>{age}</span>}
-      </p>
+      </h2>
       {/* Never only a badge: a warning nobody can act on is a puzzle. The host
           words this — it is the side that knows the build finished after the
           file was written, and with what exit code. */}
@@ -526,7 +526,11 @@ export function BuildPlanView() {
     <div className={styles.root}>
       <header className={styles.header}>
         <div className={styles.titleRow}>
-          <p className={styles.title}>Build Plan</p>
+          {/* The panel's ROOT heading. It was a <p>, which left the
+              document's first heading at h3 and the outline with no top —
+              a reader jumping by heading landed in the middle of the page
+              with nothing above it saying where they were. */}
+          <h1 className={styles.title}>Build Plan</h1>
           <Button appearance="secondary" onClick={reload} disabled={loading}>
             Refresh
           </Button>
@@ -661,9 +665,9 @@ export function BuildPlanView() {
 
               {plan.sharedArtefacts.length > 0 && (
                 <section className={styles.section}>
-                  <p className={styles.sectionTitle}>
+                  <h2 className={styles.sectionTitle}>
                     Shared artefacts ({plan.sharedArtefacts.length})
-                  </p>
+                  </h2>
                   <ul className={styles.fileList}>
                     {plan.sharedArtefacts.map((file) => (
                       <FileRow
@@ -679,9 +683,9 @@ export function BuildPlanView() {
 
               {plan.warnings.length > 0 && (
                 <section className={styles.section}>
-                  <p className={styles.sectionTitle}>
+                  <h2 className={styles.sectionTitle}>
                     Warnings ({plan.warnings.length})
-                  </p>
+                  </h2>
                   <ul className={styles.warnings}>
                     {plan.warnings.map((warn, i) => (
                       <li key={`${warn.code}-${i}`} className={styles.warning}>

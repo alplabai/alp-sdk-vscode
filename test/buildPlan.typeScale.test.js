@@ -614,9 +614,9 @@ test("chrome stays below the reading size", () => {
 // either); `.conflictsTitle` is the <h3> `FindingList` renders for
 // `Conflicts`, `OutsideRegionNotice` AND `BlockedFindings` alike, sitting
 // over `.conflictRow` items carrying `.rowName` and `.conflictKind`;
-// MemoryNotes' `.title` is the <h4> of a `<section class=note>` whose
+// MemoryNotes' `.title` is the <h3> of a `<section class=note>` whose
 // paragraphs are `.note p`; MemoryTable's `.title` is the <h3> over the
-// unified "Memory map rows" listbox whose options carry `.name` and
+// unified "Memory map rows" tree whose treeitems carry `.name` and
 // `.range`.
 
 const SUB_HEADINGS = [
@@ -636,7 +636,7 @@ const SUB_HEADINGS = [
     file: "MemoryNotes.module.css",
     selector: ".title",
     heads: [".note p"],
-    why: "the <h4> over each note section, in a tab that is nothing but prose",
+    why: "the <h3> over each note section, in a tab that is nothing but prose",
   },
   {
     file: "MemoryTable.module.css",

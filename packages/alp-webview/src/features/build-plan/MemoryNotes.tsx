@@ -16,7 +16,7 @@ export function MemoryNotes() {
   return (
     <div className={styles.root}>
       <section className={styles.note}>
-        <h4 className={styles.title}>What the map can show</h4>
+        <h3 className={styles.title}>What the map can show</h3>
         <p>
           What <code>build/system-manifest.yaml</code> pins: the load address of
           each Zephyr slice, the resolved IPC carve-outs, and the resolved
@@ -41,7 +41,7 @@ export function MemoryNotes() {
       </section>
 
       <section className={styles.note}>
-        <h4 className={styles.title}>What it cannot show, and why</h4>
+        <h3 className={styles.title}>What it cannot show, and why</h3>
         <p>
           The SoM&rsquo;s own region table — bootloader, image slots, the
           writable window and the Secure-Enclave band — reaches this view only
@@ -73,7 +73,7 @@ export function MemoryNotes() {
       </section>
 
       <section className={styles.note}>
-        <h4 className={styles.title}>Apertures</h4>
+        <h3 className={styles.title}>Apertures</h3>
         <p>
           A region or flash device is named by the manifest but not always
           described by it: <code>carve_out_region</code> /{" "}
@@ -89,7 +89,7 @@ export function MemoryNotes() {
       </section>
 
       <section className={styles.note}>
-        <h4 className={styles.title}>Overlaps</h4>
+        <h3 className={styles.title}>Overlaps</h3>
         <p>
           Reported here, not by the build. The allocator compares a carve-out
           only against carve-outs already placed in the same region, so a pinned{" "}
