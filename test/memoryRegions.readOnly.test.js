@@ -348,6 +348,14 @@ function walk(project, ast, is) {
     want(target, names);
   }
 
+  /** An edge this walk deliberately does NOT follow — a type-only import,
+   *  erased before it can run, or a re-export of a name the view never asked
+   *  for. It is still RESOLVED, because "the walk chose not to go there" and
+   *  "the walk could not tell where there is" must never look the same. */
+  function verify(fromFile, specifier, what) {
+    resolveSpecifier(specifier, fromFile, what);
+  }
+
   const tokensCache = new Map();
 
   /**
@@ -425,7 +433,12 @@ function walk(project, ast, is) {
           follow(file, statement.moduleSpecifier, null, "side-effect import");
           continue;
         }
-        if (clause.isTypeOnly) continue; // erased; no run-time edge
+        if (clause.isTypeOnly) {
+          // Erased by the compiler; no run-time edge, but still a specifier
+          // this gate must be able to resolve.
+          verify(file, statement.moduleSpecifier, "type-only import");
+          continue;
+        }
         const bindings = clause.namedBindings;
         if (bindings && is.isNamespaceImport(bindings)) {
           follow(file, statement.moduleSpecifier, null, "namespace import");
@@ -439,13 +452,19 @@ function walk(project, ast, is) {
             names.push((element.propertyName ?? element.name).text);
           }
         }
-        if (names.length === 0) continue;
+        if (names.length === 0) {
+          verify(file, statement.moduleSpecifier, "type-only import");
+          continue;
+        }
         follow(file, statement.moduleSpecifier, names, "import");
         continue;
       }
 
       if (is.isExportDeclaration(statement) && statement.moduleSpecifier) {
-        if (statement.isTypeOnly) continue;
+        if (statement.isTypeOnly) {
+          verify(file, statement.moduleSpecifier, "type-only re-export");
+          continue;
+        }
         const clause = statement.exportClause;
         // `export * from "./x"` re-exports names this walk cannot enumerate,
         // so it is followed whole rather than guessed at.
@@ -462,7 +481,10 @@ function walk(project, ast, is) {
           if (!wholeModule && !entry.wanted.has(element.name.text)) continue;
           carried.push((element.propertyName ?? element.name).text);
         }
-        if (carried.length === 0) continue;
+        if (carried.length === 0) {
+          verify(file, statement.moduleSpecifier, "unused re-export");
+          continue;
+        }
         follow(file, statement.moduleSpecifier, carried, "re-export");
         continue;
       }
