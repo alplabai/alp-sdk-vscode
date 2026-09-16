@@ -607,25 +607,30 @@ test("chrome stays below the reading size", () => {
 // it per-entry would be a second gate on one fact.
 //
 // `heads` names real markup, read off the components rather than assumed:
-// `.unresolvedTitle` is the <p> over the `.unresolved` list whose rows carry
-// `.rowName` and `.reason`; `.conflictsTitle` sits over `.conflictRow` items
-// carrying `.rowName` and `.conflictKind`; MemoryNotes' `.title` is the <h4>
-// of a `<section class=note>` whose paragraphs are `.note p`; MemoryTable's
-// `.title` is the <h3> over the unified "Memory map rows" listbox whose
-// options carry `.name` and `.range`.
+// `.unresolvedTitle` is the <h3> over the `.unresolved` list whose rows carry
+// `.rowName` (the reason itself moved to `.reasonCallout`, the Title register
+// — a same-tier flag beside this heading, not a body it must outrank, the
+// same reason `.outsideFlag` is not one of MemoryTable's `.title` heads
+// either); `.conflictsTitle` is the <h3> `FindingList` renders for
+// `Conflicts`, `OutsideRegionNotice` AND `BlockedFindings` alike, sitting
+// over `.conflictRow` items carrying `.rowName` and `.conflictKind`;
+// MemoryNotes' `.title` is the <h4> of a `<section class=note>` whose
+// paragraphs are `.note p`; MemoryTable's `.title` is the <h3> over the
+// unified "Memory map rows" listbox whose options carry `.name` and
+// `.range`.
 
 const SUB_HEADINGS = [
   {
     file: "MemoryRegions.module.css",
     selector: ".unresolvedTitle",
-    heads: [".rowName", ".reason"],
+    heads: [".rowName"],
     why: "'Declared, not placed (N)' — the heading over the extents the manifest never resolved",
   },
   {
     file: "MemoryRegions.module.css",
     selector: ".conflictsTitle",
     heads: [".rowName", ".conflictKind"],
-    why: "'N extents land on others' — the heading over the one thing this view knows that the manifest does not",
+    why: "'N extents land on others' (and its BlockedFindings/OutsideRegionNotice siblings) — the heading over what this view flags as wrong",
   },
   {
     file: "MemoryNotes.module.css",

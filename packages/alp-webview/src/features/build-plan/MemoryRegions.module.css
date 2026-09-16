@@ -250,14 +250,21 @@
 
 /* Full width on its own line, wrapping rather than truncating: the reason
    names the file and the field to change, and a clipped one names neither.
-   Set at reading size for the same reason — this is correctness text, and the
-   habit of setting mono small loses to a sentence that must not be misread. */
-.reason {
+   THE TITLE REGISTER (md, weight 600 — the same size/weight `.title` takes
+   in MemoryTable.module.css, and `.outsideFlag` there for the same reason),
+   inside a bordered box: this is a flag, not a footnote, and a page skimmed
+   for headings alone still has to land on it. Mono stays, and pre-wrap
+   stays — this is still the manifest's own words, verbatim and in full. */
+.reasonCallout {
   flex-basis: 100%;
   font-family: var(--font-family-mono);
-  font-size: var(--font-size-base);
-  color: var(--text-secondary);
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--text-primary);
   white-space: pre-wrap;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
 }
 
 /* Overlapping extents, stated before the picture rather than under it — this
@@ -306,14 +313,14 @@
   color: var(--text-secondary);
 }
 
-/* One line under the chart, where four paragraphs used to be. The rest of that
-   context now lives in the Notes tab: the map is a reading surface, not an
-   essay with a picture in it.
-   That one line is still prose, and it is the key to the drawing — what a band
-   is, what a line is, what the colours group by, or that the scale has been
-   thrown away. A reader who cannot decode the picture cannot use it, so this
-   is set at reading size like any other sentence; `max-width: 62ch` is what
-   holds the measure. */
+/* One line ABOVE the chart, after `AuthorityLegend`, where four paragraphs
+   used to sit below it. The rest of that context lives in the Notes tab: the
+   map is a reading surface, not an essay with a picture in it. That one line
+   is still prose, and it is read BEFORE the picture rather than after it for
+   the same reason the legend moved: a reader has to know the rail is not to
+   scale before meeting the first compressed gap, not after wondering why one
+   run looks the same height as a run sixteen times its size. Set at reading
+   size like any other sentence; `max-width: 62ch` is what holds the measure. */
 .legend {
   margin: 0;
   font-size: var(--font-size-base);

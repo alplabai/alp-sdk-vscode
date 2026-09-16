@@ -32,9 +32,11 @@ import type { ReactNode } from "react";
 import type {
   MemoryConflict,
   MemorySpan,
+  MemoryUnresolved,
   MemoryView,
   SliceSize,
 } from "../../types";
+import { AuthorityLegend } from "./AuthoritySwatch";
 import { formatAddress, formatBytes } from "./format";
 import { MemoryChart } from "./MemoryChart";
 import { MemoryTable } from "./MemoryTable";
@@ -68,24 +70,27 @@ function formatExtent(from: number, to: number): string {
 }
 
 /**
- * The DOM skeleton `Conflicts` and `OutsideRegionNotice` share: a
- * `role="alert"` block with a pluralised heading and one row per finding.
+ * The DOM skeleton `Conflicts`, `OutsideRegionNotice` and `BlockedFindings`
+ * share: a `role="alert"` block with a real heading and one row per finding.
  * Heading text and row content are supplied by the caller so each keeps its
- * own wording — only the structure is shared, never the framing.
+ * own wording — only the structure is shared, never the framing. Generic
+ * over the finding type so a `MemoryUnresolved` list (a blocked IPC
+ * carve-out) gets the same alert treatment as a `MemoryConflict` one,
+ * without a second, near-identical component.
  */
-function FindingList({
+function FindingList<T extends { id: string }>({
   findings,
   heading,
   row,
 }: {
-  findings: MemoryConflict[];
+  findings: T[];
   heading: (count: number) => string;
-  row: (finding: MemoryConflict) => ReactNode;
+  row: (finding: T) => ReactNode;
 }) {
   if (findings.length === 0) return null;
   return (
     <div className={styles.conflicts} role="alert">
-      <p className={styles.conflictsTitle}>{heading(findings.length)}</p>
+      <h3 className={styles.conflictsTitle}>{heading(findings.length)}</h3>
       <ul className={styles.conflictList}>
         {findings.map((f) => (
           <li key={f.id} className={styles.conflictRow}>
@@ -155,6 +160,42 @@ function OutsideRegionNotice({ findings }: { findings: MemoryConflict[] }) {
   );
 }
 
+/**
+ * Declared entries the allocator refused outright (`status === "blocked"`),
+ * promoted out of the "Declared, not placed" list below and into the same
+ * alert treatment as `Conflicts`/`OutsideRegionNotice`, above the picture —
+ * a blocked carve-out is the allocator telling the reader something is
+ * wrong, not a still-pending fact to skim later. Every other unresolved
+ * status (`pending`, the emitter's own `unresolved`, …) stays in the list
+ * below: not yet placed is not the same claim as refused.
+ */
+function BlockedFindings({ findings }: { findings: MemoryUnresolved[] }) {
+  return (
+    <FindingList
+      findings={findings}
+      heading={(count) =>
+        count === 1
+          ? "One declared entry is blocked"
+          : `${count} declared entries are blocked`
+      }
+      row={(f) => (
+        <>
+          <span className={styles.rowName}>{f.label}</span>
+          <span className={styles.conflictKind}>{KIND_LABEL[f.kind]}</span>
+          {f.cores.length > 0 && (
+            <span className={styles.rowMeta}>
+              <span>{f.cores.join(" ↔ ")}</span>
+            </span>
+          )}
+          <span className={styles.reasonCallout}>
+            {f.reason ?? "(no reason given)"}
+          </span>
+        </>
+      )}
+    />
+  );
+}
+
 export function MemoryRegions({
   memory,
   sizes,
@@ -176,6 +217,12 @@ export function MemoryRegions({
   );
   const deviceRelative = memory.spans.filter((s) => s.base === null);
   const toggle = (id: string) => setSelected((cur) => (cur === id ? null : id));
+  // A blocked entry is the allocator refusing something outright — the same
+  // shape of problem `Conflicts`/`OutsideRegionNotice` already flag, so it
+  // moves up beside them. Every other status (`pending`, the emitter's own
+  // `unresolved`, …) is not yet placed, not refused, and stays below.
+  const blocked = memory.unresolved.filter((e) => e.status === "blocked");
+  const notBlocked = memory.unresolved.filter((e) => e.status !== "blocked");
 
   return (
     <div className={styles.root}>
@@ -185,6 +232,7 @@ export function MemoryRegions({
       <OutsideRegionNotice
         findings={memory.conflicts.filter((c) => c.kind === "outside_region")}
       />
+      <BlockedFindings findings={blocked} />
 
       {placed.length === 0 && deviceRelative.length === 0 ? (
         <p className={styles.empty}>
@@ -195,6 +243,12 @@ export function MemoryRegions({
         <div className={styles.map}>
           {placed.length > 0 && (
             <div className={styles.mapSide}>
+              <AuthorityLegend />
+              <p className={styles.legend}>
+                The rail is a schematic: address space with nothing declared
+                compresses to a fixed height and is marked, never drawn to
+                scale.
+              </p>
               <div className={styles.chartScroll}>
                 <MemoryChart
                   spans={memory.spans}
@@ -205,10 +259,6 @@ export function MemoryRegions({
                   onSelect={toggle}
                 />
               </div>
-              <p className={styles.legend}>
-                Bands are extents, lines are a base with no size. Colour groups
-                by region, device or core.
-              </p>
             </div>
           )}
         </div>
@@ -226,13 +276,13 @@ export function MemoryRegions({
         />
       )}
 
-      {memory.unresolved.length > 0 && (
+      {notBlocked.length > 0 && (
         <div className={styles.unresolved}>
-          <p className={styles.unresolvedTitle}>
-            Declared, not placed ({memory.unresolved.length})
-          </p>
+          <h3 className={styles.unresolvedTitle}>
+            Declared, not placed ({notBlocked.length})
+          </h3>
           <ul className={styles.rows}>
-            {memory.unresolved.map((entry) => (
+            {notBlocked.map((entry) => (
               <li key={entry.id} className={styles.row}>
                 <span className={styles.rowName}>{entry.label}</span>
                 <span className={styles.kind} data-kind={entry.kind}>
@@ -248,7 +298,7 @@ export function MemoryRegions({
                 )}
                 {/* Verbatim and in full. The reason is the only actionable
                  *  half — it names the file and the field to change. */}
-                <span className={styles.reason}>
+                <span className={styles.reasonCallout}>
                   {entry.reason ?? "(no reason given)"}
                 </span>
               </li>

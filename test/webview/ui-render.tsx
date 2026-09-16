@@ -810,9 +810,10 @@ async function main() {
           // picture — a carve-out pinned onto the HP image slot.
           "covers an image load address",
           "0x802b0000",
-          // D4: the aperture, named beside the map with no extent of its own.
-          // The legend that replaced four paragraphs of prose.
-          "bands are extents, lines are a base with no size",
+          // #484 phase 4 (Task 6): the one-sentence legend that now sits
+          // ABOVE the chart, after `AuthorityLegend` — the scale-mode prose
+          // it replaced is gone along with the modes themselves.
+          "the rail is a schematic",
         ]) {
           if (!memText.includes(needle)) {
             problems.push(`build-plan: memory tab missing "${needle}"`);
@@ -2011,6 +2012,24 @@ async function main() {
             );
           }
         }
+      }
+
+      // ── #484 phase 4 (Task 6): findings move up, the scale modes go
+      //    away ──
+      if ((container.textContent || "").includes("Equalized")) {
+        problems.push("memory-regions-aen: the Equalized mode button survived");
+      }
+      const alerts = Array.from(container.querySelectorAll('[role="alert"]'));
+      const alertText = alerts.map((a) => a.textContent || "").join(" ");
+      if (!alertText.includes("alp_default_rpmsg")) {
+        problems.push(
+          "memory-regions-aen: the blocked IPC carve-out is not in an alert region above the chart",
+        );
+      }
+      if (container.querySelectorAll("h3, h4").length === 0) {
+        problems.push(
+          "memory-regions-aen: the view still has no real headings",
+        );
       }
     }
     console.log(
