@@ -84,11 +84,18 @@ function loadWithStubs(relPath, stubs) {
  *  - `showTextDocument` defaults to a stub that records into `opened` and
  *    resolves; pass a rejecting one to exercise the "file could not be
  *    opened" failure path.
+ *  - `clipboardWriteText` defaults to a stub that records into `clipboard`
+ *    and resolves; pass a rejecting one to exercise the "clipboard write
+ *    refused" failure path. `vscode.env.clipboard.writeText` returns a real
+ *    promise that really does reject (no focus, a remote or web host, another
+ *    process holding the OS clipboard), so this override is the only way to
+ *    reach that branch.
  */
 function mountPanel({
   workspaceRoot = "/home/dev/proj",
   boardYamlPath = workspaceRoot ? path.join(workspaceRoot, "board.yaml") : null,
   showTextDocument: showTextDocumentOverride = null,
+  clipboardWriteText: clipboardWriteTextOverride = null,
 } = {}) {
   const calls = [];
   const posted = [];
@@ -133,6 +140,15 @@ function mountPanel({
     ((uri) => {
       opened.push(uri.fsPath);
       return Promise.resolve({});
+    });
+
+  // Same reason as `showTextDocumentStub` above: a parameter default cannot
+  // close over `clipboard`, which is declared in this body.
+  const clipboardWriteTextStub =
+    clipboardWriteTextOverride ??
+    ((text) => {
+      clipboard.push(text);
+      return Promise.resolve();
     });
 
   const { BuildPlanPanel } = loadWithStubs("ideHub/buildPlanPanel.js", {
@@ -181,11 +197,7 @@ function mountPanel({
       },
       env: {
         openExternal: async () => true,
-        clipboard: {
-          writeText: async (text) => {
-            clipboard.push(text);
-          },
-        },
+        clipboard: { writeText: clipboardWriteTextStub },
       },
     },
     "../alpCli/vscodeAdapter": {
@@ -438,11 +450,12 @@ test("openBoardYaml trusts boardYamlPath verbatim, never re-deriving it from wor
   assert.deepEqual(notifications, []);
 });
 
-// ── #484: both failure paths are USER-VISIBLE ───────────────────────────────
+// ── #484: every failure path is USER-VISIBLE ────────────────────────────────
 //
 // A raw `log()` call alone reaches only the "Alp SDK" output channel, which
-// nothing surfaces on its own — the button did nothing, silently. Both
-// paths below now go through `notifyAsync`, the same mechanism every other
+// nothing surfaces on its own — and a bare `void` on a rejecting promise
+// reaches nothing at all: the button did nothing, silently. All three paths
+// below go through `notifyAsync`, the same mechanism every other
 // user-facing failure in `buildPlanPanel.ts` uses.
 
 test("openBoardYaml notifies (not just logs) when no board.yaml is resolved, without throwing", async () => {
@@ -498,5 +511,42 @@ test("openBoardYaml notifies when the file cannot actually be opened", async () 
   // toast) is caught.
   assert.equal(plan.message, "Opening board.yaml failed.");
   assert.match(plan.detail ?? "", /ENOENT/);
+  assert.equal(plan.severity, "error");
+});
+
+test("copyText notifies when the clipboard write is refused", async () => {
+  // The twin of the test above, on the OTHER handler added alongside it.
+  // `writeText` returned a promise nobody awaited and nobody caught, so a
+  // refusal — no window focus, a remote or web host without clipboard
+  // permission, another process holding the OS clipboard — became an
+  // unhandled rejection in the extension host and the Copy button on a
+  // blocked finding just did nothing.
+  const rejection = new Error("EBUSY: the clipboard is held by another app");
+  const { clipboard, notifications, copyText } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+    clipboardWriteText: () => Promise.reject(rejection),
+  });
+  assert.doesNotThrow(() => copyText("alp_default_rpmsg — carve-out"));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(
+    clipboard,
+    [],
+    "the failing stub never records a successful write",
+  );
+  assert.equal(
+    notifications.length,
+    1,
+    "a rejected clipboard.writeText must raise exactly one user-visible " +
+      "notification, not an unhandled rejection with a dead button and " +
+      "nothing on screen",
+  );
+  const plan = notifications[0];
+  // Asserted, not assumed, for the same reason as the sibling above:
+  // `planFailure`'s backstop demotes an errno-carrying `cause` out of the
+  // customer-facing message and into `detail`, and an edit that stops going
+  // through `planFailure` would interpolate the raw error into the toast.
+  assert.equal(plan.message, "Copying to the clipboard failed.");
+  assert.match(plan.detail ?? "", /EBUSY/);
   assert.equal(plan.severity, "error");
 });

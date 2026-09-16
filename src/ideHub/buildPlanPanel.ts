@@ -191,7 +191,7 @@ export class BuildPlanPanel {
         void this.openBoardYaml();
         break;
       case "copyText":
-        void vscode.env.clipboard.writeText(msg.text);
+        void this.copyText(msg.text);
         break;
       case "openUrl":
         if (msg.url.startsWith("https://") || msg.url.startsWith("vscode://")) {
@@ -712,6 +712,42 @@ export class BuildPlanPanel {
       notifyAsync(
         planFailure({
           operation: "Opening board.yaml",
+          cause: String(err),
+        }),
+      );
+    }
+  }
+
+  /**
+   * Put a finding's text on the system clipboard.
+   *
+   * THE REJECTION IS USER-VISIBLE, for the same reason `openBoardYaml`'s is.
+   * `vscode.env.clipboard.writeText` returns a promise that really does
+   * reject — an unfocused window, a remote or web host with no clipboard
+   * permission, another process holding the OS clipboard — and a bare `void`
+   * on it turned every one of those into an unhandled rejection in the
+   * extension host: the Copy button on a blocked finding did nothing, with
+   * nothing on screen and nothing in the output channel to look up.
+   *
+   * There is no precondition half to mirror here. `openBoardYaml` has one
+   * because it needs a host-resolved path that may not exist yet;
+   * `CopyTextMessage` carries its own text, so the only way this can fail is
+   * the write itself. `planFailure`'s default severity "error" is right for
+   * that — a real action that could not be completed, not a first-run state —
+   * and its backstop keeps a raw `String(err)` (a clipboard `EBUSY`, say) out
+   * of the customer-facing sentence, demoting it to the log-only `detail`.
+   *
+   * No success notification: the copied text is already on screen in the row
+   * the button sits on, and a toast per copy is noise. The failure is the
+   * only thing the customer cannot otherwise see.
+   */
+  private async copyText(text: string): Promise<void> {
+    try {
+      await vscode.env.clipboard.writeText(text);
+    } catch (err) {
+      notifyAsync(
+        planFailure({
+          operation: "Copying to the clipboard",
           cause: String(err),
         }),
       );
