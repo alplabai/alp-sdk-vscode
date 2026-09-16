@@ -429,9 +429,11 @@ test("openBoardYaml trusts boardYamlPath verbatim, never re-deriving it from wor
   // board.yaml root over workspaceFolders[0] in a multi-root workspace").
   // What THIS test actually pins, honestly: `openBoardYaml` opens
   // `boardYamlPath` exactly as given, never recomputing
-  // `path.join(workspaceRoot, "board.yaml")` from `workspaceRoot` alone —
-  // the mutation in this task's report (regressing to that join) is what
-  // kills this test, not a multi-root claim it never tested.
+  // `path.join(workspaceRoot, "board.yaml")` from `workspaceRoot` alone.
+  // Regressing the handler to that join is what kills this test: it would
+  // open `/home/dev/ws/pkg-b/board.yaml` where the stub configured
+  // `/home/dev/ws/pkg-b/config/board.yaml`. A multi-root claim is not what
+  // dies with it, because this file never tested one.
   const someWorkspaceRoot = "/home/dev/ws/pkg-b";
   const { opened, notifications, openBoardYaml } = mountPanel({
     workspaceRoot: someWorkspaceRoot,

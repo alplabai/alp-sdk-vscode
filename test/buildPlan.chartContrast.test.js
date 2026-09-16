@@ -466,9 +466,15 @@ test("--chart-3's fallback literal is held to the same bar as the variable", () 
 // retired `.scaleBtn` control had a real, built-artifact-verified
 // `:global(.vscode-high-contrast)` override that reached >=4.5:1 there (as
 // originally measured); the shared `Button` component this pair now ships on
-// has NO such override, and this branch does not add one (touching the shared
-// Button component is outside its scope — see this task's report for the
-// follow-up recorded against it). hcDark is pinned below at its exact measured
+// has NO such override, and this branch does not add one: `Button` is every
+// panel's control, not this tab's. Whoever does add one needs BOTH halves of
+// the retired selector —
+// `body:global(.vscode-high-contrast)`, because the host writes that class
+// onto `<body>` literally while CSS Modules hashes an unwrapped one, AND
+// `:not(:global(.vscode-high-contrast-light))`, because High Contrast Light
+// carries the plain `vscode-high-contrast` class too for backwards
+// compatibility and would otherwise be repainted for no
+// reason. hcDark is pinned below at its exact measured
 // value so a further regression, or a silent "fix" that assumes parity with
 // what `.scaleBtn` shipped, cannot pass unnoticed.
 // ---------------------------------------------------------------------------
@@ -502,7 +508,8 @@ test("--accent-fg (white) vs --accent: six real/current themes pass; Dark+/Light
   // `.btn[data-appearance="accent"]` carries NO such override, so this
   // measures worse than what shipped before — 2.57:1, under even the 3:1
   // non-text floor — and stays that way until the Button component itself
-  // grows one (out of scope here; see this task's report).
+  // grows one, which is every panel's control rather than this tab's. The
+  // block header above carries the two halves such an override needs.
   {
     const hcDarkPin = "2.57";
     const bgRgb = resolvedOpaqueRgb("hcDark", bg, null);
