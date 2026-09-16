@@ -32,7 +32,7 @@
 // flex columns — narrow rail, wide table — rather than a fixed-width picture
 // a `.chartScroll` used to scroll sideways when the panel ran narrow.
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { ReactNode } from "react";
 import type {
   MemoryConflict,
@@ -82,12 +82,23 @@ function formatExtent(from: number, to: number): string {
 
 /**
  * The DOM skeleton `Conflicts`, `OutsideRegionNotice` and `BlockedFindings`
- * share: a `role="alert"` block with a real heading and one row per finding.
- * Heading text and row content are supplied by the caller so each keeps its
- * own wording — only the structure is shared, never the framing. Generic
- * over the finding type so a `MemoryUnresolved` list (a blocked IPC
- * carve-out) gets the same alert treatment as a `MemoryConflict` one,
- * without a second, near-identical component.
+ * share: a landmark with a real heading and one row per finding. Heading text
+ * and row content are supplied by the caller so each keeps its own wording —
+ * only the structure is shared, never the framing. Generic over the finding
+ * type so a `MemoryUnresolved` list (a blocked IPC carve-out) gets the same
+ * treatment as a `MemoryConflict` one, without a second, near-identical
+ * component.
+ *
+ * A REGION, NOT AN ALERT. `role="alert"` is an assertive live region: it is
+ * for content that APPEARS after the page has settled, and it interrupts
+ * whatever the reader was being told. Nothing here appears — this component
+ * returns null when it has no findings, so the element enters the DOM with
+ * its content already in it, which is the case a live region announces
+ * unreliably (there is no mutation to observe, only a node that was never
+ * there before). And the findings are static facts read off a manifest, so
+ * there is nothing to interrupt anyone for. `role="region"` with the heading
+ * as its `aria-labelledby` makes each one a landmark the reader can jump to
+ * BY NAME — which is what a list of findings actually wants.
  */
 function FindingList<T extends { id: string }>({
   findings,
@@ -98,10 +109,14 @@ function FindingList<T extends { id: string }>({
   heading: (count: number) => string;
   row: (finding: T) => ReactNode;
 }) {
+  // Before the early return: a hook cannot be called conditionally.
+  const headingId = useId();
   if (findings.length === 0) return null;
   return (
-    <div className={styles.conflicts} role="alert">
-      <h3 className={styles.conflictsTitle}>{heading(findings.length)}</h3>
+    <div className={styles.conflicts} role="region" aria-labelledby={headingId}>
+      <h3 id={headingId} className={styles.conflictsTitle}>
+        {heading(findings.length)}
+      </h3>
       <ul className={styles.conflictList}>
         {findings.map((f) => (
           <li key={f.id} className={styles.conflictRow}>
@@ -185,7 +200,7 @@ function blockedFindingText(f: MemoryUnresolved): string {
 /**
  * Declared entries the allocator refused outright (`status === "blocked"`),
  * promoted out of the "Declared, not placed" list below and into the same
- * alert treatment as `Conflicts`/`OutsideRegionNotice`, above the picture —
+ * landmark treatment as `Conflicts`/`OutsideRegionNotice`, above the picture —
  * a blocked carve-out is the allocator telling the reader something is
  * wrong, not a still-pending fact to skim later. Every other unresolved
  * status (`pending`, the emitter's own `unresolved`, …) stays in the list
@@ -224,11 +239,25 @@ function BlockedFindings({ findings }: { findings: MemoryUnresolved[] }) {
             {f.reason ?? "(no reason given)"}
           </span>
           <span className={styles.findingActions}>
+            {/* No per-finding `title` on THIS one, on purpose. Two of these
+             *  side by side would carry the same name, and that is correct:
+             *  the host resolves the file itself, so both buttons do the
+             *  identical thing and telling them apart would be describing a
+             *  difference that is not there. */}
             <Button appearance="ghost" onClick={openDeclaringFile}>
               Open {BOARD_CONFIG_LABEL}
             </Button>
+            {/* "Copy" is the one that IS ambiguous: each copies its own
+             *  finding's text, so a screen reader meeting two of them hears
+             *  one name for two different actions. The name comes from the
+             *  content and stays "Copy" — a label that grew the finding's
+             *  name would be read in full every time, for a button whose
+             *  whole job is one word — so the finding rides in the
+             *  DESCRIPTION instead, which is announced after the name and
+             *  only where it is needed. */}
             <Button
               appearance="ghost"
+              title={`Copy ${f.label}`}
               onClick={() => copyFindingText(blockedFindingText(f))}
             >
               Copy

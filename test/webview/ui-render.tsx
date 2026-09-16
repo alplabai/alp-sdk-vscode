@@ -729,6 +729,42 @@ function checkRovingTabStop(
   }
 }
 
+/**
+ * Every heading in `container`, read in document order, starts at h1 and
+ * skips no rung on the way down.
+ *
+ * Two separate faults, and the flat-set one is the easier to miss. A panel
+ * whose headings are all h3 skips nothing BETWEEN them, so a "no skipped
+ * level" check alone calls it well-formed — while the outline it builds has
+ * no top at all, and a reader jumping by heading arrives in the middle of a
+ * document with nothing above them saying which one it is.
+ */
+function checkHeadingOutline(
+  container: HTMLElement,
+  passName: string,
+  problems: string[],
+) {
+  const levels = Array.from(
+    container.querySelectorAll("h1, h2, h3, h4, h5, h6"),
+  ).map((h) => Number(h.tagName.slice(1)));
+  if (levels.length === 0) {
+    problems.push(`${passName}: the view renders no headings at all`);
+    return;
+  }
+  if (levels[0] !== 1) {
+    problems.push(
+      `${passName}: the outline starts at h${levels[0]} — the panel has no root heading`,
+    );
+  }
+  for (let i = 1; i < levels.length; i++) {
+    if (levels[i] > levels[i - 1] + 1) {
+      problems.push(
+        `${passName}: the heading outline jumps from h${levels[i - 1]} to h${levels[i]}`,
+      );
+    }
+  }
+}
+
 const VIEWS: Array<[string, React.FC]> = [
   ["overview", OverviewView],
   ["sidebar-hub", SidebarHubView],
@@ -971,6 +1007,9 @@ async function main() {
         if (markers.length === 0) {
           problems.push("build-plan: memory tab drew no slot markers");
         }
+        // The deepest headings this panel has live on the Memory tab, so the
+        // outline is checked with that tab open.
+        checkHeadingOutline(container, "build-plan/memory", problems);
         // The prose moved OUT of the map and into its own tab. Assert it
         // landed there rather than simply vanishing.
         const notesTab = tabs.find((b) =>
@@ -1003,6 +1042,10 @@ async function main() {
           if (notes.includes("piecewise scale")) {
             problems.push("build-plan: the notes tab still renders the map");
           }
+          // And again with Notes open: this tab's headings come from a
+          // different component, so it is its own outline, not a subset of
+          // the one checked above.
+          checkHeadingOutline(container, "build-plan/notes", problems);
         }
         (tabs[0] as HTMLButtonElement).click();
         await settle();
@@ -2110,25 +2153,48 @@ async function main() {
       if ((container.textContent || "").includes("Equalized")) {
         problems.push("memory-regions-aen: the Equalized mode button survived");
       }
-      const alerts = Array.from(container.querySelectorAll('[role="alert"]'));
-      const alertText = alerts.map((a) => a.textContent || "").join(" ");
-      if (!alertText.includes("alp_default_rpmsg")) {
+      // A named LANDMARK, not a live region. `role="alert"` is assertive and
+      // is for content that appears after load; `FindingList` returns null
+      // when it has nothing, so its element enters the DOM already holding
+      // its content — the case a live region announces unreliably — and a
+      // static finding read off a manifest has nothing to interrupt anyone
+      // for. The name is what makes it navigable, so the name is checked.
+      const findingRegions = Array.from(
+        container.querySelectorAll('[role="region"]'),
+      );
+      const regionText = findingRegions
+        .map((a) => a.textContent || "")
+        .join(" ");
+      if (!regionText.includes("alp_default_rpmsg")) {
         problems.push(
-          "memory-regions-aen: the blocked IPC carve-out is not in an alert region above the chart",
+          "memory-regions-aen: the blocked IPC carve-out is not in a named region above the chart",
         );
       }
-      // Membership above proves the text is IN an alert somewhere; it says
+      for (const region of findingRegions) {
+        const labelledBy = region.getAttribute("aria-labelledby");
+        const label = labelledBy ? document.getElementById(labelledBy) : null;
+        if (!label) {
+          problems.push(
+            `memory-regions-aen: a findings region's aria-labelledby="${labelledBy}" resolves to nothing — an unnamed region is a landmark nobody can find`,
+          );
+        } else if (region.querySelector("h1, h2, h3, h4, h5, h6") !== label) {
+          problems.push(
+            "memory-regions-aen: a findings region is named by something other than its own heading",
+          );
+        }
+      }
+      // Membership above proves the text is IN a region somewhere; it says
       // nothing about WHERE. "above the chart" is a position claim, so it
-      // needs a position check — the blocked-findings alert must actually
+      // needs a position check — the blocked-findings region must actually
       // PRECEDE the chart's own <svg> in rendered document order, not just
       // share a page with it. `compareDocumentPosition` is read on the
       // RENDERED nodes, never inferred from source order.
-      const blockedAlert = alerts.find((a) =>
+      const blockedAlert = findingRegions.find((a) =>
         (a.textContent || "").includes("alp_default_rpmsg"),
       );
       if (!blockedAlert) {
         problems.push(
-          "memory-regions-aen: no alert region contains the blocked IPC carve-out",
+          "memory-regions-aen: no named region contains the blocked IPC carve-out",
         );
       } else if (
         !svg ||
@@ -2138,10 +2204,10 @@ async function main() {
         )
       ) {
         problems.push(
-          "memory-regions-aen: the blocked-findings alert does not precede the chart in document order",
+          "memory-regions-aen: the blocked-findings region does not precede the chart in document order",
         );
       }
-      // #484 Task 7: the blocked-findings alert carries two per-finding
+      // #484 Task 7: the blocked-findings region carries two per-finding
       // actions, dispatched through the host rather than a raw
       // `vscode://file` href. Found by TEXT within the already-uniquely-
       // identified `blockedAlert`, never by CSS module class: both render
@@ -2190,6 +2256,20 @@ async function main() {
           'memory-regions-aen: no "Copy" action on the blocked finding',
         );
       } else {
+        // "Copy" is the one label here that would be ambiguous with a second
+        // blocked finding on screen: each button copies its OWN finding's
+        // text, so one name would stand for two different actions. The name
+        // stays "Copy" (a button whose whole job is one word should not be
+        // read out as a sentence) and the finding rides in the DESCRIPTION,
+        // which is announced after the name. "Open board config" carries no
+        // such description on purpose — the host resolves the file, so two
+        // of those really are the same action.
+        const copyTitle = copyBtn.getAttribute("title") || "";
+        if (!copyTitle.includes("alp_default_rpmsg")) {
+          problems.push(
+            `memory-regions-aen: the "Copy" action's description is "${copyTitle}" — it does not name the finding it copies, so two of them would be indistinguishable`,
+          );
+        }
         const postedBefore = g.__ALP_POSTED__.length;
         (copyBtn as HTMLButtonElement).click();
         await tick();
