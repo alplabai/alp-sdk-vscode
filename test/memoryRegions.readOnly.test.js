@@ -145,17 +145,41 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const REPO = path.join(__dirname, "..");
-const WEBVIEW = path.join(REPO, "packages", "alp-webview");
-const SRC = path.join(WEBVIEW, "src");
-const BUILD_PLAN_DIR = path.join(SRC, "features", "build-plan");
-const WEBVIEW_TSCONFIG = path.join(WEBVIEW, "tsconfig.json");
+/**
+ * ONE SPELLING FOR EVERY PATH IN THIS FILE — forward slashes.
+ *
+ * This gate compares paths for identity: "is this resolved module the host
+ * transport", "is this file the sanctioned one". Two producers feed those
+ * comparisons and they do not agree on Windows: `path.join` yields `\`, and
+ * the TypeScript compiler reports every file with `/`, whatever the platform.
+ * On a POSIX host both are `/` and every comparison happens to work, so the
+ * mismatch is invisible here and total on Windows — the roots seed the walk
+ * under one spelling, every resolved edge arrives under the other, nothing
+ * matches, and the derived set collapses.
+ *
+ * So both producers are funnelled through `toPosixPath` before anything is
+ * compared, stored, or printed. Node accepts forward slashes on Windows for
+ * every `fs` call, and so does the compiler, so normalising once at the
+ * boundary costs nothing and leaves no second spelling in play. Two tests
+ * below hold it: one asserts no stored path ever carries a backslash, the
+ * other drives these helpers with real `path.win32` output, so a POSIX host
+ * cannot pass them vacuously — which is exactly how the defect reached CI.
+ */
+const toPosixPath = (p) => String(p).split("\\").join("/");
+const joinPath = (...parts) => toPosixPath(path.join(...parts));
+const baseName = (p) => path.posix.basename(toPosixPath(p));
+
+const REPO = joinPath(__dirname, "..");
+const WEBVIEW = joinPath(REPO, "packages", "alp-webview");
+const SRC = joinPath(WEBVIEW, "src");
+const BUILD_PLAN_DIR = joinPath(SRC, "features", "build-plan");
+const WEBVIEW_TSCONFIG = joinPath(WEBVIEW, "tsconfig.json");
 
 /** The package's ambient declarations (`*.module.css` and friends). Handed to
  *  the root-limited program so a stylesheet import RESOLVES instead of being
  *  reported as a broken specifier — the gate must fail on real breakage, not
  *  on a CSS import every component in the tree writes. */
-const AMBIENT_DECLARATIONS = path.join(SRC, "vite-env.d.ts");
+const AMBIENT_DECLARATIONS = joinPath(SRC, "vite-env.d.ts");
 
 /**
  * The Memory view's entry components — the roots of the walk.
@@ -168,13 +192,13 @@ const AMBIENT_DECLARATIONS = path.join(SRC, "vite-env.d.ts");
  * hand-maintenance this derivation exists to remove.
  */
 const ROOTS = [
-  path.join(BUILD_PLAN_DIR, "MemoryRegions.tsx"),
-  path.join(BUILD_PLAN_DIR, "MemoryNotes.tsx"),
+  joinPath(BUILD_PLAN_DIR, "MemoryRegions.tsx"),
+  joinPath(BUILD_PLAN_DIR, "MemoryNotes.tsx"),
 ];
 
 /** The host transport. Every ban below is stated against THIS resolved file,
  *  never against the text of a specifier. */
-const TRANSPORT_MODULE = path.join(SRC, "vscode.ts");
+const TRANSPORT_MODULE = joinPath(SRC, "vscode.ts");
 
 /** The one file this gate lets use the host transport at all. The approved
  *  design is "open the declaring file, copy its text, both through host
@@ -182,7 +206,7 @@ const TRANSPORT_MODULE = path.join(SRC, "vscode.ts");
  *  scoped to this one file and the two message kinds below, is how that need
  *  is met without reopening "the memory view has no path back to the host"
  *  for the picture/table/Notes modules this gate exists to keep passive. */
-const SANCTIONED_HOST_FILE = path.join(
+const SANCTIONED_HOST_FILE = joinPath(
   BUILD_PLAN_DIR,
   "blockedFindingActions.ts",
 );
@@ -209,7 +233,7 @@ const FORBIDDEN_GLOBALS = ["acquireVsCodeApi"];
 const MAX_TOKENS_PER_FILE = 400000;
 
 const read = (p) => fs.readFileSync(p, "utf8");
-const rel = (p) => path.relative(REPO, p);
+const rel = (p) => path.posix.relative(REPO, toPosixPath(p));
 
 // ---------------------------------------------------------------------------
 // The module graph, built by the TypeScript compiler.
@@ -221,8 +245,14 @@ const rel = (p) => path.relative(REPO, p);
  *  file reached through a symlink, or one sitting outside `src` — is walked
  *  and checked, so moving a module elsewhere in the tree hides nothing. */
 function isExternalModule(file) {
+  // Split on "/" only, against the normalised spelling: splitting on
+  // `path.sep` would look for `\` on Windows in a path the compiler wrote
+  // with `/`, find one segment, and conclude that nothing is under
+  // node_modules — walking the whole dependency tree instead.
+  const normalised = toPosixPath(file);
   return (
-    file.split(path.sep).includes("node_modules") || /\.d\.[cm]?ts$/.test(file)
+    normalised.split("/").includes("node_modules") ||
+    /\.d\.[cm]?ts$/.test(normalised)
   );
 }
 
@@ -248,8 +278,10 @@ async function buildModuleGraph() {
   // program's own file set is the view's closure rather than the whole
   // package. It extends the real `tsconfig.json`, so resolution runs under
   // the shipping `moduleResolution`, `jsx` and `paths` settings.
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "alp-memory-gate-"));
-  const configPath = path.join(tmpDir, "tsconfig.json");
+  const tmpDir = toPosixPath(
+    fs.mkdtempSync(path.join(os.tmpdir(), "alp-memory-gate-")),
+  );
+  const configPath = joinPath(tmpDir, "tsconfig.json");
   fs.writeFileSync(
     configPath,
     JSON.stringify({
@@ -300,9 +332,11 @@ function walk(project, ast, is) {
   // lower-cased on a case-insensitive file system. Map it back to the real
   // name the program knows, so every comparison below is against one spelling.
   const realByLower = new Map(
-    program.getSourceFileNames().map((name) => [name.toLowerCase(), name]),
+    program
+      .getSourceFileNames()
+      .map((name) => [toPosixPath(name).toLowerCase(), toPosixPath(name)]),
   );
-  const toRealPath = (p) => realByLower.get(String(p).toLowerCase());
+  const toRealPath = (p) => realByLower.get(toPosixPath(p).toLowerCase());
 
   /** Specifiers the compiler could not resolve, and specifiers that are not a
    *  plain string. Either one means the walk below is INCOMPLETE, so every
@@ -628,6 +662,79 @@ function assertNothingWasDropped(graph) {
   );
 }
 
+test("path identity is separator-independent, proved through path.win32", () => {
+  // `path.win32` is importable on every platform, so this drives the exact
+  // comparison a Windows run performs without needing a Windows host. That
+  // matters more than it looks: the original defect was invisible on POSIX
+  // precisely because both producers agree here, so a test that only used the
+  // host's own separator would have passed while Windows stayed broken.
+  const compilerSpelling = "C:/repo/packages/alp-webview/src/vscode.ts";
+  const joinSpelling = path.win32.join(
+    "C:\\repo",
+    "packages",
+    "alp-webview",
+    "src",
+    "vscode.ts",
+  );
+
+  // The defect, stated as an assertion: the two producers disagree verbatim.
+  assert.ok(
+    joinSpelling.includes("\\"),
+    "path.win32.join no longer produces backslashes — this proof is void",
+  );
+  assert.notEqual(joinSpelling, compilerSpelling);
+
+  // The fix: one spelling, so `===` answers the question actually being asked.
+  assert.equal(toPosixPath(joinSpelling), compilerSpelling);
+  assert.equal(toPosixPath(joinSpelling), toPosixPath(compilerSpelling));
+
+  // node_modules detection has to survive a `\`-joined path too, or the walk
+  // would decide nothing is external and follow the whole dependency tree.
+  assert.equal(
+    isExternalModule(path.win32.join("C:\\r", "node_modules", "p", "i.js")),
+    true,
+  );
+  assert.equal(isExternalModule("C:/r/node_modules/p/i.js"), true);
+  assert.equal(
+    isExternalModule(path.win32.join("C:\\r", "src", "a.ts")),
+    false,
+  );
+
+  // And every name this gate PRINTS must read sensibly from either spelling,
+  // so a Windows failure is still a legible one.
+  assert.equal(baseName(joinSpelling), "vscode.ts");
+  assert.equal(baseName(compilerSpelling), "vscode.ts");
+  assert.equal(
+    path.posix.relative("C:/repo", toPosixPath(joinSpelling)),
+    "packages/alp-webview/src/vscode.ts",
+  );
+});
+
+test("every derived path is stored in the one normalised spelling", async () => {
+  const graph = await moduleGraph();
+  assertNothingWasDropped(graph);
+
+  const stored = [
+    ...graph.reachable,
+    ...graph.edges.flatMap((edge) => [edge.from, edge.to]),
+  ];
+  assert.deepEqual(
+    stored.filter((p) => p.includes("\\")),
+    [],
+    "a path escaped normalisation and is stored with a backslash — on " +
+      "Windows it would never compare equal to the compiler's spelling of " +
+      "the same file, and the derived set would collapse",
+  );
+  // The constants every ban is stated over must share that spelling, or the
+  // comparisons above are between two different alphabets.
+  for (const constant of [...ROOTS, TRANSPORT_MODULE, SANCTIONED_HOST_FILE]) {
+    assert.ok(
+      !constant.includes("\\"),
+      `${constant} is not normalised, so it cannot match a resolved path`,
+    );
+  }
+});
+
 test("the memory view's module graph resolves completely", async () => {
   const graph = await moduleGraph();
   assertNothingWasDropped(graph);
@@ -643,7 +750,7 @@ test("the memory view's module graph resolves completely", async () => {
   // the walk stops short of them it has silently stopped covering the view.
   for (const name of ["MemoryChart.tsx", "MemoryTable.tsx"]) {
     assert.ok(
-      graph.reachable.includes(path.join(BUILD_PLAN_DIR, name)),
+      graph.reachable.includes(joinPath(BUILD_PLAN_DIR, name)),
       `the walk did not reach ${name}, which the memory view renders — a ` +
         "derivation that stops short of the view covers nothing below",
     );
@@ -701,7 +808,7 @@ test("the sanctioned file is actually reachable from the memory view", async () 
  * allocator finding text.
  */
 function checkPostMessageCall(call, file, ast, is) {
-  const where = path.basename(file);
+  const where = baseName(file);
   assert.equal(
     call.arguments.length,
     1,
@@ -903,7 +1010,7 @@ test("the memory view offers no editing affordance", async () => {
       assert.equal(
         source.includes(forbidden),
         false,
-        `${path.basename(file)} must not render ${forbidden}`,
+        `${baseName(file)} must not render ${forbidden}`,
       );
     }
 
@@ -913,7 +1020,7 @@ test("the memory view offers no editing affordance", async () => {
       assert.equal(
         source.includes(field),
         false,
-        `${path.basename(file)} names the editable board.yaml field ${field}`,
+        `${baseName(file)} names the editable board.yaml field ${field}`,
       );
     }
   }
@@ -926,7 +1033,7 @@ test("the contract still cannot tell a customer band from a secure one", () => {
   // because an omitted owner that renders as unlocked is the same fail-open
   // the whole design exists to avoid.
   const schema = JSON.parse(
-    read(path.join(REPO, "schemas", "system-manifest-v1.schema.json")),
+    read(joinPath(REPO, "schemas", "system-manifest-v1.schema.json")),
   );
   const roots = Object.keys(schema.properties);
 
