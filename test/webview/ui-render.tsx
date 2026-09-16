@@ -902,6 +902,12 @@ async function main() {
             "alp-sdk#1365", // the issue that gates whether the region table can appear at all
             "not in", // "...not in system-manifest-v1 at all" for an older/pending manifest
             "nothing here is editable", // and why it stays read-only
+            // #484 phase 4 (Task 6): the band/line encoding claim moved OUT
+            // of the map's own legend and into this tab's prose
+            // (MemoryNotes.tsx); the old memory-tab needle that used to pin
+            // it there was retired along with the legend text, and this is
+            // that claim re-pinned where it now actually lives.
+            "a band is an extent. a line is a base with no size",
           ]) {
             if (!notes.includes(needle)) {
               problems.push(`build-plan: notes tab missing "${needle}"`);
@@ -2024,6 +2030,51 @@ async function main() {
       if (!alertText.includes("alp_default_rpmsg")) {
         problems.push(
           "memory-regions-aen: the blocked IPC carve-out is not in an alert region above the chart",
+        );
+      }
+      // Membership above proves the text is IN an alert somewhere; it says
+      // nothing about WHERE. "above the chart" is a position claim, so it
+      // needs a position check — the blocked-findings alert must actually
+      // PRECEDE the chart's own <svg> in rendered document order, not just
+      // share a page with it. `compareDocumentPosition` is read on the
+      // RENDERED nodes, never inferred from source order.
+      const blockedAlert = alerts.find((a) =>
+        (a.textContent || "").includes("alp_default_rpmsg"),
+      );
+      if (!blockedAlert) {
+        problems.push(
+          "memory-regions-aen: no alert region contains the blocked IPC carve-out",
+        );
+      } else if (
+        !svg ||
+        !(
+          blockedAlert.compareDocumentPosition(svg) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+        )
+      ) {
+        problems.push(
+          "memory-regions-aen: the blocked-findings alert does not precede the chart in document order",
+        );
+      }
+      // `AuthorityLegend`'s own child — `.legendItem` is unique to
+      // AuthoritySwatch.module.css, so it cannot be confused with
+      // MemoryRegions.module.css's OWN `.legend` (the one-sentence
+      // schematic paragraph), which carries no such child and this stub
+      // build gives both classes the identical literal name "legend".
+      const legendItem = container.querySelector(".legendItem");
+      if (!legendItem) {
+        problems.push(
+          "memory-regions-aen: no AuthorityLegend rendered beside the chart",
+        );
+      } else if (
+        !svg ||
+        !(
+          legendItem.compareDocumentPosition(svg) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+        )
+      ) {
+        problems.push(
+          "memory-regions-aen: AuthorityLegend does not precede the chart in document order",
         );
       }
       if (container.querySelectorAll("h3, h4").length === 0) {
