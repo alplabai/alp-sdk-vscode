@@ -19,8 +19,11 @@
 // review round 1 so that logic is unit-testable on its own, not only
 // through a jsdom render.
 
-import { useId, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useId, useState } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+} from "react";
 import type { MemoryRegion, MemorySpan, SliceSize } from "../../types";
 import { type AuthorityTier, TIER_LABEL } from "./authorityTier";
 import { AuthorityLegend, AuthoritySwatch } from "./AuthoritySwatch";
@@ -60,6 +63,7 @@ type TreeNode = { key: string; row: Row; isDetail: boolean };
 const detailKeyOf = (row: Row): string => `${row.key}:detail`;
 
 type NodeKeyHandler = (e: ReactKeyboardEvent<HTMLLIElement>) => void;
+type NodeClickHandler = (e: ReactMouseEvent<HTMLLIElement>) => void;
 
 /**
  * The facts a row reveals, as a real child node of that row.
@@ -82,10 +86,12 @@ function RowDetail({
   row,
   tabIndex,
   onKeyDown,
+  onClick,
 }: {
   row: Row;
   tabIndex: number;
   onKeyDown: NodeKeyHandler;
+  onClick: NodeClickHandler;
 }) {
   return (
     <ul className={styles.detailGroup} role="group">
@@ -95,6 +101,7 @@ function RowDetail({
         aria-level={2}
         tabIndex={tabIndex}
         onKeyDown={onKeyDown}
+        onClick={onClick}
       >
         <span
           className={styles.detailKind}
@@ -168,6 +175,26 @@ export function MemoryTable({
 
   const rows = buildRows(regions, spans, budgets, window, selected);
   const byTier = groupRowsByTier(rows);
+
+  // A selection that arrives from OUTSIDE this table — a band picked on the
+  // rail — opens the row it lands on.
+  //
+  // It cannot be done by letting `selected` feed `showDetail` directly: that
+  // is what made the two inseparable, and it is what stops ArrowLeft closing
+  // a selected row. Seeding the expanded set instead preserves both. It runs
+  // only when the SELECTED ROW CHANGES, so an ArrowLeft that closes a row
+  // without deselecting it is not undone on the next render.
+  //
+  // Without this a rail click gave a highlight and no facts: the detail is
+  // the only surface carrying kind, authority, cores, note and reason, and
+  // clicking that row in the table to see them would have DESELECTED it.
+  const selectedKey = rows.find((r) => r.selected)?.key ?? null;
+  useEffect(() => {
+    if (selectedKey === null) return;
+    setExpanded((cur) =>
+      cur.has(selectedKey) ? cur : withKey(cur, selectedKey, true),
+    );
+  }, [selectedKey]);
 
   // A duplicated region can never select (`row.inert`), so it can never be
   // opened by the interaction below either — its detail carries the "name
@@ -377,6 +404,27 @@ export function MemoryTable({
                       // arrows would have nowhere to put the focus.
                       tabIndex={row.key === activeKey ? 0 : -1}
                       onClick={(e) => {
+                        // The click twin of the keydown guard above, and it
+                        // cannot be written the same way: a click's target is
+                        // the deepest element under the pointer, so a plain
+                        // `target !== currentTarget` would reject a click on
+                        // the row's OWN name or size cell too. The question
+                        // is which treeitem the click belongs to — and a
+                        // click inside the detail belongs to the detail,
+                        // which owns no selection.
+                        //
+                        // Before this, clicking the detail of a selected,
+                        // expanded row ran `activate` on the row: it
+                        // deselected it, cleared the rail's highlight, and
+                        // destroyed the very content that had just been
+                        // clicked.
+                        const target = e.target as Element;
+                        if (
+                          target.closest('[role="treeitem"]') !==
+                          e.currentTarget
+                        ) {
+                          return;
+                        }
                         // A click focuses the row it lands on, so the tab
                         // stop follows it; leaving the stop behind means Tab
                         // and Shift+Tab return to a row nobody chose.
@@ -408,6 +456,14 @@ export function MemoryTable({
                           row={row}
                           tabIndex={detailNode.key === activeKey ? 0 : -1}
                           onKeyDown={(e) => onNodeKeyDown(detailNode, e)}
+                          onClick={(e) => {
+                            // The detail takes the focus and the tab stop,
+                            // the way any clicked node does, and changes
+                            // nothing else. The row's guard above is what
+                            // stops this same click also selecting.
+                            e.currentTarget.focus();
+                            setFocusKey(detailNode.key);
+                          }}
                         />
                       )}
                     </li>

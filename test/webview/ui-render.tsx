@@ -1804,6 +1804,57 @@ async function main() {
       if (!memText.includes("memory map (9)")) {
         problems.push('memory-regions-aen: missing "memory map (9)"');
       }
+
+      // ── a selection that arrives from the RAIL opens the row it lands on ──
+      //
+      // Run here, before anything has been clicked in the table, so exactly
+      // one row ends up selected and the check cannot be reading a leftover.
+      // The rail's `<g class="hit">` is a mouse-only affordance with no role
+      // and no tabIndex, so it takes a dispatched MouseEvent rather than
+      // `.click()` — jsdom puts `click()` on HTMLElement, and this is an
+      // SVGElement.
+      //
+      // The detail is the only surface carrying kind, authority, cores, note
+      // and reason. A rail click that highlights a row without opening it
+      // leaves the reader with a colour and no facts, and clicking that row
+      // in the table to get them would DESELECT it — two clicks to see
+      // anything. Nothing in this suite clicked the rail before, so drift
+      // here was invisible.
+      const railHit = container.querySelector('svg[role="img"] .hit');
+      if (!railHit) {
+        problems.push(
+          "memory-regions-aen: the rail draws no clickable span — the chart-driven selection cannot be checked",
+        );
+      } else {
+        railHit.dispatchEvent(
+          new (
+            window as unknown as { MouseEvent: typeof MouseEvent }
+          ).MouseEvent("click", { bubbles: true, cancelable: true }),
+        );
+        await settle();
+        const selectedRows = Array.from(
+          container.querySelectorAll(
+            'li[role="treeitem"][data-row][aria-selected="true"]',
+          ),
+        );
+        if (selectedRows.length !== 1) {
+          problems.push(
+            `memory-regions-aen: clicking a rail span selected ${selectedRows.length} row(s), want exactly 1`,
+          );
+        } else {
+          const picked = selectedRows[0];
+          if (picked.getAttribute("aria-expanded") !== "true") {
+            problems.push(
+              `memory-regions-aen: a rail click selected "${(picked.getAttribute("aria-label") || "").split(", ")[0]}" but left it aria-expanded="${picked.getAttribute("aria-expanded")}" — the reader gets a highlight and none of the facts`,
+            );
+          }
+          if (picked.querySelector(".detail") === null) {
+            problems.push(
+              "memory-regions-aen: a rail click selected a row whose detail is not in the DOM",
+            );
+          }
+        }
+      }
       // The authority label and the reason are now in the per-row DETAIL,
       // one interaction away rather than always visible (review round 1) —
       // select the row before checking for the text it reveals.
@@ -2007,6 +2058,25 @@ async function main() {
         // `[data-tier-group]`, not `[role="group"]`: every expanded row now owns
         // a group of its own, so the bare role counts those too.
         const groups = table.querySelectorAll("[data-tier-group]");
+        // `[data-tier-group]` is how the three are COUNTED (an expanded row
+        // owns a group of its own now, so the bare role over-counts), but a
+        // data attribute carries no semantics — so the role each of them
+        // must carry is asserted here, separately. Without it the tier `li`
+        // is a bare listitem inside `ul[role="tree"]`: not an allowed owned
+        // element, the `role="presentation"` wrapper re-parents the rows
+        // onto THAT instead of the tree, every group label is lost, and each
+        // toggle's `aria-controls` names a generic listitem. It is also the
+        // premise the rows' explicit `aria-level={1}` rests on — that the
+        // tier groups are sibling groupings under the tree, not parent
+        // nodes.
+        for (const g of Array.from(groups)) {
+          const role = g.getAttribute("role");
+          if (role !== "group") {
+            problems.push(
+              `memory-regions-aen: the "${g.getAttribute("data-tier-group")}" tier container carries ${role === null ? "no role at all" : `role="${role}"`}, want role="group" — a bare listitem is not an allowed owned element of a tree`,
+            );
+          }
+        }
         if (groups.length !== 3) {
           problems.push(
             `memory-regions-aen: ${groups.length} tier groups rendered, want exactly 3`,
@@ -2172,7 +2242,11 @@ async function main() {
 
           (unprovenToggle as HTMLButtonElement).click();
           await settle();
-          const reopenedGroup = container.querySelector(`#${controlsId}`);
+          // `getElementById`, not a `#${id}` selector. The id is a
+          // `useId()` value, and only React 19's selector-safe form survives
+          // interpolation into CSS — React 18's `:r0:` throws SyntaxError
+          // there. Its sibling above already reads the id this way.
+          const reopenedGroup = document.getElementById(controlsId);
           const rowsAfterReopen = reopenedGroup
             ? reopenedGroup.querySelectorAll('li[role="treeitem"][data-row]')
                 .length
@@ -2711,6 +2785,102 @@ async function main() {
               if (stillSelected !== 1) {
                 problems.push(
                   `memory-regions-aen: ${stillSelected} rows are selected after ArrowLeft, want exactly 1`,
+                );
+              }
+            }
+          }
+
+          // ── the CLICK twin of the ArrowLeft check above ──
+          //
+          // The keydown guard that stops a detail's key reaching its row had
+          // no counterpart on the click path, and `RowDetail` neither
+          // handled click nor stopped it propagating — so a click anywhere
+          // in the detail ran the ROW's handler. On a selected, expanded row
+          // that deselected it, cleared the rail's highlight and destroyed
+          // the very content that had just been clicked. Nothing in this
+          // suite clicked a detail node.
+          const expandedSelected = rowsNow().find(
+            (r) => r.getAttribute("aria-selected") === "true",
+          );
+          if (!expandedSelected) {
+            problems.push(
+              "memory-regions-aen: no selected row to open — the detail click cannot be checked",
+            );
+          } else {
+            const label = nameOf(expandedSelected);
+            if (expandedSelected.getAttribute("aria-expanded") !== "true") {
+              pressKey(expandedSelected, "ArrowRight");
+              await settle();
+            }
+            const openRow = nodeNamed(label);
+            const detail = openRow?.querySelector(
+              '[role="group"] > [role="treeitem"]',
+            );
+            if (!detail) {
+              problems.push(
+                `memory-regions-aen: "${shortName(label)}" could not be opened for the detail click`,
+              );
+            } else {
+              (detail as HTMLElement).click();
+              await settle();
+              const after = nodeNamed(label);
+              if (after?.getAttribute("aria-selected") !== "true") {
+                problems.push(
+                  `memory-regions-aen: clicking the detail DESELECTED "${shortName(label)}" — the click lands on the detail, which owns no selection, and the rail draws its highlight from that state`,
+                );
+              }
+              if (after?.getAttribute("aria-expanded") !== "true") {
+                problems.push(
+                  `memory-regions-aen: clicking the detail COLLAPSED "${shortName(label)}" — the click destroyed the content it landed on`,
+                );
+              }
+              if (after?.querySelector(".detail") === null) {
+                problems.push(
+                  `memory-regions-aen: clicking the detail of "${shortName(label)}" removed it from the DOM`,
+                );
+              }
+              if (document.activeElement === after) {
+                problems.push(
+                  `memory-regions-aen: clicking the detail moved the focus up to its row "${shortName(label)}" — the click belongs to the node it landed on`,
+                );
+              }
+            }
+          }
+          // And the same click on an UNSELECTED row's detail, which must not
+          // select it: the row-level handler running here is how an
+          // unselected row gained a selection nobody asked for.
+          const unselectedOpen = rowsNow().find(
+            (r) =>
+              r.getAttribute("aria-selected") === "false" &&
+              !r.hasAttribute("aria-disabled"),
+          );
+          if (!unselectedOpen) {
+            problems.push(
+              "memory-regions-aen: no unselected row to open — the second detail click cannot be checked",
+            );
+          } else {
+            const label = nameOf(unselectedOpen);
+            pressKey(unselectedOpen, "ArrowRight");
+            await settle();
+            const detail = nodeNamed(label)?.querySelector(
+              '[role="group"] > [role="treeitem"]',
+            );
+            if (!detail) {
+              problems.push(
+                `memory-regions-aen: ArrowRight did not open "${shortName(label)}" for the second detail click`,
+              );
+            } else {
+              (detail as HTMLElement).click();
+              await settle();
+              const after = nodeNamed(label);
+              if (after?.getAttribute("aria-selected") !== "false") {
+                problems.push(
+                  `memory-regions-aen: clicking the detail SELECTED "${shortName(label)}" — a detail click carries no selection`,
+                );
+              }
+              if (document.activeElement === after) {
+                problems.push(
+                  `memory-regions-aen: clicking an unselected row's detail yanked the focus up to the row "${shortName(label)}"`,
                 );
               }
             }
@@ -3818,16 +3988,26 @@ async function main() {
   // `g.__ALP_*__` globals are already careful to avoid.
   g.__ALP_TEST_CHART_WIDTH__ = 0;
 
-  // ── every IDREF target in the DOCUMENT is unique ──
+  // ── the tier-group and tabpanel IDREF targets are unique ──
+  //
+  // SCOPED, and the label below says so. This does NOT check every `id` in
+  // the document: widened to `[id]` it reports live duplicates this task
+  // does not own, including `memory-authority-hatch` (MemoryChart.tsx),
+  // which is a harness artefact — production mounts one Build Plan panel per
+  // webview document, and the pattern is referenced from CSS as
+  // `fill: url(#memory-authority-hatch)`, which cannot take a generated id
+  // without restructuring how it is referenced. A gate whose name claims the
+  // document while measuring two selectors is a gate that reports PASS over
+  // a property that already fails.
   //
   // Placed here, after every pass, because that is the only point at which
-  // this is measurable: an `id` collision needs two of the same component
-  // mounted at once, and by now several passes have each left a Build Plan
-  // panel with its Memory tab open. Inside any ONE pass a hardcoded id looks
-  // perfectly correct — the element it names exists locally — which is
-  // exactly how `memory-table-group-yours` survived: `aria-controls` on
-  // panel five's toggle resolved to panel one's group, and every
-  // container-scoped check agreed with itself.
+  // even the scoped property is measurable: an `id` collision needs two of
+  // the same component mounted at once, and by now several passes have each
+  // left a Build Plan panel with its Memory tab open. Inside any ONE pass a
+  // hardcoded id looks perfectly correct — the element it names exists
+  // locally — which is exactly how `memory-table-group-yours` survived:
+  // `aria-controls` on panel five's toggle resolved to panel one's group,
+  // and every container-scoped check agreed with itself.
   const idBearing = Array.from(
     document.querySelectorAll("[data-tier-group], [role='tabpanel'][id]"),
   )
@@ -3838,16 +4018,16 @@ async function main() {
   );
   if (idBearing.length === 0) {
     problems.push(
-      "id-uniqueness: no tier group or tabpanel carried an id — this check measured nothing",
+      "tier-group/tabpanel-id-uniqueness: no tier group or tabpanel carried an id — this check measured nothing",
     );
   }
   if (duplicatedIds.length > 0) {
     problems.push(
-      `id-uniqueness: ${duplicatedIds.length} id(s) appear on more than one element — [${duplicatedIds.join(", ")}] — so every aria-controls naming one resolves to whichever panel rendered first`,
+      `tier-group/tabpanel-id-uniqueness: ${duplicatedIds.length} of these id(s) appear on more than one element — [${duplicatedIds.join(", ")}] — so every aria-controls naming one resolves to whichever panel rendered first`,
     );
   }
   console.log(
-    `  ${duplicatedIds.length === 0 && idBearing.length > 0 ? "PASS" : "FAIL"}  id-uniqueness: ${idBearing.length} tier-group and tabpanel ids, all distinct`,
+    `  ${duplicatedIds.length === 0 && idBearing.length > 0 ? "PASS" : "FAIL"}  tier-group/tabpanel-id-uniqueness: ${idBearing.length} ids scanned (tier groups and tabpanels only, NOT the whole document), all distinct`,
   );
 
   console.log(
