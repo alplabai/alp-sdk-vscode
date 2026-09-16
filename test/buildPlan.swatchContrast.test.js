@@ -71,6 +71,14 @@ const {
   hatchPatternIdInTsx,
   hatchPatternIdInCss,
 } = require("./helpers/gutterInk");
+const { readDistCss } = require("./helpers/distCss");
+
+/** Escapes a literal for use inside a `RegExp` — the hashed class names below
+ * are read out of the built CSS, not written by hand, so they can carry any
+ * of CSS Modules' hash characters. */
+function escapeForRegExp(literal) {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 const BUILD_PLAN_DIR = path.join(
   __dirname,
@@ -254,6 +262,69 @@ test("AuthoritySwatch actually renders a <span className={styles.swatch}> — ki
       "— it may return null (or something else) and paint nothing the CSS " +
       "module's rules can ever match",
   );
+});
+
+// ---------------------------------------------------------------------------
+// The swatch's [data-tier] rules, against the BUILT artifact (Task 6).
+//
+// Carried forward from Task 2, where it was correctly impossible: every check
+// above reads AuthoritySwatch.module.css's SOURCE, because until Task 6
+// nothing imported `AuthorityLegend`/`AuthoritySwatch` and `dist/main.css`
+// carried zero `data-tier` rules at all — there was nothing built to read.
+// `MemoryTable` (Task 4) already renders `<AuthoritySwatch>` per row, so by
+// the time this task lands the rules are almost certainly in the bundle
+// already; rendering `AuthorityLegend` in `MemoryRegions.tsx` is what makes
+// this the first task that can assert it, not what first causes it.
+//
+// ANCHORED ON THE SWATCH'S OWN HASHED CLASS, not on any hashed class
+// followed by `[data-tier=...]` — the same mistake `chartContrast.test.js`'s
+// gutter check corrected after a round-2 review proved an unscoped regex
+// stayed green with every `.gutter[data-tier]` rule deleted, because
+// `AuthoritySwatch.module.css`'s OWN `.swatch[data-tier="…"]` rules
+// satisfied it instead. Here the risk runs the other way: `MemoryChart`'s
+// authority gutter (MemoryChart.module.css) paints the identical three-tier
+// vocabulary as SVG `fill` in the SAME bundle, so a bare `[data-tier=` match
+// would stay green on the gutter's rules alone even with every one of the
+// swatch's own deleted.
+//
+// `builtSwatchClass` finds `.swatch`'s hashed name through `width: 6px` — a
+// single declaration confirmed unique across the WHOLE built stylesheet
+// (`dist/main.css` today has exactly one occurrence of the literal
+// `width:6px`), the same one-property-unique-to-it idiom
+// `chartContrast.test.js`'s `builtGutterClass` uses for `.gutter`'s own
+// `pointer-events: none`. `background:`, not `fill:`, is what tells the two
+// components' rules apart even when both carry `[data-tier="…"]` —
+// `AuthoritySwatch.module.css` paints an HTML `<span>`, `MemoryChart`'s
+// gutter an SVG `<rect>` — but the width anchor already scopes the match to
+// the right class before that distinction would even matter.
+function builtSwatchClass(distCss) {
+  const re = /\._([\w-]+)\{[^}]*\bwidth:6px\b[^}]*\}/;
+  const m = re.exec(distCss);
+  if (!m) {
+    throw new Error(
+      "could not find the built .swatch base rule (width: 6px) in " +
+        "dist/main.css — run `pnpm run compile`",
+    );
+  }
+  return m[1];
+}
+
+test("the swatch's three [data-tier] rules survive the build (verified against the built artifact, not just source)", () => {
+  const distCss = readDistCss();
+  const swatchClass = builtSwatchClass(distCss);
+  for (const tier of ["yours", "locked", "unproven"]) {
+    const re = new RegExp(
+      `\\._${escapeForRegExp(swatchClass)}\\[data-tier=(?:"${tier}"|${tier})\\]`,
+    );
+    assert.ok(
+      re.test(distCss),
+      `dist/main.css has no ._${swatchClass}[data-tier=${tier}] rule — CSS ` +
+        "Modules source alone cannot show this: the class is hashed at " +
+        "build time and only the compiled output proves the rule reaches " +
+        "a real selector, not the memory chart's authority gutter's " +
+        "identically-shaped one",
+    );
+  }
 });
 
 // ---------------------------------------------------------------------------

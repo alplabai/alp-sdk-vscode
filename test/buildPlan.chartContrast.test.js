@@ -63,6 +63,7 @@ const {
   contrast,
   parseColor,
 } = require("./helpers/vscodeThemes");
+const { readDistCss } = require("./helpers/distCss");
 
 const SRC = path.join(__dirname, "..", "packages", "alp-webview", "src");
 const TOKENS_CSS = fs.readFileSync(
@@ -77,26 +78,6 @@ const BUTTON_CSS = fs.readFileSync(
   path.join(SRC, "shared", "ui", "Button", "Button.module.css"),
   "utf8",
 );
-const DIST_CSS_PATH = path.join(SRC, "..", "dist", "main.css");
-
-/** The BUILT stylesheet — required for anything that depends on how CSS
- * Modules hashes a class name, because the source alone cannot show whether
- * a rule actually reaches a real selector once built. `pnpm test` always
- * compiles first, so this is normally present; run `pnpm run compile` before
- * running this file standalone. */
-function readDistCss() {
-  try {
-    return fs.readFileSync(DIST_CSS_PATH, "utf8");
-  } catch {
-    throw new Error(
-      `${DIST_CSS_PATH} is missing — run \`pnpm run compile\` first. This ` +
-        "file asserts the gutter's [data-tier] rules against the BUILT " +
-        "artifact, not the CSS Modules source: a class name is hashed at " +
-        "build time, and reading only the source cannot tell a working " +
-        "selector from dead markup.",
-    );
-  }
-}
 
 /** The exact (hashed) local class name the BUILT `dist/main.css` uses for
  * `.gutter`'s own BASE rule (`pointer-events: none` — its full body, and the
