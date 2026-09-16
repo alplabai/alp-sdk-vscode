@@ -1205,7 +1205,20 @@ pnpm run compile
 ```
 
 ```bash
+pnpm run typecheck
+```
+
+```bash
 pnpm test
+```
+
+`pnpm test` is `pnpm run compile && node --test test/*.test.js` — a
+non-recursive glob that can never match `test/webview/ui-render.tsx`, where
+most of this branch's coverage lives. The render harness is a separate gate
+and has to be run too:
+
+```bash
+pnpm run test:e2e:webview
 ```
 
 ```bash
@@ -1220,11 +1233,20 @@ Expected: every one green. Report the real test counts.
 
 - [ ] **Step 5: Verify commit hygiene across the branch**
 
+Commit messages:
+
 ```bash
-git log --format=%B origin/dev..HEAD | grep -iE 'claude-session|co-authored|claude\.ai'
+git log --format=%B origin/dev..HEAD | rg -i -e 'claude-session' -e 'co-authored' -e 'claude\.ai'
 ```
 
-Expected: no output.
+And the committed file CONTENT, for the same patterns plus local absolute
+paths — a public repository ships neither:
+
+```bash
+git diff origin/dev..HEAD | rg -n -i -e '^\+.*claude-session' -e '^\+.*co-authored' -e '^\+.*claude\.ai' -e '^\+.*/Users/' -e '^\+.*C:\\\\Users' -e '^\+.*OneDrive'
+```
+
+Expected: no output from either.
 
 - [ ] **Step 6: Commit**
 

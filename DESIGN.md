@@ -273,20 +273,46 @@ two 4% chrome bars, 1.111–1.202 for the 8% card header. The percentage is the 
 4% for a chrome bar (the Overview header and the configurator's `.topbar` and
 `.footer` both use it), 8% one level deeper for a card header (`.advHead`).
 
-**The Region-Frame Rule (#484 phase 2).** A SoM region frame in the Build
-Plan panel's Memory tab strokes at `{colors.border-default}`, 1px, with no
-fill by default — never a hatch, never the six-colour chart series
-palette, which stays with the spans a region sits behind. Three of the
-six authority classes add a wash of `{colors.text-primary}`, falling with
-authority: `customer_runtime` 12% and a solid stroke, `customer_image` 8%
-plus a `3 1` dash, `locked` 4% plus a `2 2` dash. The dash is what tells
-`customer_runtime` from `customer_image` apart at a glance — both sit
-under the span's own 30%-opacity fill, where a 12-vs-8% difference in the
-frame underneath is not reliably legible on its own. `reserved` (`1 3`,
-mostly gap) and `composite` (`4 2`, mostly dash) drop the wash back to no
-fill and carry a dash pattern alone. `unstated` drops the dash too, and is
-told apart the only other way this rule has left: its stroke itself swaps
-to `{colors.text-secondary}` rather than `{colors.border-default}`.
+**The Authority-Swatch Rule (#484).** Write authority in the Build Plan
+panel's Memory tab is drawn achromatically, in exactly two places: an SVG
+gutter down the side of the memory rail, and a swatch at the head of every
+table row. Three tiers — `yours`, `locked`, `unproven` — all derive from
+`{colors.text-primary}`, and they are separated by fill density and by a
+hatch, never by hue: `yours` is solid ink, `locked` a 71% flat fill, and
+`unproven` a `-45deg` hatch, 2px on and 2px off, at full ink. Hue belongs to
+the six-colour chart series, which stays with the spans the rail draws; an
+authority tier that borrowed one would be claiming to report state (the
+Status-Only Color Rule). The hatch is also why `yours` and `unproven` may
+share a colour outright: pattern carries that distinction, so it survives a
+greyscale display and does not rest on lightness alone.
+
+A three-item legend sits permanently above the chart — not on hover, not
+collapsed. A vocabulary the reader has to discover is a vocabulary that gets
+misread.
+
+Two criteria, both measured from the built `dist/main.css` rather than from
+the source — `color-mix()` and a CSS Modules class name are not what ships —
+across the five out-of-the-box themes `test/helpers/vscodeThemes.js` carries:
+Dark+, Light+, 2026 Dark, High Contrast Dark and High Contrast Light.
+
+- Every tier on its own clears 3:1 against `{colors.surface-bg}`. 71% is the
+  lowest whole percentage at which `locked` does, Light+ being the tightest
+  of the five at 3.06:1; the 55% this started from measured 2.28:1 there.
+- Every PAIR of tiers is distinguishable. A pair whose patterns differ is
+  already distinguishable and needs no ink check at all; a pair that shares a
+  pattern — only `yours` against `locked`, both flat fills — needs its ink
+  1.5:1 apart, because density is the only channel it has left.
+
+`test/buildPlan.swatchContrast.test.js` holds both the row swatch and the
+rail gutter to both criteria, and pins the set of `[data-tier]` rules to the
+`AuthorityTier` union, so a renamed or dropped tier fails the build instead
+of quietly stopping being measured.
+
+Three tiers are the first glance, not the record. Every row still carries its
+exact `MemoryAuthorityClass` — `customer_runtime`, `customer_image`,
+`locked`, `reserved`, `composite`, `unstated` — in its accessible name and in
+its expanded detail, so a declared `reserved` and a fail-closed `unstated`
+never claim to be the same thing.
 
 **The Selected-Not-Suggested Rule.** `{colors.accent}` marks what is currently
 selected — an active toggle, a chosen segment. It never marks what to do next.
@@ -407,6 +433,25 @@ in a workbench floats.
 covers content it does not own — today, exactly one dropdown. A card, a row, a
 button, or a panel that reaches for a shadow is solving a hierarchy problem
 that a border and a tonal shift should have solved.
+
+**The Pointer-Intent Rule (#484).** An element that paints nothing must
+declare what it does to the pointer. `transparent` is `rgba(0, 0, 0, 0)`,
+not `none`, and an alpha-zero fill is still *painted* — so under the SVG
+default `pointer-events: visiblePainted` an invisible overlay hit-tests above
+everything beneath it. The Memory tab's rail shipped exactly that: a
+full-width `fill: transparent` rect, emitted last, existing only to catch the
+pointer for an address readout, swallowing every click meant for a band
+underneath while those bands advertised `cursor: pointer`. Either value is a
+real answer — `none` for a decoration drawn over content, anything else for a
+deliberate hit area — so what is refused is saying nothing, which is what
+silently inherits `visiblePainted`.
+`test/buildPlan.pointerEvents.test.js` enforces this over every
+`*.module.css` under the build-plan feature, from a globbed and floored file
+list rather than a typed-out one, and separately holds the classes that exist
+to be drawn *over* the rail rather than hit — today the authority gutter — to
+`pointer-events: none` by name. A stylesheet cannot see document order, so
+the gate cannot check the other half of the remedy; what it can do is force
+the author to state the intent.
 
 ## Shapes
 
