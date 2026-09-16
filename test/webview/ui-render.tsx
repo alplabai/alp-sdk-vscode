@@ -1741,7 +1741,7 @@ async function main() {
     );
   }
 
-  // ── the SoM region backdrop, rpmsg-aen (#484 phase 2) ──
+  // ── the SoM region table, rpmsg-aen (#484 phase 2) ──
   // A real emitted golden with a resolved region table: mcuboot / two image
   // slots / reserved / storage / atoc all resolve, mram_main does not. Runs
   // the real parser + narrower, exactly like feedState() above.
@@ -3175,11 +3175,11 @@ async function main() {
       }
     }
     console.log(
-      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-aen: the SoM region backdrop`,
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-aen: the SoM region table`,
     );
   }
 
-  // ── the SoM region backdrop, rpmsg-v2n (#484 phase 2) ──
+  // ── the SoM region table, rpmsg-v2n (#484 phase 2) ──
   // Three soc_derived regions, kind "unresolved" on every row (never
   // authored write_authority), and two of the three fall outside the
   // (unchanged) chart window.

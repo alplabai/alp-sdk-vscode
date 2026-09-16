@@ -4,8 +4,9 @@
 //
 // THE SoM's OWN REGION TABLE — mcuboot / slot0 / reserved / storage / the
 // Secure-Enclave ATOC band — now DOES reach this view: alp-sdk#1365 landed
-// `memory[]` on `system-manifest-v1` (alp-sdk#2030), and `MemoryChart`
-// draws each resolved region as a backdrop frame behind the spans. The
+// `memory[]` on `system-manifest-v1` (alp-sdk#2030), and `MemoryChart` draws
+// each resolved region's write-authority tier as a 6-unit block in the SVG
+// gutter immediately left of the rail — never a frame behind the bands. The
 // table below the map is `MemoryTable` (#484 phase 3) — ONE address-ordered
 // table, region rows and placed-span rows together, replacing the two
 // separate lists this file used to render side by side. Absent when the

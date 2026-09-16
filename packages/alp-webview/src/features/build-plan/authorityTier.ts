@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Six authority classes, three visible tiers. The six are NOT collapsed
-// away: every row still carries its exact class name in its accessible name
-// and in its expanded detail, so a declared `reserved` and a fail-closed
-// `unstated` never claim to be the same thing. What the tier collapses is
+// away: every row still carries its exact class name in its accessible
+// name, and its expanded detail carries the prose `authorityLabel()` derives
+// from that class ("no writer · reserved" against "authority not declared"),
+// so a declared `reserved` and a fail-closed `unstated` never claim to be
+// the same thing. The class name itself reaches the detail node only as the
+// `data-class` attribute the stylesheet keys off, never as rendered text.
+// What the tier collapses is
 // the FIRST GLANCE, where a six-item key is past the four-item limit a
 // reader can hold, and where the one question being asked is "may I write
 // here" — for which `reserved`, `composite` and `unstated` all answer the

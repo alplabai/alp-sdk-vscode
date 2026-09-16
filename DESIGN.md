@@ -147,7 +147,7 @@ Alp IDE is a guest in someone else's house, and it behaves like one. The panels
 render inside VS Code, next to the user's editor, in the theme the user chose
 years ago and has not thought about since — and the correct reaction to an Alp
 panel is no reaction at all. It should read as workbench chrome. The system
-therefore owns no palette: every color in 3,821 lines of CSS resolves through
+therefore owns no palette: every color in 5,513 lines of CSS resolves through
 `var(--vscode-*)`, and the only literal color values in the product are second
 arguments inside `var()` fallbacks and one boot-failure message that renders
 when React never mounted. The brand is not a color. It is the masked `ALP LAB`
@@ -242,10 +242,14 @@ in both directions, without a single override.
   figure does not apply there. Fine for a divider the eye reads past, not
   for a line that IS the information.
 - **Chart Stroke** (`{colors.border-chart}`, aliased from
-  `{colors.text-secondary}`): the memory chart's rail frame, axis ticks and
-  inter-rail bracket — meaning-bearing strokes that need the 3:1 non-text
-  floor `{colors.border-default}` cannot clear. Never used for a decorative
-  divider; those stay on `{colors.border-default}`.
+  `{colors.text-secondary}`): the memory chart's rail frame, its computed
+  power-of-two axis marks, and the zigzag standing in for a compressed gap —
+  meaning-bearing strokes that need the 3:1 non-text floor
+  `{colors.border-default}` cannot clear. A DECLARED boundary — a real span,
+  budget or region edge — takes `{colors.text-primary}` instead, the
+  strongest ink the panel has, so arithmetic convenience can never be read as
+  a declared edge. Never used for a decorative divider; those stay on
+  `{colors.border-default}`.
 - **Focus Ring** (`{colors.border-focus}`): a 1px outline, keyboard-only.
 
 ### Named Rules
@@ -286,14 +290,19 @@ Status-Only Color Rule). The hatch is also why `yours` and `unproven` may
 share a colour outright: pattern carries that distinction, so it survives a
 greyscale display and does not rest on lightness alone.
 
-A three-item legend sits permanently above the chart — not on hover, not
-collapsed. A vocabulary the reader has to discover is a vocabulary that gets
-misread.
+The three-item legend sits permanently — not on hover, not collapsed. A
+vocabulary the reader has to discover is a vocabulary that gets misread. Two
+copies of it render today: one above the chart, one at the head of the table.
 
-Two criteria, both measured from the built `dist/main.css` rather than from
-the source — `color-mix()` and a CSS Modules class name are not what ships —
-across the five out-of-the-box themes `test/helpers/vscodeThemes.js` carries:
-Dark+, Light+, 2026 Dark, High Contrast Dark and High Contrast Light.
+Two criteria, measured across the five out-of-the-box themes
+`test/helpers/vscodeThemes.js` carries: Dark+, Light+, 2026 Dark, High
+Contrast Dark and High Contrast Light. Both are computed from the tokens the
+stylesheets themselves declare — `AuthoritySwatch.module.css` for the row
+swatch, `MemoryChart.module.css` for the rail gutter — with each
+`color-mix()` resolved against that theme's own defaults. The built
+`dist/main.css` answers a separate question the source cannot: a CSS Modules
+class name is hashed, so only the compiled output shows that every
+`[data-tier]` rule still reaches a real selector rather than dead markup.
 
 - Every tier on its own clears 3:1 against `{colors.surface-bg}`. 71% is the
   lowest whole percentage at which `locked` does, Light+ being the tightest
@@ -310,9 +319,14 @@ of quietly stopping being measured.
 
 Three tiers are the first glance, not the record. Every row still carries its
 exact `MemoryAuthorityClass` — `customer_runtime`, `customer_image`,
-`locked`, `reserved`, `composite`, `unstated` — in its accessible name and in
-its expanded detail, so a declared `reserved` and a fail-closed `unstated`
-never claim to be the same thing.
+`locked`, `reserved`, `composite`, `unstated` — in its accessible name, and
+its expanded detail carries the prose `authorityLabel()` derives from that
+class: "no writer · reserved" against "authority not declared", so a declared
+`reserved` and a fail-closed `unstated` never claim to be the same thing. The
+class name itself reaches the detail node only as the `data-class` attribute
+the stylesheet keys its `locked` and `customer_image` treatments off — a
+styling hook, not rendered text. Nothing in these stylesheets writes an
+attribute back out as text with `content: attr(…)`.
 
 **The Selected-Not-Suggested Rule.** `{colors.accent}` marks what is currently
 selected — an active toggle, a chosen segment. It never marks what to do next.
@@ -364,12 +378,13 @@ the largest text in the system is seven pixels bigger than the smallest.
 `--vscode-font-size` — the workbench UI font size VS Code injects into every
 webview as a constant 13px, tied to no setting of the user's; `editor.fontSize`
 feeds a different variable, `--vscode-editor-font-size`, that this system never
-reads, so raising it moves nothing here. One literal px is sanctioned and named
-rather than silently made: `.apertureLabel`'s `9px`
-(`MemoryChart.module.css`) sits inside a 9-unit rotated bar (`APERTURE_W`)
-whose own width is the constraint, not reading size, and
-`test/buildPlan.typeScale.test.js`'s `SANCTIONED` list gates that the reason
-still holds.
+reads, so raising it moves nothing here. No literal px is sanctioned in the
+Build Plan panel any more: `test/buildPlan.typeScale.test.js`'s `SANCTIONED`
+list is empty, and the one entry it ever carried — `.apertureLabel`'s `9px`,
+pinned to the 9-unit rotated bar it ran down rather than to reading size —
+went with the rotated label itself, the aperture's name now reaching an
+`aria-label` instead of the drawing. A future carve-out is a new named entry
+carrying its own fact, never that one reopened.
 
 **The Uppercase Label Rule.** Uppercase plus letter-spacing is reserved for
 section labels (0.04em in shared layout, 0.7px in the Overview). Buttons,
@@ -401,11 +416,15 @@ how much each tile must say. Toolbars and chip rows simply `flex-wrap`.
 
 ### Named Rules
 
-**The No-Breakpoint Rule.** The system ships zero width-based media queries. The
-only four `@media` blocks in the entire codebase are
+**The No-Breakpoint Rule.** The system ships zero width-based media queries. All
+five `@media` blocks in the entire codebase are
 `prefers-reduced-motion: reduce`. A panel can be 300px wide docked in the
 sidebar or 2000px wide as a full tab, and the same grid handles both. Adding a
 breakpoint means the intrinsic layout was wrong first.
+`test/buildPlan.noBreakpoints.test.js` enforces this case-insensitively over
+a globbed list of the Build Plan panel's own stylesheets, so a file added to
+that feature is in scope the day it lands; no gate covers the other feature
+directories, and the codebase-wide half of this rule rests on review.
 
 **The Two-Measure Rule.** Card grids, tables, and toolbars take
 `--content-max` and use the whole window. A paragraph takes `--prose-max` and
@@ -413,7 +432,7 @@ does not. These are different jobs and must not share one cap.
 
 ## Elevation & Depth
 
-This system is flat, and not by accident. In 3,821 lines of CSS there is
+This system is flat, and not by accident. In 5,513 lines of CSS there is
 exactly one `box-shadow`. Depth is carried by a 1px border and a tonal shift:
 `{colors.surface-hover}` for interactive response, `{colors.border-widget}` for
 structural separation, and a `color-mix(in srgb, var(--text-primary) 4%,

@@ -159,10 +159,11 @@
   color: var(--text-primary);
 }
 
-/* customer_image vs. customer_runtime: the label text already says which
- * is which, but the chart's backdrop frame ALSO tells them apart by stroke
- * pattern (dashed vs. solid) — this italic gives the table the same
- * non-colour distinction (#484 §2's "stay visually distinct"). */
+/* customer_image vs. customer_runtime: both collapse to the `yours` tier, so
+ * the swatch and the rail gutter draw them identically and the drawing tells
+ * them apart nowhere. The label text says which is which, and this italic is
+ * the only other channel carrying it — a non-colour one, so it survives a
+ * greyscale display. */
 .detailAuthority[data-class="customer_image"] {
   font-style: italic;
 }
