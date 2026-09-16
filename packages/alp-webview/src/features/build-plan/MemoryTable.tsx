@@ -409,19 +409,29 @@ export function MemoryTable({
                         // the deepest element under the pointer, so a plain
                         // `target !== currentTarget` would reject a click on
                         // the row's OWN name or size cell too. The question
-                        // is which treeitem the click belongs to — and a
-                        // click inside the detail belongs to the detail,
-                        // which owns no selection.
+                        // is which node the click belongs to — and a click in
+                        // the detail, or in the GROUP WRAPPING it, belongs to
+                        // the detail, which owns no selection.
                         //
-                        // Before this, clicking the detail of a selected,
-                        // expanded row ran `activate` on the row: it
-                        // deselected it, cleared the rail's highlight, and
-                        // destroyed the very content that had just been
-                        // clicked.
+                        // `[role="group"]` is in the selector, not just
+                        // `[role="treeitem"]`. Asking only for the nearest
+                        // treeitem answers THE ROW for a click landing on the
+                        // detail's own `<ul role="group">` wrapper — the
+                        // guard passed, `activate` ran, and a selected
+                        // expanded row was deselected and closed by a click
+                        // on the strip around its own content. Latent only
+                        // by stylesheet accident today (the wrapper has no
+                        // padding and its single flex child fills it), and
+                        // one padding, margin or second child arms it.
+                        //
+                        // A group the row owns is not the row, so the nearest
+                        // node of EITHER kind is the answer, and it is the
+                        // row only for the row's own cells.
                         const target = e.target as Element;
                         if (
-                          target.closest('[role="treeitem"]') !==
-                          e.currentTarget
+                          target.closest(
+                            '[role="treeitem"], [role="group"]',
+                          ) !== e.currentTarget
                         ) {
                           return;
                         }

@@ -305,9 +305,30 @@
   cursor: pointer;
 }
 
-/* Transparent overlay: it exists to catch the pointer for the readout. */
+/* The pointer catcher for the live address readout — an INVISIBLE HIT AREA,
+   stated as one.
+
+   It used to be `fill: transparent` and nothing else. `transparent` is
+   `rgba(0, 0, 0, 0)`, which under the SVG default `pointer-events:
+   visiblePainted` is still PAINTED — so this rect, emitted last and covering
+   the whole rail, hit-tested above every `.hit` band and swallowed every
+   click meant for one. The chart's only interactive affordance was
+   unreachable by any input, in a browser, while advertising `cursor:
+   pointer`.
+
+   `fill: none` paints nothing at all and `pointer-events: all` says outright
+   that this element is here to be hit regardless — the canonical invisible
+   hit area, and an explicit claim rather than a side effect of an alpha
+   value. The rect also moved BELOW the bands in document order
+   (MemoryChart.tsx), which is what actually lets a band win the click; this
+   declaration is what keeps the intent readable and auditable.
+
+   An invisible paint with NO `pointer-events` declaration at all is the
+   shape that caused this, and test/buildPlan.pointerEvents.test.js refuses
+   it. */
 .hover {
-  fill: transparent;
+  fill: none;
+  pointer-events: all;
 }
 
 .hoverLine {

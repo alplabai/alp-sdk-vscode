@@ -45,6 +45,7 @@ import type {
 import { tierOf } from "./authorityTier";
 import { formatAddress, formatBytes } from "./format";
 import styles from "./MemoryChart.module.css";
+import { railBoundaries, zigzagPath } from "./railGeometry";
 import { layoutRail, type RailLayout } from "./railScale";
 import {
   budgetEnd,
@@ -248,73 +249,6 @@ export function seriesIndex(spans: MemorySpan[]): Map<string, number> {
   return out;
 }
 
-/**
- * Every declared address a rail's piecewise scale must land on exactly, and
- * the intervals something actually occupies — the two arguments
- * `layoutRail` (railScale.ts) turns into a piecewise `y(address)`.
- *
- * A DECLARED address is a span's base, a span's own end, a slot image's
- * `tan size` budget end, or a resolved region's own lo/hi — never a
- * `binaryTicks`-computed value, which is arithmetic convenience, not a fact
- * about anything real. `occupied` is built from the SAME sources as
- * `boundaries`, by construction: every occupied interval's own lo/hi is
- * pushed into `boundaries` in the same pass, which is what keeps
- * `layoutRail`'s own invariant (every occupied endpoint appears in
- * boundaries) true without a second, easy-to-drift bookkeeping pass.
- *
- * A span with a base but no size (a marker) contributes its base to
- * `boundaries` but no interval to `occupied` — a point has no width to
- * compress or to keep from compressing, and its surrounding run is decided
- * by whatever else covers that space.
- */
-function railBoundaries(
-  spans: MemorySpan[],
-  budgets: Map<string, SliceSize>,
-  regions: ResolvedRegion[],
-): { boundaries: number[]; occupied: Array<{ lo: number; hi: number }> } {
-  const boundaries: number[] = [];
-  const occupied: Array<{ lo: number; hi: number }> = [];
-  for (const s of spans) {
-    if (s.base === null) continue;
-    boundaries.push(s.base);
-    const end = endOf(s);
-    if (end !== null) {
-      boundaries.push(end);
-      occupied.push({ lo: s.base, hi: end });
-    }
-    const bEnd = budgetEnd(s, budgets.get(s.label));
-    if (bEnd !== null) {
-      boundaries.push(bEnd);
-      occupied.push({ lo: s.base, hi: bEnd });
-    }
-  }
-  for (const r of regions) {
-    boundaries.push(r.lo, r.hi);
-    occupied.push({ lo: r.lo, hi: r.hi });
-  }
-  return { boundaries, occupied };
-}
-
-/**
- * A "torn edge" across the rail's width, marking a run of address space the
- * piecewise scale compressed rather than drew to scale. Ten teeth regardless
- * of `width`, so the mark reads the same at every rail width this panel
- * draws — a jagged rule is a convention read by its SHAPE, not by counting
- * its teeth.
- */
-function zigzagPath(x: number, yMid: number, width: number): string {
-  const teeth = 10;
-  const amplitude = 3;
-  const step = width / teeth;
-  const points: string[] = [];
-  for (let i = 0; i <= teeth; i++) {
-    const px = x + i * step;
-    const py = yMid + (i % 2 === 0 ? -amplitude : amplitude);
-    points.push(`${i === 0 ? "M" : "L"}${px},${py}`);
-  }
-  return points.join(" ");
-}
-
 interface RailProps {
   win: Window;
   layout: RailLayout;
@@ -379,8 +313,31 @@ function Rail({
     return boundaryYs.every((by) => Math.abs(pos - by) >= TICK_LABEL_H);
   });
 
+  // THE READOUT'S POINTER TRACKING, on this component's root rather than on
+  // the catcher rect below it. `.svg` (MemoryChart.module.css) overrides
+  // neither width nor height, so the svg renders at exactly its own
+  // `viewBox` size and a client offset inside it IS a viewBox coordinate —
+  // which is what lets this read the same number the old handler computed
+  // from the rect's own box, from an ancestor the bands bubble up to as
+  // well. jsdom computes no layout, so its zero-height box is a no-op here
+  // rather than a wrong answer.
   return (
-    <g>
+    <g
+      onMouseMove={(e) => {
+        const box = e.currentTarget.ownerSVGElement?.getBoundingClientRect();
+        if (!box || box.height === 0) return;
+        const vx = e.clientX - box.left;
+        const vy = e.clientY - box.top;
+        // The same region the catcher rect covered, so the readout's trigger
+        // area is unchanged by moving the handler up here.
+        if (vx < x || vx > x + width || vy < PLOT_TOP || vy > PLOT_BOTTOM) {
+          setHover(null);
+          return;
+        }
+        setHover(layout.addressAt(vy));
+      }}
+      onMouseLeave={() => setHover(null)}
+    >
       {boundaryAddrs.map((addr) => (
         <g key={`tick-${addr}`} data-tick="boundary">
           <line
@@ -508,6 +465,27 @@ function Rail({
         );
       })}
 
+      {/* The pointer catcher for the live address readout, and it sits
+       *  BEFORE the bands on purpose. SVG hit-tests the topmost PAINTED
+       *  element, and `transparent` is `rgba(0,0,0,0)` — painted, not
+       *  absent — so as the last child this rect covered the whole rail and
+       *  swallowed every click meant for the `.hit` bands below it: the
+       *  chart's only interactive affordance was unreachable by any input.
+       *  Underneath them it still catches the pointer everywhere nothing
+       *  else is drawn, while a band wins the click wherever one is.
+       *
+       *  It carries no handlers of its own: the readout is driven from this
+       *  component's root `<g>`, so the pointer moving over a BAND updates
+       *  it too — a handler on this rect alone would have frozen the
+       *  readout the moment the bands stopped being above it. */}
+      <rect
+        className={styles.hover}
+        x={x}
+        y={PLOT_TOP}
+        width={width}
+        height={PLOT_BOTTOM - PLOT_TOP}
+      />
+
       {spans.map((s) => {
         if (s.base === null) return null;
         const end = endOf(s);
@@ -558,22 +536,6 @@ function Rail({
         );
       })}
 
-      {/* Live address readout. */}
-      <rect
-        className={styles.hover}
-        x={x}
-        y={PLOT_TOP}
-        width={width}
-        height={PLOT_BOTTOM - PLOT_TOP}
-        onMouseMove={(e) => {
-          const box = e.currentTarget.getBoundingClientRect();
-          const ratio = (e.clientY - box.top) / box.height;
-          setHover(
-            layout.addressAt(PLOT_TOP + ratio * (PLOT_BOTTOM - PLOT_TOP)),
-          );
-        }}
-        onMouseLeave={() => setHover(null)}
-      />
       {hover !== null && (
         <g pointerEvents="none">
           <line

@@ -2886,6 +2886,85 @@ async function main() {
             }
           }
 
+          // ── the detail's GROUP WRAPPER, the third shape of the same
+          //    question ──
+          //
+          // Asking for the nearest `[role="treeitem"]` answers THE ROW when
+          // the click lands on the detail's own `<ul role="group">`, so the
+          // guard passed and the row was activated: bit for bit the symptom
+          // the detail-click guard exists to end, through a different pixel.
+          // The keydown path is immune — a `<ul>` is not focusable, so a
+          // keydown can never target one — which is why only a click check
+          // can see it.
+          //
+          // Latent today by stylesheet accident (the wrapper has no padding
+          // and its single flex child fills it), so nothing is exposed to a
+          // pointer. One padding on the wrapper, one margin on the detail,
+          // or a second child in that group arms it.
+          const wrapperHost = rowsNow().find(
+            (r) => r.getAttribute("aria-expanded") === "true",
+          );
+          const wrapper = wrapperHost?.querySelector('[role="group"]');
+          if (!wrapperHost || !wrapper) {
+            problems.push(
+              "memory-regions-aen: no expanded row with a detail group — the wrapper click cannot be checked",
+            );
+          } else {
+            const label = nameOf(wrapperHost);
+            const wasSelected = wrapperHost.getAttribute("aria-selected");
+            (wrapper as HTMLElement).click();
+            await settle();
+            const after = nodeNamed(label);
+            if (after?.getAttribute("aria-selected") !== wasSelected) {
+              problems.push(
+                `memory-regions-aen: clicking the detail's group wrapper changed the selection of "${shortName(label)}" from "${wasSelected}" to "${after?.getAttribute("aria-selected")}" — a group the row owns is not the row`,
+              );
+            }
+            if (after?.getAttribute("aria-expanded") !== "true") {
+              problems.push(
+                `memory-regions-aen: clicking the detail's group wrapper COLLAPSED "${shortName(label)}"`,
+              );
+            }
+            if (after?.querySelector(".detail") === null) {
+              problems.push(
+                `memory-regions-aen: clicking the detail's group wrapper removed the detail of "${shortName(label)}" from the DOM`,
+              );
+            }
+          }
+
+          // The other half, and it is the half a blunter guard breaks: every
+          // cell the ROW owns must still activate it. A guard written as a
+          // plain `target !== currentTarget` would pass the wrapper check
+          // above and fail all of these, which is why both directions are
+          // here.
+          for (const cell of [
+            '[data-col="name"]',
+            '[data-col="range"]',
+            '[data-col="size"]',
+            '[data-col="swatch"]',
+          ]) {
+            const host = rowsNow().find(
+              (r) =>
+                r.getAttribute("aria-selected") === "false" &&
+                !r.hasAttribute("aria-disabled") &&
+                r.querySelector(cell) !== null,
+            );
+            if (!host) {
+              problems.push(
+                `memory-regions-aen: no unselected row carries ${cell} — the row-cell click cannot be checked`,
+              );
+              continue;
+            }
+            const label = nameOf(host);
+            (host.querySelector(cell) as HTMLElement).click();
+            await settle();
+            if (nodeNamed(label)?.getAttribute("aria-selected") !== "true") {
+              problems.push(
+                `memory-regions-aen: clicking ${cell} did not select "${shortName(label)}" — the row's own cells must still activate it`,
+              );
+            }
+          }
+
           const space = pressKey(rowsNow()[0], " ");
           await settle();
           if (!space.defaultPrevented) {
