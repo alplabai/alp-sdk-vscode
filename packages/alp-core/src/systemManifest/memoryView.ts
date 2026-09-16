@@ -114,7 +114,7 @@ export interface MemorySpan {
    * fact from the manifest, so the offset is reported as an offset and the
    * absolute address stays absent here — a reader wanting the device's own
    * base joins `MemorySpan.device` to a `MemoryRegion.name` by hand, the way
-   * the region table and `MemoryRegionTable` do.
+   * the webview's `MemoryTable` does.
    */
   base: number | null;
   /** Offset within `device`, in bytes. Partitions only; `null` elsewhere. */

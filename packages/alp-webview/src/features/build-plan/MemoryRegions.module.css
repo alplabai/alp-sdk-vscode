@@ -20,6 +20,18 @@
   color: var(--text-secondary);
 }
 
+/* THE No-Breakpoint CONSTRUCTION (DESIGN.md; Task 8, #484 phase 4). Two
+   columns — `.mapSide` (the rail, narrow) and `.tableSide` (the unified
+   table, wide) — with NO width-based media query deciding between them;
+   `test/buildPlan.noBreakpoints.test.js` fails the build on one. Plain
+   `flex-wrap` does the collapsing instead: `.mapSide`'s own flex-basis
+   (400px) plus `.tableSide`'s (360px) plus this gap is the width AT WHICH
+   the second item stops fitting the first item's own line and wraps below
+   it — a continuous function of the container's own width, not a step at a
+   hand-picked viewport size. A 300px sidebar stacks them; a 2000px tab sits
+   them side by side with the table absorbing every extra unit — the same
+   two rules answer both, which is the whole point of the rule this gate
+   enforces. */
 .map {
   display: flex;
   gap: var(--space-5);
@@ -27,228 +39,46 @@
   flex-wrap: wrap;
 }
 
-/* THE COLUMN SHRINKS; THE DRAWING DOES NOT. `flex: none` plus the default
-   `min-width: auto` used to floor this column at the SVG's intrinsic width,
-   which pushed the map off the side of a narrow editor column. Letting the
-   column collapse instead is not the fix either, and a `min-width` floor here
-   cannot be one: SVG type is drawn in viewBox USER UNITS, so a drawing that
-   fits itself to a smaller box takes every label down with it — in a narrow
-   column the axis addresses would render below base while `.tickLabel` still
-   declares `base`, invisible to the type-scale gate.
+/* NARROW AND FLUID, never wide: `flex: 0 1 400px` — no grow — holds this
+   column at its own 400px basis in a wide panel (`.tableSide` alone absorbs
+   growth there) and only ever shrinks it, continuously, as the panel
+   narrows. 400 is not arbitrary: RAIL_X + RAIL_W (MemoryChart.tsx, 96 + 148)
+   plus the 6-unit gap to the aperture strip plus three aperture bars at
+   `APERTURE_W + 14` pitch is ~313 units, so 400 leaves real margin before
+   anything in the rail would visually crowd this column's own edge.
 
-   So the column is free to shrink to nothing, and the picture inside it keeps
-   1:1 and overflows — into `.chartScroll` below, not into this box. `.map`'s
-   `flex-wrap` has by then put the row list on its own line, and this column
-   follows it down to the panel's width instead of flooring at the drawing's
-   and making the WHOLE panel scroll sideways. `min-width: 0` is what zeroes
-   that floor: it is an explicit value, not `auto`, so it wins outright and
-   needs no `overflow` on THIS element to take effect. `.chartScroll` below
-   does wrap the SVG directly, but it does not need this same trick for its
-   OWN width: it is a cross-axis item of this column, so it takes its width by
-   stretching to whatever this element hands it, already zeroed here —
-   `.chartScroll`'s `overflow-x: auto` then turns what's left over (the SVG
-   still wider than that stretched box) into a scrollbar, which is a different
-   job from the one `min-width: 0` does on this element.
-
-   THE SCROLLER USED TO BE THIS WHOLE COLUMN, not just the chart. `overflow-x:
-   auto` sat here directly, and it worked — the drawing scrolled — but it
-   scrolled "True scale" / "Equalized" and the one-line legend right along with
-   it: reading a band near the drawing's right edge meant scrolling the toggle
-   out of view above and clipping the legend below against this column's own
-   edge. `.chartScroll` narrows the scroll container to just the chart, so the
-   toggle stays reachable and the legend stays whole at every scroll position
-   — they are the scroller's siblings now, not its content. */
+   `min-width: 0` is NOT legacy cruft left over from the old scroll container
+   — Task 8 still needs it, for a bootstrapping reason the old comment here
+   never had to state: on the FIRST paint, before `MemoryChart`'s own
+   `ResizeObserver` has fired once, the chart draws at `FALLBACK_WIDTH`
+   (MemoryChart.tsx, 578) — wider than this column's 400px basis. Without an
+   explicit `min-width: 0`, a flex item's AUTOMATIC minimum is its content's
+   min-content size, and a child with a `width` attribute of 578 contributes
+   that as its own min-content contribution — flooring this column at 578
+   forever, since the observer can then never report anything narrower than
+   the floor its own prior report created. `min-width: 0` breaks that loop
+   before it can start: an explicit value wins outright over the automatic
+   one, so this column is free to render narrower than its own first-paint
+   child, and the NEXT measurement is honest. */
 .mapSide {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  flex: 0 1 auto;
+  flex: 0 1 400px;
   min-width: 0;
 }
 
-/* THE CHART'S OWN SCROLLER, wrapping only `<MemoryChart>` (MemoryRegions.tsx)
-   — not the scale toggle above it, not the legend below. `flex: none` stops
-   this box being squashed in HEIGHT by `.mapSide`'s column layout, which
-   would otherwise turn it into a short vertical scroller rather than a
-   horizontal one. The SVG itself carries no `flex` property of its own
-   (MemoryChart.module.css): its parent here is a plain block box, not a flex
-   container, so a `flex` property stated on the SVG would be inert. This
-   rule is the flex item in the chain, and it is the one that has to hold the
-   guarantee.
-
-   This box is NOT given its own `min-width: 0` — a cross-axis item's
-   automatic minimum is already 0, so an explicit one here would be inert.
-   `.chartScroll` is a flex item of `.mapSide`'s COLUMN, so this box's width
-   is the CROSS axis, not the main one — the flexbox rule that zeroes an
-   item's automatic minimum size when its overflow is not `visible` applies
-   only to a flex item's MAIN axis (here, height), never to its cross axis;
-   the cross axis has no content-based minimum to zero out in the first
-   place. What narrows this box is cross-axis STRETCH: with no width of its
-   own stated, it simply takes whatever width `.mapSide` hands it, which
-   `.mapSide`'s own `min-width: 0` (above) has already let shrink to nothing.
-   `overflow-x: auto` does not size anything either — it only turns what is
-   left over, the SVG still wider than this now-narrow box, into a scrollbar
-   rather than a silent, unreachable overflow. A future non-stretch
-   `align-self` on this box would size it to its own content instead — the
-   SVG's 578px — with or without a `min-width` stated.
-
-   Two consequences of scrolling here rather than in the panel: `overflow-x:
-   auto` computes `overflow-y` to `auto` too, harmless only because this box is
-   auto-height and the chart never overflows vertically. And it works at all
-   only while the svg is allowed to keep its intrinsic width: see `.svg` in
-   MemoryChart.module.css — a `max-width: 100%` there would cap the drawing at
-   this box, so it would scale again and this container would never have
-   anything to scroll.
-
-   AND THIS BOX CLIPS, which `.svg`'s `overflow: visible` does not undo: that
-   declaration stops the SVG's own viewport cutting a label which outruns the
-   viewBox, and stops nothing here. `overflow-x: auto` makes this box a scroll
-   container, and a scroll container clips every descendant at its own padding
-   box — only the END edges stay reachable. Ink past the right edge extends
-   the scrollable area and can be scrolled to; ink past the top or the left
-   edge is cut, with no scroll position that reaches it. A label pushed off
-   those two edges is gone, not merely off-screen. Confined here rather than
-   left on `.mapSide`, that clipping can no longer touch the toggle or the
-   legend — they are outside the box that scrolls. */
-.chartScroll {
-  flex: none;
-  overflow-x: auto;
-}
-
-/* `overflow: hidden` is here to clip the pressed button's square background to
-   the row's radius, not to trim its labels: the box is `fit-content`, so it
-   grows with the type inside it and both labels still fit at reading size.
-   IT DOES TRIM ONE THING THAT IS NOT A BACKGROUND — the keyboard focus ring.
-   `src/styles.css` draws `:focus-visible` as a 1px outline at
-   `outline-offset: 1px`, and an outline paints OUTSIDE the border box, so
-   every run of the ring that follows an edge these buttons share with the row
-   falls in the clipped region: top, bottom, and the outer end. What survives
-   is the one vertical segment between the two buttons — a 1px sliver, which
-   is not a focus indicator. `.scaleBtn` pulls the whole ring back inside with
-   a negative offset below; if this `overflow` ever goes, that offset is what
-   has to be re-argued. */
-.scaleRow {
-  display: flex;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  width: fit-content;
-}
-
-.scaleBtn {
-  appearance: none;
-  border: 0;
-  border-right: 1px solid var(--border-default);
-  background: transparent;
-  color: var(--text-secondary);
-  font-family: inherit;
-  /* Control text, at the size every other control in the webview uses
-     (`Button.module.css`): "True scale" / "Equalized" are words to read, not a
-     badge to glance at. */
-  font-size: var(--font-size-base);
-  padding: var(--space-1) var(--space-2);
-  cursor: pointer;
-}
-
-.scaleBtn:last-child {
-  border-right: 0;
-}
-
-/* THE RING, INSET. The global rule in `src/styles.css` is
-   `outline: 1px solid var(--border-focus)` at `outline-offset: 1px`, which
-   paints the whole ring outside this button's border box — and that border box
-   IS `.scaleRow`'s padding box on three of its four sides, so the row's
-   `overflow: hidden` cuts all but a 1px sliver of it and keyboard focus stops
-   being visible on a two-button control that has no other focus signal. A
-   negative offset moves the same ring just inside the border box, where
-   nothing clips it. Only the offset is overridden: colour and width stay the
-   workbench's, so a high-contrast theme still gets its own ring. */
-.scaleBtn:focus-visible {
-  outline-offset: -1px;
-}
-
-/* THE PRESSED BUTTON NEEDS ITS OWN RING. `--accent` (tokens.css) IS
-   `--vscode-focusBorder` — the same token the rule above paints the ring in —
-   and the pressed button below fills its background with that exact token, so
-   on a pressed button the ring paints in the colour it already sits on: gone,
-   not merely dim. "True scale" starts pressed, so this is the very first Tab
-   stop into the panel, landing on a control with no visible focus at all.
-   `--accent-fg` is NOT the fix: it is `--vscode-button-foreground`, paired in
-   the theme with `--vscode-button-background` (the Workbench Action fill),
-   not with `--accent`/focusBorder — it carries no contrast guarantee against
-   THIS fill (see below). `--surface-bg` (Panel Ground, DESIGN.md) is the fix:
-   the ring takes the panel's own ground instead, which is the same colour
-   pair the theme already uses for its OWN focus ring drawn on that same
-   ground elsewhere in the workbench. Measured against `--accent` in every
-   default theme: 3.64:1 Dark+, 3.02:1 Light+, 8.18:1 High Contrast Dark,
-   5.47:1 High Contrast Light — all four clear WCAG 2.2 SC 1.4.11's 3:1 floor.
-   A theme whose own focus ring falls under 3:1 against this ground stays
-   under it here too. The offset is pulled in further than the unpressed
-   ring's `-1px`: a hairline ring at only 1px inside a saturated fill is
-   itself easy to lose, where 3px reads as a deliberate frame. */
-.scaleBtn[aria-pressed="true"]:focus-visible {
-  outline-color: var(--surface-bg);
-  outline-offset: -3px;
-}
-
-.scaleBtn[aria-pressed="true"] {
-  background: var(--accent);
-  color: var(--accent-fg);
-}
-
-/* CORRECTED RECORD — read this before touching either token here. Round 2
-   claimed no VS Code token reads dark enough against `--accent` in
-   Dark+/Light+ without being a bare literal; that claim was wrong.
-   `terminal.ansiBlack` (core-registered) reaches 4.99:1 Dark+ / 6.26:1
-   Light+ / 8.18:1 High Contrast Dark, and round 3 adopted it on that basis.
-   Its real cost surfaced only afterwards: VS Code's actual out-of-the-box
-   default (2026 Dark — distinct from the registerColor() defaults just
-   named, with its OWN translucent focusBorder) fell from 5.52:1 with
-   `--accent-fg` (white) to 3.80:1 with ansiBlack. Weighed against every
-   theme VS Code currently ships by default — Dark Modern 4.53:1, Light
-   Modern 6.31:1, 2026 Dark 5.52:1, 2026 Light 5.39:1, High Contrast Light
-   5.47:1, all already passing with plain `--accent-fg` — ansiBlack bought
-   three themes retired since VS Code 1.74 (Dark+, Light+, and this file's
-   own High Contrast Dark fix, which still applies below) at the cost of the
-   one theme people actually run. DECISION: `--accent-fg` (white) stays.
-   Dark+ (4.21:1) and Light+ (3.35:1) are an ACCEPTED, DECLINED shortfall —
-   ansiBlack was evaluated and is not taken, not because no fix exists, but
-   because the fix that exists costs more than the two themes it helps are
-   worth. An accent-coloured underline instead of a filled pressed state was
-   also considered and not taken: this toggle is slated for removal, not
-   worth a second visual language for its remaining lifetime. Do not
-   reinstate the "no token exists" claim in either direction — it was false
-   the first time and the corrected reason (real-world theme coverage, not
-   token availability) is the one that must survive here. */
-
-/* High Contrast Dark still needs its own fix: `--accent-fg` (white) reads
-   only 2.57:1 there, because focusBorder is uncharacteristically BRIGHT in
-   that one theme (an orange, not the moderate blue every other theme tested
-   above uses) — this is the one place white's real-world-favouring case
-   does not hold, and it is fixed rather than left, not merely disclosed.
-   `--surface-bg` (sideBar.background) is pure black in High Contrast Dark
-   specifically: 8.18:1 against `--accent` there.
-
-   BLOCKER, once already found and fixed here: an earlier version of this
-   rule targeted plain `body.vscode-high-contrast` and was DEAD CODE — this
-   is a CSS Module, so an unwrapped class name is hashed at build time into
-   something no host ever writes onto <body>. Still wrapped in
-   `:global(...)` here for that reason.
-
-   MAJOR, still true and still guarded against: High Contrast Light ALSO
-   carries the plain `vscode-high-contrast` class — VS Code's webview
-   bootstrap (`pre/index.html`) adds it for backwards compatibility whenever
-   the active theme is High Contrast Light, alongside its own `-light`
-   class. Unguarded, this rule would repaint High Contrast Light's pressed
-   text to `--surface-bg` too. In the CURRENT default theme that happens to
-   be harmless (`--surface-bg` and `--accent-fg` are both white there), but
-   a third-party High Contrast Light theme with a non-white
-   `sideBar.background` would get its pressed text silently repainted for no
-   reason — `:not(:global(.vscode-high-contrast-light))` excludes it
-   explicitly rather than relying on that coincidence. */
-body:global(.vscode-high-contrast):not(:global(.vscode-high-contrast-light))
-  .scaleBtn[aria-pressed="true"] {
-  color: var(--surface-bg);
+/* THE WIDE COLUMN: `flex: 1 1 360px` grows to absorb every unit `.mapSide`
+   (above) does not claim, which is the "table on the right" half of the
+   approved design — a table's own columns benefit from room a rail's fixed
+   RAIL_W never will. `min-width: 0` for the same reason as `.mapSide`'s own:
+   this is a flex item, and its content (MemoryTable's row list) must be free
+   to shrink and wrap below its own min-content width rather than flooring
+   this column — and, through it, the whole panel — at whatever the widest
+   unwrapped row happens to need. */
+.tableSide {
+  flex: 1 1 360px;
+  min-width: 0;
 }
 
 .band[data-selected],
@@ -338,10 +168,8 @@ body:global(.vscode-high-contrast):not(:global(.vscode-high-contrast-light))
   color: var(--text-primary);
 }
 
-/* Sizes, region, filesystem and cores: values from the manifest, read the same
-   way the address is. `.rowSize` also carries the "· tan size" branch, where
-   the number came from a different measurement than the extent. */
-.rowSize,
+/* Cores and other row metadata: values from the manifest, read the same
+   way the address is. */
 .rowMeta {
   font-size: var(--font-size-base);
   color: var(--text-secondary);
@@ -389,14 +217,31 @@ body:global(.vscode-high-contrast):not(:global(.vscode-high-contrast-light))
 
 /* Full width on its own line, wrapping rather than truncating: the reason
    names the file and the field to change, and a clipped one names neither.
-   Set at reading size for the same reason — this is correctness text, and the
-   habit of setting mono small loses to a sentence that must not be misread. */
-.reason {
+   THE TITLE REGISTER (md, weight 600 — the same size/weight `.title` takes
+   in MemoryTable.module.css, and `.outsideFlag` there for the same reason),
+   inside a bordered box: this is a flag, not a footnote, and a page skimmed
+   for headings alone still has to land on it. Mono stays, and pre-wrap
+   stays — this is still the manifest's own words, verbatim and in full. */
+.reasonCallout {
   flex-basis: 100%;
   font-family: var(--font-family-mono);
-  font-size: var(--font-size-base);
-  color: var(--text-secondary);
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--text-primary);
   white-space: pre-wrap;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+/* The two per-finding actions (#484 Task 7) — open the declaring file, copy
+   its text. `flex-basis: 100%` matches `.reasonCallout` just above: both are
+   full-width rows of THIS finding, never squeezed onto the name/kind/cores
+   line. */
+.findingActions {
+  flex-basis: 100%;
+  display: flex;
+  gap: var(--space-2);
 }
 
 /* Overlapping extents, stated before the picture rather than under it — this
@@ -445,14 +290,14 @@ body:global(.vscode-high-contrast):not(:global(.vscode-high-contrast-light))
   color: var(--text-secondary);
 }
 
-/* One line under the chart, where four paragraphs used to be. The rest of that
-   context now lives in the Notes tab: the map is a reading surface, not an
-   essay with a picture in it.
-   That one line is still prose, and it is the key to the drawing — what a band
-   is, what a line is, what the colours group by, or that the scale has been
-   thrown away. A reader who cannot decode the picture cannot use it, so this
-   is set at reading size like any other sentence; `max-width: 62ch` is what
-   holds the measure. */
+/* One line ABOVE the chart, after `AuthorityLegend`, where four paragraphs
+   used to sit below it. The rest of that context lives in the Notes tab: the
+   map is a reading surface, not an essay with a picture in it. That one line
+   is still prose, and it is read BEFORE the picture rather than after it for
+   the same reason the legend moved: a reader has to know the rail is not to
+   scale before meeting the first compressed gap, not after wondering why one
+   run looks the same height as a run sixteen times its size. Set at reading
+   size like any other sentence; `max-width: 62ch` is what holds the measure. */
 .legend {
   margin: 0;
   font-size: var(--font-size-base);

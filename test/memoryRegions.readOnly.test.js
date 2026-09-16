@@ -17,7 +17,7 @@
 // hazard, and "we remembered not to add one" is exactly the class of guarantee
 // #484 exists to replace with something you cannot express.
 //
-// The third test is the tripwire: it fails the day the contract grows the
+// The last test is the tripwire: it fails the day the contract grows the
 // missing half, so the read-only decision is re-taken deliberately by whoever
 // lands it, rather than quietly outliving its reason.
 //
@@ -31,61 +31,972 @@
 // precondition below was never about the KEY existing, only about
 // authority being unambiguous once it does. It still is not, so the map
 // stays read-only.
+//
+// ---------------------------------------------------------------------------
+// WHAT THIS GATE GUARANTEES, AND WHAT IT DELIBERATELY DOES NOT
+// ---------------------------------------------------------------------------
+//
+// THE PROPERTY, EXACTLY: no module in the Memory view's import closure
+// imports the host transport module (`src/vscode.ts`), except
+// `blockedFindingActions.ts` — which may send exactly the two message types
+// named below, read from the AST of its own `postMessage(...)` call sites.
+//
+// That is NARROWER than "the memory view has no path back to the extension
+// host", which is what this header used to claim, and the gap is not
+// pedantic: every entry under DELIBERATELY OUTSIDE is a real path this file
+// does not close. Read that list before trusting this gate.
+//
+// WHY A GRAPH AND NOT TEXT. Reachability is a statement about the import
+// graph, and no text search can express it. Earlier designs tried, and each
+// was defeated by a different indirection — a file named by hand missed a new
+// sibling; a regex import closure dropped an unresolved specifier on the floor
+// and shipped a `postMessage` inside a scanned file with the gate green; a
+// directory listing was escaped by putting the transport in a file one
+// directory up and importing it back in. That last one is the tell: a listing
+// describes WHERE a file sits, and the hazard has nothing to do with where a
+// file sits.
+//
+// So the scope is DERIVED, by the TypeScript compiler itself, from the
+// modules the Memory view's entry components import — transitively, through
+// re-export hops, with real module resolution. `.ts` / `.tsx` / `.mts` /
+// `.cts` / `.js` specifiers, extensionless paths, `index.ts` directory
+// resolution, `./evil.mjs` naming an `evil.mts`, a symlinked subdirectory and
+// a path alias all resolve the way the shipping build resolves them, because
+// it is the same resolver reading the same `tsconfig.json`. A specifier that
+// does NOT resolve is a hard failure naming the specifier and the file that
+// wrote it — never a silent narrowing, which is the single way a derived
+// scope can be worse than a hand-written one.
+//
+// AN IMPORT SHAPE THIS WALK DOES NOT MODEL IS ALSO A HARD FAILURE. The walk
+// follows static imports, `export … from`, `import = require(…)` and
+// `import("…")`. Anything else built on the `import` keyword —
+// `import.meta.glob("./*.ts")` being the one that actually turns up — is
+// refused by name rather than skipped, because a bundler expanding a pattern
+// into modules the compiler never resolves is precisely how a module joins
+// the view unseen.
+//
+// THE SCOPE FOLLOWS BINDINGS, NOT WHOLE MODULES. `MemoryRegions.tsx` imports
+// `{ Button }` from `../../shared/ui`, a barrel that also re-exports
+// components which legitimately DO talk to the host (the Markdown and
+// ResourceLink components both post messages, correctly, for their own
+// features). A re-export hop is therefore followed only for the names
+// actually asked for, down to the module that declares them —
+// `../../shared/ui` → `./Button` → `Button.tsx`, and nothing else. Those two
+// host-talking components are excluded by the derivation itself, not by being
+// named in a list; put the transport behind a binding the view DOES import,
+// anywhere in the tree, and the walk arrives at it.
+//
+// Be precise about why that is safe, because the obvious justification is
+// false: the unimported barrel siblings ARE still evaluated. Measured — a
+// module-level poster in a `shared/ui` sibling the view never imports reaches
+// the bundle (55150 bytes with it, 55123 without). What the view cannot do is
+// CALL into a component it never imported, and a transport call is what sends
+// a message. So this scope is sound for "who can send", and it is NOT a claim
+// that nothing else in a touched barrel runs.
+//
+// TYPE-ONLY EDGES ARE NOT FOLLOWED. `import type { … }` is erased by the
+// compiler and evaluates nothing at run time, so it cannot be a path back to
+// the host. This is also why the protocol mirror (`types.ts`) is out of
+// scope: it must name every wire field, including the ones an editor would
+// target, and it is reached only through erased edges. That reasoning holds
+// only while `verbatimModuleSyntax` is off, which a test below pins.
+//
+// The transport ban is therefore a graph property, compared by RESOLVED PATH,
+// so `../../vscode`, `../vscode`, a re-export of it, or a helper in another
+// directory that wraps it are all the same edge.
+//
+// DELIBERATELY OUTSIDE THIS GATE — none of these is caught, and the first is
+// the most likely next edit on this code:
+//
+//  1. A SIBLING COMPONENT rendered by `BuildPlanView.tsx` beside
+//     `<MemoryRegions/>`. A new `MemoryLegend.tsx` that posts `writeBoardYaml`
+//     passes this gate, because nothing the Memory view imports reaches it.
+//     The directory classification this file replaced DID catch that, so this
+//     is a real loss of coverage, recorded rather than hidden. It was not
+//     restored because the only mechanisms available are a hand-written
+//     exemption list — the construct that was deleted for letting one line
+//     remove a file from every scan at once — or a naming convention, which
+//     is that list under another name. "Which tab renders this" is a semantic
+//     fact the import graph does not carry: the container legitimately posts
+//     for the Slices tab through `useBuildPlan.ts`.
+//  2. A PROP-INJECTED CALLBACK. Give `MemoryRegions` an
+//     `onHostAction?: () => void` and wire it from the out-of-scope parent,
+//     and the message ships (`writeBoardYaml in dist/main.js: 1`). The view's
+//     own modules hold no transport edge, which is all this gate reads.
+//  3. A FILE NOTHING IMPORTS. Not in the graph because it is not in the
+//     program. Sound for THIS package as it is built today — one `index.html`
+//     entry, `format: "iife"`, no code splitting, no `require.context` — and
+//     verified with a real build, not assumed. It becomes visible the moment
+//     it is wired to anything the view imports.
+//  4. MODULE-EVALUATION SIDE EFFECTS in a co-located barrel sibling, per the
+//     measurement above.
+//
+// One level down, inside the one file allowed to reach the host at all, the
+// message check reads the ARGUMENT AST of each real `postMessage(...)` call:
+// one argument, one inline object literal, one plain-string `type` in the
+// sanctioned set. A spread, a computed key, a variable, a call or a template
+// are refused as the AST shapes they are — so a finding whose text happens to
+// contain `...`, `type:` or `arr[0]` is just a string, and passes, while a
+// real spread does not.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
-const REPO = path.join(__dirname, "..");
-/** Every file the memory surface is made of. The chart moved into its own
- *  module when the picture became an SVG; a prohibition that named only the
- *  original file would have opened a hole the same day. */
-const VIEW_FILES = [
-  "MemoryRegions.tsx",
-  "MemoryChart.tsx",
-  "MemoryRegionTable.tsx",
-].map((name) =>
-  path.join(
-    REPO,
+/**
+ * ONE SPELLING FOR EVERY PATH IN THIS FILE — forward slashes.
+ *
+ * This gate compares paths for identity: "is this resolved module the host
+ * transport", "is this file the sanctioned one". Two producers feed those
+ * comparisons and they do not agree on Windows: `path.join` yields `\`, and
+ * the TypeScript compiler reports every file with `/`, whatever the platform.
+ * On a POSIX host both are `/` and every comparison happens to work, so the
+ * mismatch is invisible here and total on Windows — the roots seed the walk
+ * under one spelling, every resolved edge arrives under the other, nothing
+ * matches, and the derived set collapses.
+ *
+ * So both producers are funnelled through `toPosixPath` before anything is
+ * compared, stored, or printed. Node accepts forward slashes on Windows for
+ * every `fs` call, and so does the compiler, so normalising once at the
+ * boundary costs nothing and leaves no second spelling in play. Two tests
+ * below hold it: one asserts no stored path ever carries a backslash, the
+ * other drives these helpers with real `path.win32` output, so a POSIX host
+ * cannot pass them vacuously — which is exactly how the defect reached CI.
+ */
+const toPosixPath = (p) => String(p).split("\\").join("/");
+const joinPath = (...parts) => toPosixPath(path.join(...parts));
+const baseName = (p) => path.posix.basename(toPosixPath(p));
+
+const REPO = joinPath(__dirname, "..");
+const WEBVIEW = joinPath(REPO, "packages", "alp-webview");
+const SRC = joinPath(WEBVIEW, "src");
+const BUILD_PLAN_DIR = joinPath(SRC, "features", "build-plan");
+const WEBVIEW_TSCONFIG = joinPath(WEBVIEW, "tsconfig.json");
+
+/** The package's ambient declarations (`*.module.css` and friends). Handed to
+ *  the root-limited program so a stylesheet import RESOLVES instead of being
+ *  reported as a broken specifier — the gate must fail on real breakage, not
+ *  on a CSS import every component in the tree writes. */
+const AMBIENT_DECLARATIONS = joinPath(SRC, "vite-env.d.ts");
+
+/**
+ * The Memory view's entry components — the roots of the walk.
+ *
+ * Established from `BuildPlanView.tsx`, which owns the tab strip: it renders
+ * `<MemoryRegions …/>` for `tab === "memory"` and `<MemoryNotes />` for
+ * `tab === "notes"`, the map's own context. `MemoryChart.tsx` and
+ * `MemoryTable.tsx` are deliberately NOT roots — `MemoryRegions.tsx` imports
+ * both, so the walk reaches them on its own; listing them here would be the
+ * hand-maintenance this derivation exists to remove.
+ */
+const ROOTS = [
+  joinPath(BUILD_PLAN_DIR, "MemoryRegions.tsx"),
+  joinPath(BUILD_PLAN_DIR, "MemoryNotes.tsx"),
+];
+
+/** The host transport. Every ban below is stated against THIS resolved file,
+ *  never against the text of a specifier. */
+const TRANSPORT_MODULE = joinPath(SRC, "vscode.ts");
+
+/** The one file this gate lets use the host transport at all. The approved
+ *  design is "open the declaring file, copy its text, both through host
+ *  messages", which needs SOME transport; recording the exception here,
+ *  scoped to this one file and the two message kinds below, is how that need
+ *  is met without reopening "the memory view has no path back to the host"
+ *  for the picture/table/Notes modules this gate exists to keep passive. */
+const SANCTIONED_HOST_FILE = joinPath(
+  BUILD_PLAN_DIR,
+  "blockedFindingActions.ts",
+);
+
+/** The ONLY message `type` literals `SANCTIONED_HOST_FILE` may ever send.
+ *  Neither writes memory-map data: `openBoardYaml` opens a file for editing
+ *  elsewhere (never this view), `copyText` puts text on the clipboard.
+ *
+ *  Appending a THIRD entry here is accepted — an allowlist someone
+ *  deliberately widens, in a reviewed change, is what an allowlist is for.
+ *  It is not accepted silently: widen this array only with the same review
+ *  that approved the two entries already here, and say in that review why
+ *  the new message does not write memory-map data, the same case made for
+ *  these two. */
+const SANCTIONED_MESSAGE_TYPES = ["openBoardYaml", "copyText"];
+
+/** Names that may never be referenced by a module in the derived set. The
+ *  global `acquireVsCodeApi` is the transport's own source, so reaching for
+ *  it directly bypasses the module edge the ban above is stated over. */
+const FORBIDDEN_GLOBALS = ["acquireVsCodeApi"];
+
+/** A file this gate cannot walk to the end of is a file it must not report
+ *  on; no source file here is remotely near this many tokens. */
+const MAX_TOKENS_PER_FILE = 400000;
+
+const read = (p) => fs.readFileSync(p, "utf8");
+const rel = (p) => path.posix.relative(REPO, toPosixPath(p));
+
+// ---------------------------------------------------------------------------
+// The module graph, built by the TypeScript compiler.
+// ---------------------------------------------------------------------------
+
+/** A resolved file that is not part of this webview's own sources: a package
+ *  under `node_modules`, or any declaration file (the ambient `*.module.css`
+ *  wildcard resolves into `vite/client.d.ts`). Anything else — including a
+ *  file reached through a symlink, or one sitting outside `src` — is walked
+ *  and checked, so moving a module elsewhere in the tree hides nothing. */
+function isExternalModule(file) {
+  // Split on "/" only, against the normalised spelling: splitting on
+  // `path.sep` would look for `\` on Windows in a path the compiler wrote
+  // with `/`, find one segment, and conclude that nothing is under
+  // node_modules — walking the whole dependency tree instead.
+  const normalised = toPosixPath(file);
+  return (
+    normalised.split("/").includes("node_modules") ||
+    /\.d\.[cm]?ts$/.test(normalised)
+  );
+}
+
+let graphPromise = null;
+
+/** Built once and shared by every test below; the compiler process is closed
+ *  as soon as the walk is finished. */
+function moduleGraph() {
+  if (!graphPromise) graphPromise = buildModuleGraph();
+  return graphPromise;
+}
+
+async function buildModuleGraph() {
+  // `typescript@7` publishes the compiler API under `unstable/*`; the package
+  // root exports only its version string. This is the same compiler, and the
+  // same platform binary, that `pnpm run compile` and `pnpm run typecheck`
+  // already run in CI, so the gate adds no dependency and no new tool.
+  const { API } = await import("typescript/unstable/sync");
+  const ast = await import("typescript/unstable/ast");
+  const is = await import("typescript/unstable/ast/is");
+
+  // A project rooted at the Memory view's entry components ONLY, so the
+  // program's own file set is the view's closure rather than the whole
+  // package. It extends the real `tsconfig.json`, so resolution runs under
+  // the shipping `moduleResolution`, `jsx` and `paths` settings.
+  const tmpDir = toPosixPath(
+    fs.mkdtempSync(path.join(os.tmpdir(), "alp-memory-gate-")),
+  );
+  const configPath = joinPath(tmpDir, "tsconfig.json");
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify({
+      extends: WEBVIEW_TSCONFIG,
+      compilerOptions: { noEmit: true },
+      include: [],
+      files: [...ROOTS, AMBIENT_DECLARATIONS],
+    }),
+  );
+
+  const api = new API({ cwd: REPO });
+  // The compiler client stays open for the whole file: the walk hands back
+  // real AST nodes, and reading one after the channel closes throws. It is
+  // shut down once, after the last test, by the hook below.
+  const dispose = () => {
+    try {
+      api.close();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  };
+  try {
+    const snapshot = api.updateSnapshot({ openProjects: [configPath] });
+    const project =
+      snapshot.getProject(configPath) ?? snapshot.getProjects()[0];
+    assert.ok(
+      project,
+      "the TypeScript compiler opened no project for the memory view's " +
+        "entry components — the walk below would derive nothing",
+    );
+    return { ...walk(project, ast, is), dispose };
+  } catch (err) {
+    dispose();
+    throw err;
+  }
+}
+
+test.after(async () => {
+  if (!graphPromise) return;
+  const graph = await graphPromise.catch(() => null);
+  graph?.dispose();
+});
+
+function walk(project, ast, is) {
+  const { program, checker } = project;
+
+  // The compiler reports a node's file as an internal `Path`, which is
+  // lower-cased on a case-insensitive file system. Map it back to the real
+  // name the program knows, so every comparison below is against one spelling.
+  const realByLower = new Map(
+    program
+      .getSourceFileNames()
+      .map((name) => [toPosixPath(name).toLowerCase(), toPosixPath(name)]),
+  );
+  const toRealPath = (p) => realByLower.get(toPosixPath(p).toLowerCase());
+
+  /** Specifiers the compiler could not resolve, and specifiers that are not a
+   *  plain string. Either one means the walk below is INCOMPLETE, so every
+   *  test refuses to draw a conclusion until this is empty. */
+  const unresolved = [];
+  /** Uses of the `import` keyword in a shape this walk does not model. Refused
+   *  for the same reason: an edge it cannot see is an edge it must not
+   *  pretend to have checked. */
+  const unauditable = [];
+  /** Every followed edge: `{ from, to, specifier }`, resolved files only. */
+  const edges = [];
+  /** file -> { wanted: Set<string> | null, processed: boolean } */
+  const state = new Map();
+  const queue = [];
+
+  function want(file, names) {
+    const prev = state.get(file);
+    if (!prev) {
+      state.set(file, {
+        wanted: names === null ? null : new Set(names),
+        processed: false,
+      });
+      queue.push(file);
+      return;
+    }
+    if (prev.wanted === null) return;
+    if (names === null) {
+      prev.wanted = null;
+      if (prev.processed) {
+        prev.processed = false;
+        queue.push(file);
+      }
+      return;
+    }
+    let grew = false;
+    for (const n of names) {
+      if (!prev.wanted.has(n)) {
+        prev.wanted.add(n);
+        grew = true;
+      }
+    }
+    if (grew && prev.processed) {
+      prev.processed = false;
+      queue.push(file);
+    }
+  }
+
+  /** Resolve a module specifier NODE the way the compiler does. Returns the
+   *  real path, or null having recorded why — never a guess. */
+  function resolveSpecifier(specifier, fromFile, what) {
+    if (!specifier || !is.isStringLiteral(specifier)) {
+      unresolved.push({
+        from: fromFile,
+        specifier: specifier ? `<${what}, not a string literal>` : `<${what}>`,
+        reason:
+          "the specifier is not a plain string literal, so nothing can " +
+          "resolve it and this gate cannot see where it leads",
+      });
+      return null;
+    }
+    const symbol = checker.getSymbolAtLocation(specifier);
+    const declaration = symbol?.declarations?.[0];
+    if (!declaration) {
+      unresolved.push({
+        from: fromFile,
+        specifier: specifier.text,
+        reason: "the TypeScript compiler could not resolve it to any module",
+      });
+      return null;
+    }
+    const real = toRealPath(declaration.path);
+    if (!real) {
+      unresolved.push({
+        from: fromFile,
+        specifier: specifier.text,
+        reason:
+          `it resolved to ${declaration.path}, which is not a file of the ` +
+          "program the walk was built from",
+      });
+      return null;
+    }
+    return real;
+  }
+
+  function follow(fromFile, specifier, names, what) {
+    const target = resolveSpecifier(specifier, fromFile, what);
+    if (!target) return;
+    edges.push({ from: fromFile, to: target, specifier: specifier.text });
+    if (isExternalModule(target)) return;
+    want(target, names);
+  }
+
+  /** An edge this walk deliberately does NOT follow — a type-only import,
+   *  erased before it can run, or a re-export of a name the view never asked
+   *  for. It is still RESOLVED, because "the walk chose not to go there" and
+   *  "the walk could not tell where there is" must never look the same. */
+  function verify(fromFile, specifier, what) {
+    resolveSpecifier(specifier, fromFile, what);
+  }
+
+  const tokensCache = new Map();
+
+  /**
+   * Every identifier and string-literal token of a file, plus every
+   * `import(...)` / `require(...)` call — walked over the PARSED file, token
+   * by token, so a word inside a comment or a string is never mistaken for
+   * code and JSX text is never mistaken for either.
+   *
+   * A raw lexer cannot do this job on a `.tsx` file: run one over JSX text
+   * and an ordinary apostrophe ("don't") opens a string literal that never
+   * closes, swallowing the rest of the file. The parser has already resolved
+   * all of that, so its token stream is the only trustworthy one.
+   */
+  function tokensOf(file) {
+    const cached = tokensCache.get(file);
+    if (cached) return cached;
+    const sourceFile = program.getSourceFile(file);
+    assert.ok(
+      sourceFile,
+      `${rel(file)} is in the derived set but the compiler has no source ` +
+        "file for it — the walk cannot vouch for a module it never parsed",
+    );
+    const identifiers = [];
+    const strings = [];
+    const dynamicCalls = [];
+    let token = ast.getTokenAtPosition(sourceFile, 0);
+    let walked = 0;
+    while (token && walked < MAX_TOKENS_PER_FILE) {
+      walked += 1;
+      if (token.kind === ast.SyntaxKind.Identifier) {
+        identifiers.push({ name: token.text, node: token });
+        const parent = token.parent;
+        if (
+          token.text === "require" &&
+          parent &&
+          is.isCallExpression(parent) &&
+          parent.expression === token
+        ) {
+          dynamicCalls.push(parent);
+        }
+      } else if (token.kind === ast.SyntaxKind.StringLiteral) {
+        strings.push(token.text);
+      } else if (token.kind === ast.SyntaxKind.ImportKeyword) {
+        const parent = token.parent;
+        if (parent && is.isCallExpression(parent)) {
+          // `import("./x")` — a real edge, resolved with all the others.
+          dynamicCalls.push(parent);
+        } else if (
+          parent &&
+          (is.isImportDeclaration(parent) ||
+            is.isImportEqualsDeclaration(parent))
+        ) {
+          // A static import; the statement walk already resolved it.
+        } else {
+          // Every other construct built on the `import` keyword loads modules
+          // in a way this walk does not model. `import.meta.glob(…)` is the
+          // live example and the reason this branch exists: its parent is a
+          // MetaProperty, not a call, so it fell through both arms above and
+          // was skipped — a bundler expanding a pattern into real modules the
+          // compiler resolves none of, joining the view unseen. Silent
+          // narrowing is the one failure this derivation exists to prevent,
+          // so an unmodelled shape is refused, never skipped.
+          unauditable.push({
+            from: file,
+            shape: parent ? ast.formatSyntaxKind(parent.kind) : "no parent",
+          });
+        }
+      }
+      token = ast.findNextToken(token, sourceFile, sourceFile);
+    }
+    assert.ok(
+      walked < MAX_TOKENS_PER_FILE,
+      `${rel(file)}: the token walk did not reach the end of the file — ` +
+        "this gate refuses to report on a file it could not read to the end",
+    );
+    const result = { identifiers, strings, dynamicCalls };
+    tokensCache.set(file, result);
+    return result;
+  }
+
+  function processFile(file, entry) {
+    const sourceFile = program.getSourceFile(file);
+    assert.ok(
+      sourceFile,
+      `${rel(file)} is in the derived set but the compiler has no source ` +
+        "file for it — the walk cannot vouch for a module it never parsed",
+    );
+    const wholeModule = entry.wanted === null;
+
+    for (const statement of sourceFile.statements) {
+      if (is.isImportDeclaration(statement)) {
+        const clause = statement.importClause;
+        // `import "./x"` — evaluated for its side effects alone.
+        if (!clause) {
+          follow(file, statement.moduleSpecifier, null, "side-effect import");
+          continue;
+        }
+        if (clause.isTypeOnly) {
+          // Erased by the compiler; no run-time edge, but still a specifier
+          // this gate must be able to resolve.
+          verify(file, statement.moduleSpecifier, "type-only import");
+          continue;
+        }
+        const bindings = clause.namedBindings;
+        if (bindings && is.isNamespaceImport(bindings)) {
+          follow(file, statement.moduleSpecifier, null, "namespace import");
+          continue;
+        }
+        const names = [];
+        if (clause.name) names.push("default");
+        if (bindings && is.isNamedImports(bindings)) {
+          for (const element of bindings.elements) {
+            if (element.isTypeOnly) continue;
+            names.push((element.propertyName ?? element.name).text);
+          }
+        }
+        if (names.length === 0) {
+          verify(file, statement.moduleSpecifier, "type-only import");
+          continue;
+        }
+        follow(file, statement.moduleSpecifier, names, "import");
+        continue;
+      }
+
+      if (is.isExportDeclaration(statement) && statement.moduleSpecifier) {
+        if (statement.isTypeOnly) {
+          verify(file, statement.moduleSpecifier, "type-only re-export");
+          continue;
+        }
+        const clause = statement.exportClause;
+        // `export * from "./x"` re-exports names this walk cannot enumerate,
+        // so it is followed whole rather than guessed at.
+        if (!clause || !is.isNamedExports(clause)) {
+          follow(file, statement.moduleSpecifier, null, "export *");
+          continue;
+        }
+        const carried = [];
+        for (const element of clause.elements) {
+          if (element.isTypeOnly) continue;
+          // A re-export hop is followed only for the names the view asked
+          // for; `wanted` is keyed on the name as EXPORTED, and the name as
+          // declared upstream is what travels on.
+          if (!wholeModule && !entry.wanted.has(element.name.text)) continue;
+          carried.push((element.propertyName ?? element.name).text);
+        }
+        if (carried.length === 0) {
+          verify(file, statement.moduleSpecifier, "unused re-export");
+          continue;
+        }
+        follow(file, statement.moduleSpecifier, carried, "re-export");
+        continue;
+      }
+
+      if (
+        is.isImportEqualsDeclaration(statement) &&
+        statement.moduleReference &&
+        is.isExternalModuleReference(statement.moduleReference)
+      ) {
+        follow(
+          file,
+          statement.moduleReference.expression,
+          null,
+          "import = require",
+        );
+      }
+    }
+
+    // `import("./x")` and `require("./x")` can sit anywhere in a file, not
+    // only at the top, so they are collected from the whole token walk.
+    for (const call of tokensOf(file).dynamicCalls) {
+      if (call.arguments.length === 0) continue;
+      follow(file, call.arguments[0], null, "dynamic import");
+    }
+  }
+
+  for (const root of ROOTS) want(root, null);
+  while (queue.length > 0) {
+    const file = queue.shift();
+    const entry = state.get(file);
+    if (entry.processed) continue;
+    entry.processed = true;
+    processFile(file, entry);
+  }
+
+  const reachable = [...state.keys()].sort();
+  return {
+    reachable,
+    edges,
+    unresolved,
+    unauditable,
+    tokensOf,
+    program,
+    ast,
+    is,
+    compilerOptions: program.getCompilerOptions(),
+  };
+}
+
+/** Every test starts here. A walk that dropped a specifier has narrowed the
+ *  scope, and a narrowed scope makes every assertion below pass for the wrong
+ *  reason — the exact failure mode this derivation replaces. */
+function assertNothingWasDropped(graph) {
+  const problems = graph.unresolved.map(
+    (u) => `  ${rel(u.from)} imports "${u.specifier}" — ${u.reason}`,
+  );
+  for (const u of graph.unauditable) {
+    problems.push(
+      `  ${rel(u.from)} uses the \`import\` keyword inside a ${u.shape}, a ` +
+        "shape this walk does not model. It follows static imports, " +
+        '`export … from`, `import = require(…)` and `import("…")`, and ' +
+        'nothing else — `import.meta.glob("./*.ts")` is what usually brings ' +
+        "this up: the bundler expands it into real modules and the compiler " +
+        "resolves none of them.",
+    );
+  }
+  if (problems.length === 0) return;
+  assert.fail(
+    "the memory view's module graph could not be resolved completely, so " +
+      "the scope below would be narrower than the code really is:\n" +
+      problems.join("\n") +
+      "\nFix the specifier, or teach this gate the resolution it needs — " +
+      "never let it narrow silently.",
+  );
+}
+
+test("path identity is separator-independent, proved through path.win32", () => {
+  // `path.win32` is importable on every platform, so this drives the exact
+  // comparison a Windows run performs without needing a Windows host. That
+  // matters more than it looks: the original defect was invisible on POSIX
+  // precisely because both producers agree here, so a test that only used the
+  // host's own separator would have passed while Windows stayed broken.
+  const compilerSpelling = "C:/repo/packages/alp-webview/src/vscode.ts";
+  const joinSpelling = path.win32.join(
+    "C:\\repo",
     "packages",
     "alp-webview",
     "src",
-    "features",
-    "build-plan",
-    name,
-  ),
-);
+    "vscode.ts",
+  );
 
-const read = (p) => fs.readFileSync(p, "utf8");
+  // The defect, stated as an assertion: the two producers disagree verbatim.
+  assert.ok(
+    joinSpelling.includes("\\"),
+    "path.win32.join no longer produces backslashes — this proof is void",
+  );
+  assert.notEqual(joinSpelling, compilerSpelling);
 
-test("the memory view has no path back to the host", () => {
-  // Act / Assert — every way this webview can ask the extension to do
-  // anything. `postMessage` is the transport; `runCommand` is the allow-listed
-  // command channel; importing the `vscode` shim is how a component reaches
-  // either one.
-  for (const file of VIEW_FILES) {
-    const source = read(file);
-    for (const forbidden of [
-      "postMessage",
-      "runCommand",
-      'from "../../vscode"',
-    ]) {
-      assert.equal(
-        source.includes(forbidden),
-        false,
-        `${path.basename(file)} must not use ${forbidden} — the view is ` +
-          "read-only until alp-sdk#1365 lands `kind` + `owner`",
-      );
-    }
+  // The fix: one spelling, so `===` answers the question actually being asked.
+  assert.equal(toPosixPath(joinSpelling), compilerSpelling);
+  assert.equal(toPosixPath(joinSpelling), toPosixPath(compilerSpelling));
+
+  // node_modules detection has to survive a `\`-joined path too, or the walk
+  // would decide nothing is external and follow the whole dependency tree.
+  assert.equal(
+    isExternalModule(path.win32.join("C:\\r", "node_modules", "p", "i.js")),
+    true,
+  );
+  assert.equal(isExternalModule("C:/r/node_modules/p/i.js"), true);
+  assert.equal(
+    isExternalModule(path.win32.join("C:\\r", "src", "a.ts")),
+    false,
+  );
+
+  // And every name this gate PRINTS must read sensibly from either spelling,
+  // so a Windows failure is still a legible one.
+  assert.equal(baseName(joinSpelling), "vscode.ts");
+  assert.equal(baseName(compilerSpelling), "vscode.ts");
+  assert.equal(
+    path.posix.relative("C:/repo", toPosixPath(joinSpelling)),
+    "packages/alp-webview/src/vscode.ts",
+  );
+});
+
+test("every derived path is stored in the one normalised spelling", async () => {
+  const graph = await moduleGraph();
+  assertNothingWasDropped(graph);
+
+  const stored = [
+    ...graph.reachable,
+    ...graph.edges.flatMap((edge) => [edge.from, edge.to]),
+  ];
+  assert.deepEqual(
+    stored.filter((p) => p.includes("\\")),
+    [],
+    "a path escaped normalisation and is stored with a backslash — on " +
+      "Windows it would never compare equal to the compiler's spelling of " +
+      "the same file, and the derived set would collapse",
+  );
+  // The constants every ban is stated over must share that spelling, or the
+  // comparisons above are between two different alphabets.
+  for (const constant of [...ROOTS, TRANSPORT_MODULE, SANCTIONED_HOST_FILE]) {
+    assert.ok(
+      !constant.includes("\\"),
+      `${constant} is not normalised, so it cannot match a resolved path`,
+    );
   }
 });
 
-test("the memory view offers no editing affordance", () => {
+test("the memory view's module graph resolves completely", async () => {
+  const graph = await moduleGraph();
+  assertNothingWasDropped(graph);
+
+  for (const root of ROOTS) {
+    assert.ok(
+      graph.reachable.includes(root),
+      `${rel(root)} is a declared entry component but is not in the derived ` +
+        "set — the walk is broken, not the code",
+    );
+  }
+  // The picture and the table are reached THROUGH the entry components; if
+  // the walk stops short of them it has silently stopped covering the view.
+  for (const name of ["MemoryChart.tsx", "MemoryTable.tsx"]) {
+    assert.ok(
+      graph.reachable.includes(joinPath(BUILD_PLAN_DIR, name)),
+      `the walk did not reach ${name}, which the memory view renders — a ` +
+        "derivation that stops short of the view covers nothing below",
+    );
+  }
+  assert.ok(
+    graph.reachable.length >= 10,
+    `the walk derived only ${graph.reachable.length} module(s); the memory ` +
+      "view is larger than that, so the walk is broken",
+  );
+});
+
+test("the type-only exemption still rests on erasure", async () => {
+  const graph = await moduleGraph();
+  // This walk does not follow an edge whose bindings are all types, because
+  // the compiler erases the statement and nothing runs. That holds ONLY while
+  // `verbatimModuleSyntax` is off: turn it on and `import { type X } from
+  // "./x"` is emitted as written, so the module really is evaluated and every
+  // type-only edge skipped above becomes a live one. Nothing else pins this,
+  // so the day someone enables the flag should be a loud failure here rather
+  // than a quiet loss of coverage.
+  assert.ok(
+    !graph.compilerOptions.verbatimModuleSyntax,
+    "the webview's tsconfig.json now enables verbatimModuleSyntax, which " +
+      "makes an all-types import statement survive into the emitted module " +
+      "— the type-only edges this walk skips would then really run, and the " +
+      "derived scope would be missing them. Follow those edges (drop the " +
+      "type-only exemption in this file) before turning the flag on.",
+  );
+});
+
+test("the sanctioned file is actually reachable from the memory view", async () => {
+  const graph = await moduleGraph();
+  assertNothingWasDropped(graph);
+  assert.ok(
+    graph.reachable.includes(SANCTIONED_HOST_FILE),
+    `${rel(SANCTIONED_HOST_FILE)} is named as the sanctioned host-transport ` +
+      "file but nothing the memory view imports reaches it — the exception " +
+      "would silently apply to nothing",
+  );
+});
+
+/**
+ * Read one `postMessage(...)` call site as AST and require:
+ *
+ *  - exactly one argument, and that argument an inline object literal (never
+ *    a variable, a call, or a second argument this gate cannot audit);
+ *  - no spread and no computed key, each refused as the AST node it is;
+ *  - exactly one `type` property, its value a plain string literal in the
+ *    sanctioned set — a const, a template or a concatenation is refused
+ *    whatever it might evaluate to.
+ *
+ * Because this reads the argument's SHAPE, the CONTENTS of a string are just
+ * a string: `text: "a...b"`, `text: "arr[0]: x"` and `text: "type: foo"` are
+ * ordinary values and pass, which matters because `copyText` carries
+ * allocator finding text.
+ */
+function checkPostMessageCall(call, file, ast, is) {
+  const where = baseName(file);
+  assert.equal(
+    call.arguments.length,
+    1,
+    `${where}: a postMessage(...) call takes ${call.arguments.length} ` +
+      "arguments — it must take exactly one inline object literal, because a " +
+      "second argument is another payload this gate cannot audit",
+  );
+  const argument = call.arguments[0];
+  assert.ok(
+    is.isObjectLiteralExpression(argument),
+    `${where}: postMessage(...) is called with ` +
+      `${ast.formatSyntaxKind(argument.kind)}, not a single inline object ` +
+      "literal — only a literal written at the call site can be read here, " +
+      "so a variable, a function call, a spread of one, or a cast wrapping " +
+      "any of them (a cast around an otherwise fine literal included) is " +
+      "refused outright",
+  );
+
+  const typeValues = [];
+  for (const property of argument.properties) {
+    assert.ok(
+      !is.isSpreadAssignment(property),
+      `${where}: postMessage(...) spreads another object into its message — ` +
+        "a spread can inject or override a field this gate cannot see and " +
+        "is refused outright",
+    );
+    assert.ok(
+      !property.name || !is.isComputedPropertyName(property.name),
+      `${where}: postMessage(...) uses a computed property key — a message ` +
+        "must be written with plain, literal keys so it can be audited",
+    );
+    const name = property.name?.text;
+    if (name !== "type") continue;
+    assert.ok(
+      !is.isShorthandPropertyAssignment(property),
+      `${where}: postMessage(...) writes its type as a shorthand property — ` +
+        "the message type must be written inline as a literal, not taken " +
+        "from a variable this gate cannot follow",
+    );
+    typeValues.push(property.initializer);
+  }
+
+  assert.equal(
+    typeValues.length,
+    1,
+    `${where}: postMessage(...) does not carry exactly one \`type\` field ` +
+      `(found ${typeValues.length}) — the message type must be written ` +
+      "inline as a single, unambiguous field",
+  );
+  const initializer = typeValues[0];
+  assert.ok(
+    is.isStringLiteral(initializer),
+    `${where}: postMessage(...) writes its type as ` +
+      `${ast.formatSyntaxKind(initializer.kind)}, which is not a plain ` +
+      "string literal — a const reference, a template literal or a " +
+      "concatenation cannot be audited by this gate and is refused " +
+      "outright, whatever it might evaluate to",
+  );
+  assert.ok(
+    SANCTIONED_MESSAGE_TYPES.includes(initializer.text),
+    `${where}: postMessage(...) posts message type "${initializer.text}", ` +
+      `which is not one of the sanctioned (${SANCTIONED_MESSAGE_TYPES.join(", ")}) ` +
+      "— an unaudited additional message type from this file is exactly the " +
+      "hole this exception must not open",
+  );
+}
+
+test("the memory view has no path back to the host, except the one sanctioned exception", async () => {
+  const graph = await moduleGraph();
+  assertNothingWasDropped(graph);
+  const { ast, is, program } = graph;
+
+  for (const file of graph.reachable) {
+    // The transport module is the SUBJECT of the ban, not a violator of it:
+    // it is in the derived set only because the sanctioned file imports it.
+    if (file === TRANSPORT_MODULE) continue;
+    const isSanctioned = file === SANCTIONED_HOST_FILE;
+    const tokens = graph.tokensOf(file);
+
+    // 1. The graph property. An edge to the transport is the whole hazard,
+    //    however the specifier is spelled and wherever the file sits.
+    for (const edge of graph.edges) {
+      if (edge.from !== file || edge.to !== TRANSPORT_MODULE) continue;
+      assert.ok(
+        isSanctioned,
+        `${rel(file)} imports the host transport (${rel(TRANSPORT_MODULE)}) ` +
+          `as "${edge.specifier}", and the memory view reaches it — the view ` +
+          "is read-only until alp-sdk#1365 lands `kind` + `owner`. Only " +
+          `${rel(SANCTIONED_HOST_FILE)} may hold that edge.`,
+      );
+    }
+
+    // 2. A dispatched command is never sanctioned anywhere, in any file.
+    //    Read as a real identifier and a real string value, so this file's
+    //    own prose can say the word without tripping it.
+    assert.ok(
+      !tokens.identifiers.some((t) => t.name === "runCommand") &&
+        !tokens.strings.includes("runCommand"),
+      `${rel(file)} must not dispatch a runCommand — no module the memory ` +
+        "view reaches gets a command channel, sanctioned or not",
+    );
+
+    // 3. The transport's own source, reached around the module edge.
+    for (const forbidden of FORBIDDEN_GLOBALS) {
+      assert.ok(
+        !tokens.identifiers.some((t) => t.name === forbidden),
+        `${rel(file)} references ${forbidden} — that is the host transport's ` +
+          "own source, and reaching for it directly bypasses the module edge " +
+          "this gate is stated over",
+      );
+    }
+
+    if (!isSanctioned) {
+      assert.ok(
+        !tokens.identifiers.some((t) => t.name === "postMessage"),
+        `${rel(file)} references postMessage — the view is read-only until ` +
+          "alp-sdk#1365 lands `kind` + `owner`, and only " +
+          `${rel(SANCTIONED_HOST_FILE)} may post at all`,
+      );
+      continue;
+    }
+
+    // The sanctioned file. Its transport binding may not be renamed, or a
+    // call spelled under the new name would be invisible to the scan below.
+    const sourceFile = program.getSourceFile(file);
+    for (const statement of sourceFile.statements) {
+      if (!is.isImportDeclaration(statement)) continue;
+      const edge = graph.edges.find(
+        (e) =>
+          e.from === file && e.specifier === statement.moduleSpecifier.text,
+      );
+      if (!edge || edge.to !== TRANSPORT_MODULE) continue;
+      const bindings = statement.importClause?.namedBindings;
+      assert.ok(
+        !bindings || !is.isNamespaceImport(bindings),
+        `${rel(file)} imports the host transport as a namespace — every ` +
+          "call would then be spelled through it and invisible to the " +
+          "message check below",
+      );
+      if (!bindings || !is.isNamedImports(bindings)) continue;
+      for (const element of bindings.elements) {
+        const imported = (element.propertyName ?? element.name).text;
+        if (imported !== "postMessage") continue;
+        assert.equal(
+          element.name.text,
+          "postMessage",
+          `${rel(file)} imports postMessage under the local name ` +
+            `"${element.name.text}" — an aliased transport hides its call ` +
+            "sites from the message check below",
+        );
+      }
+    }
+
+    // Every mention of `postMessage` is either that import or a direct call;
+    // anything else (assigned to a const, passed as a callback) would let a
+    // dispatch happen under a name this scan never looks at.
+    let callSites = 0;
+    for (const token of tokens.identifiers) {
+      if (token.name !== "postMessage") continue;
+      const node = token.node;
+      const parent = node.parent;
+      if (parent && is.isImportSpecifier(parent)) continue;
+      assert.ok(
+        parent && is.isCallExpression(parent) && parent.expression === node,
+        `${rel(file)} references postMessage without calling it directly — ` +
+          "it must never be assigned, aliased or passed anywhere except a " +
+          "direct postMessage(...) call, or a dispatch under the alias " +
+          "would be invisible to this scan",
+      );
+      checkPostMessageCall(parent, file, ast, is);
+      callSites += 1;
+    }
+    assert.ok(
+      callSites > 0,
+      `${rel(file)} is the sanctioned host-transport file but never calls ` +
+        "postMessage — the exception is stale and should be withdrawn",
+    );
+  }
+});
+
+test("the memory view offers no editing affordance", async () => {
+  const graph = await moduleGraph();
+  assertNothingWasDropped(graph);
+
   // A control that takes a value is the shape of an edit. Buttons and pointer
   // handlers are allowed and present (scale mode, row selection, the address
   // readout); they change what is DRAWN, never what is stored.
-  for (const file of VIEW_FILES) {
+  for (const file of graph.reachable) {
     const source = read(file);
     for (const forbidden of [
       "<input",
@@ -99,7 +1010,7 @@ test("the memory view offers no editing affordance", () => {
       assert.equal(
         source.includes(forbidden),
         false,
-        `${path.basename(file)} must not render ${forbidden}`,
+        `${baseName(file)} must not render ${forbidden}`,
       );
     }
 
@@ -109,7 +1020,7 @@ test("the memory view offers no editing affordance", () => {
       assert.equal(
         source.includes(field),
         false,
-        `${path.basename(file)} names the editable board.yaml field ${field}`,
+        `${baseName(file)} names the editable board.yaml field ${field}`,
       );
     }
   }
@@ -122,7 +1033,7 @@ test("the contract still cannot tell a customer band from a secure one", () => {
   // because an omitted owner that renders as unlocked is the same fail-open
   // the whole design exists to avoid.
   const schema = JSON.parse(
-    read(path.join(REPO, "schemas", "system-manifest-v1.schema.json")),
+    read(joinPath(REPO, "schemas", "system-manifest-v1.schema.json")),
   );
   const roots = Object.keys(schema.properties);
 

@@ -26,38 +26,43 @@
    * selected accent button is unmistakable vs a secondary one. */
   --accent: var(--vscode-focusBorder);
   --accent-fg: var(--vscode-button-foreground);
-  /* Round 1 tried re-pointing the pressed scale-toggle at button.background /
-   * button.foreground instead of --accent/--accent-fg. Reverted per decision:
+  /* An earlier attempt re-pointed the accent pair at button.background /
+   * button.foreground instead of --accent/--accent-fg, then reverted:
    * DESIGN.md's Selected-Not-Suggested Rule reserves --accent for exactly
    * this ("what is currently selected"), and button.background is
    * Color.black in High Contrast Dark (inputColors.ts) — identical to
-   * sideBar.background there, so the pressed fill vanished against the panel
-   * (1.00:1) and the fallback cue (pressed text vs unpressed text) also fell
-   * under 3:1. --accent stays the fill; MemoryRegions.module.css carries the
-   * remaining --accent-fg contrast reasoning. */
-  /* Round 2 claimed no VS Code token is dark enough to read against --accent
-   * in Dark+/Light+ without being a bare literal. THAT CLAIM WAS WRONG:
-   * terminal.ansiBlack (core-registered, the same registry --chart-3 already
-   * borrows from below) reaches 4.99:1 Dark+ / 6.26:1 Light+ / 8.18:1 High
-   * Contrast Dark. Round 3 adopted it on that basis — and then found its
-   * real-world cost only afterwards: VS Code's actual out-of-the-box default
-   * (2026 Dark, distinct from the registerColor() defaults above) falls from
-   * 5.52:1 with --accent-fg (white) to 3.80:1 with ansiBlack, because 2026
-   * Dark's own focusBorder is a different, TRANSLUCENT colour composited
-   * over a different ground. Weighed against every default theme VS Code
-   * currently ships — Dark Modern 4.53:1, Light Modern 6.31:1, 2026 Dark
-   * 5.52:1, 2026 Light 5.39:1, High Contrast Light 5.47:1, all unaided —
-   * --accent-fg already passes everywhere that matters in practice; only
-   * Dark+ (4.21:1) and Light+ (3.35:1), retired as VS Code's own defaults
-   * since 1.74, and High Contrast Dark (2.57:1, fixed below via a scoped
-   * override) fail. DECISION: keep --accent-fg. Dark+/Light+ are an
-   * accepted, DECLINED shortfall, not an unfixable one — terminal.ansiBlack
-   * was evaluated and is not taken, because it trades a real shipping
-   * theme's contrast for two retired ones. (An accent-coloured underline
-   * instead of a filled pressed state was also considered and not taken:
-   * this toggle is slated for removal, not worth a second visual language
-   * for its remaining lifetime.) MemoryRegions.module.css carries the
-   * High-Contrast-Dark-specific override and its own reasoning. */
+   * sideBar.background there, so the selected fill vanished against the
+   * panel (1.00:1) and the fallback cue (selected text vs unselected text)
+   * also fell under 3:1. --accent stays the fill. The pair ships on
+   * Button.module.css's .btn[data-appearance="accent"], and
+   * test/buildPlan.chartContrast.test.js carries the remaining --accent-fg
+   * contrast reasoning and pins every figure quoted below. */
+  /* An earlier assumption held that no VS Code token is dark enough to read
+   * against --accent in Dark+/Light+ without being a bare literal. THAT
+   * ASSUMPTION WAS WRONG: terminal.ansiBlack (core-registered, the same
+   * registry --chart-3 already borrows from below) reaches 4.99:1 Dark+ /
+   * 6.26:1 Light+ / 8.18:1 High Contrast Dark. It was adopted on that basis,
+   * and then found to carry a real-world cost only afterwards: VS Code's
+   * actual out-of-the-box default (2026 Dark, distinct from the
+   * registerColor() defaults above) falls from 5.52:1 with --accent-fg
+   * (white) to 3.80:1 with ansiBlack, because 2026 Dark's own focusBorder is
+   * a different, TRANSLUCENT colour composited over a different ground.
+   * Weighed against every default theme VS Code currently ships — Dark Modern
+   * 4.53:1, Light Modern 6.31:1, 2026 Dark 5.52:1, 2026 Light 5.39:1, High
+   * Contrast Light 5.47:1, all unaided — --accent-fg already passes
+   * everywhere that matters in practice; only Dark+ (4.21:1) and Light+
+   * (3.35:1), retired as VS Code's own defaults since 1.74, and High
+   * Contrast Dark (2.57:1) fail. DECISION: keep --accent-fg. Dark+/Light+
+   * are an accepted, DECLINED shortfall, not an unfixable one —
+   * terminal.ansiBlack was evaluated and is not taken, because it trades a
+   * real shipping theme's contrast for two retired ones.
+   * HIGH CONTRAST DARK IS NOT IN THAT BARGAIN: it is a CURRENT theme, its
+   * 2.57:1 is under even the 3:1 non-text floor, and NO theme-scoped
+   * override lifts it — vscode-high-contrast has zero occurrences under
+   * packages/ and src/. test/buildPlan.chartContrast.test.js pins hcDark at
+   * that exact figure, so the gap cannot widen, and cannot be declared
+   * closed by assuming parity with a control that no longer ships, without
+   * a test going red. */
   /* Concrete monospace stack — deliberately NOT var(--vscode-editor-font-family, …).
    * That VS Code var resolves to an EMPTY value in some webview hosts, which makes
    * the nested var() empty and collapses inline `code` to the serif UA default
@@ -170,7 +175,7 @@
    * move off it stands on the registered default every theme falls back to
    * absent its own override, not a claim that no theme can ever set it.
    *
-   * Round 1's fix (gitDecoration.modifiedResourceForeground) was opaque but
+   * An earlier fix (gitDecoration.modifiedResourceForeground) was opaque but
    * wrong for a different reason: it is EXTENSION-contributed (the built-in
    * Git extension's package.json, not the core colour registry), so it
    * vanishes if Git is ever disabled — and its hue (~36°) sits close enough

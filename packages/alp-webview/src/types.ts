@@ -415,7 +415,7 @@ export interface DependencyCommandStep {
 
 /**
  * A `command`-kind `DependencyAction` — a NAMED interface, not an inline
- * union member (#603, third review, major 4): `test/webview.payloadMirror
+ * union member (#603): `test/webview.payloadMirror
  * .test.js`'s field-diff walk only reaches `export interface` declarations,
  * and `DependencyAction` is an `export type` union, invisible to it either
  * way. `omittedTools` was added to the inline literal on both sides with no
@@ -872,7 +872,7 @@ export interface MemorySpan {
    *  is device-relative, and the device's own base is a SEPARATE mirrored
    *  type (`MemoryRegion`, below) that this field never joins in — a
    *  reader wanting it joins `MemorySpan.device` to a `MemoryRegion.name`
-   *  by hand, the way `MemoryRegionTable` does. */
+   *  by hand, the way `MemoryTable` does. */
   base: number | null;
   deviceOffset: number | null;
   /** Null when a base is pinned but no size is — the normal state of a
@@ -1242,6 +1242,20 @@ export interface FlashSliceMessage {
   coreId: string;
 }
 
+/** Open the project's board.yaml, resolved by the HOST (#484) — carries no
+ *  path: the webview does not know (and must not guess) where board.yaml
+ *  actually is under a custom/absolute `alpSdk.boardYamlPath` or a multi-root
+ *  workspace. */
+export interface OpenBoardYamlMessage {
+  type: "openBoardYaml";
+}
+
+/** Copy plain text to the system clipboard, through the host (#484 Task 7). */
+export interface CopyTextMessage {
+  type: "copyText";
+  text: string;
+}
+
 export type WebviewToExtMessage =
   | ReadyMessage
   | RunCommandMessage
@@ -1270,6 +1284,8 @@ export type WebviewToExtMessage =
   | MaterialiseBuildPlanMessage
   | RunBuildMessage
   | FlashSliceMessage
+  | OpenBoardYamlMessage
+  | CopyTextMessage
   | RequestModelsMessage
   | BuildModelMessage
   | CheckModelFitMessage

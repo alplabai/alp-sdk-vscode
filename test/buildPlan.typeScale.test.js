@@ -367,21 +367,15 @@ function finalClassOf(selector) {
 // pins the exact value so a change to it has to be re-argued rather than
 // inherited.
 
-const SANCTIONED = [
-  {
-    file: "MemoryChart.module.css",
-    selector: ".apertureLabel",
-    value: "9px",
-    why:
-      "GEOMETRY-PINNED, not an oversight. This label is drawn `rotate(-90)` " +
-      "down the middle of its own aperture bar, and that bar is " +
-      "APERTURE_W = 9 user units wide (MemoryChart.tsx). For a rotated label " +
-      "the font size IS the bar's width, so `--font-size-base` (13px) would " +
-      "push the glyphs out both sides of the aperture they name. This number " +
-      "moves when APERTURE_W moves, and not before — see the companion test " +
-      "below, which re-reads APERTURE_W rather than trusting this sentence.",
-  },
-];
+// EMPTY, not merely unused: `.apertureLabel` — the one entry this list ever
+// carried, a 9px rotated label pinned to APERTURE_W — was deleted along with
+// the rotated label itself (#484 phase 4; the aperture's name now reaches an
+// `aria-label` instead of the drawing). A dead allowlist entry is a hole
+// waiting for the next class of that name to reuse it unexamined, so it goes
+// with the label rather than outliving it. The next carve-out, if one is
+// ever needed, is a NEW entry with its own fact pinning it — not this one
+// reopened.
+const SANCTIONED = [];
 
 const isSanctioned = (rule) =>
   SANCTIONED.some(
@@ -422,55 +416,13 @@ test("every font-size in the Build Plan panel names a scale token, `inherit`, or
   );
 });
 
-// A carve-out that outlives its reason is just a hole. This re-derives the
-// aperture label's from the drawing itself: if the bar grows, the label can
-// take a real token and the exemption has to go.
-test("the one sanctioned pixel size is still the geometry that justifies it", () => {
-  const tsx = fs.readFileSync(path.join(PANEL, "MemoryChart.tsx"), "utf8");
-
-  const width = /const APERTURE_W = (\d+);/.exec(tsx);
-  assert.ok(
-    width,
-    "MemoryChart.tsx must declare `const APERTURE_W = <n>;` — it is the whole " +
-      "justification for .apertureLabel's 9px. If the constant was renamed, " +
-      "re-derive the carve-out rather than deleting this check.",
-  );
-
-  const rule = RULES.find(
-    (r) =>
-      r.file === "MemoryChart.module.css" && r.selector === ".apertureLabel",
-  );
-  assert.ok(
-    rule,
-    ".apertureLabel no longer sets a font-size in MemoryChart.module.css — if " +
-      "the rotated label is gone, delete its SANCTIONED entry too; a dead " +
-      "allowlist entry is a hole waiting for the next class of that name.",
-  );
-
-  const declared = Number.parseFloat(rule.value);
-  const bar = Number.parseInt(width[1], 10);
-  assert.ok(
-    declared <= bar,
-    `.apertureLabel is ${rule.value} inside a bar APERTURE_W = ${bar} units ` +
-      "wide. A rotated label's font size is its bar's width, so this spills " +
-      "out of the aperture it names.",
-  );
-  assert.ok(
-    bar < 13,
-    `APERTURE_W is now ${bar} units — wide enough for the panel's reading ` +
-      "size (13px, the constant VS Code injects into every webview). The " +
-      "reason .apertureLabel is exempt from the token scale no longer " +
-      "holds: give it var(--font-size-base) and drop its SANCTIONED entry.",
-  );
-
-  const at = tsx.indexOf("styles.apertureLabel");
-  assert.ok(
-    at !== -1 && tsx.slice(at, at + 400).includes("rotate(-90)"),
-    "the aperture label is no longer drawn rotate(-90) — an upright label is " +
-      "bounded by the rail, not by APERTURE_W, so the carve-out's reasoning " +
-      "does not apply to it and 9px is just small",
-  );
-});
+// The dedicated test that used to live here ("the one sanctioned pixel size
+// is still the geometry that justifies it") re-derived .apertureLabel's 9px
+// from APERTURE_W and failed the day the rotated label was deleted, exactly
+// as its own comment said it would. There is nothing left to re-derive: with
+// SANCTIONED empty, the token-arm test above already demands every
+// font-size in this panel be a scale token — removed here, not weakened,
+// because the geometry it checked no longer exists to check.
 
 // ---------------------------------------------------------------------------
 // (b) The coverage arm
@@ -655,37 +607,42 @@ test("chrome stays below the reading size", () => {
 // it per-entry would be a second gate on one fact.
 //
 // `heads` names real markup, read off the components rather than assumed:
-// `.unresolvedTitle` is the <p> over the `.unresolved` list whose rows carry
-// `.rowName` and `.reason`; `.conflictsTitle` sits over `.conflictRow` items
-// carrying `.rowName` and `.conflictKind`; MemoryNotes' `.title` is the <h4>
-// of a `<section class=note>` whose paragraphs are `.note p`; MemoryRegionTable's
-// `.title` is the <p> over the "SoM regions" listbox whose options carry
-// `.rowName` and `.reason`.
+// `.unresolvedTitle` is the <h3> over the `.unresolved` list whose rows carry
+// `.rowName` (the reason itself moved to `.reasonCallout`, the Title register
+// — a same-tier flag beside this heading, not a body it must outrank, the
+// same reason `.outsideFlag` is not one of MemoryTable's `.title` heads
+// either); `.conflictsTitle` is the <h3> `FindingList` renders for
+// `Conflicts`, `OutsideRegionNotice` AND `BlockedFindings` alike, sitting
+// over `.conflictRow` items carrying `.rowName` and `.conflictKind`;
+// MemoryNotes' `.title` is the <h3> of a `<section class=note>` whose
+// paragraphs are `.note p`; MemoryTable's `.title` is the <h3> over the
+// unified "Memory map rows" tree whose treeitems carry `.name` and
+// `.range`.
 
 const SUB_HEADINGS = [
   {
     file: "MemoryRegions.module.css",
     selector: ".unresolvedTitle",
-    heads: [".rowName", ".reason"],
+    heads: [".rowName"],
     why: "'Declared, not placed (N)' — the heading over the extents the manifest never resolved",
   },
   {
     file: "MemoryRegions.module.css",
     selector: ".conflictsTitle",
     heads: [".rowName", ".conflictKind"],
-    why: "'N extents land on others' — the heading over the one thing this view knows that the manifest does not",
+    why: "'N extents land on others' (and its BlockedFindings/OutsideRegionNotice siblings) — the heading over what this view flags as wrong",
   },
   {
     file: "MemoryNotes.module.css",
     selector: ".title",
     heads: [".note p"],
-    why: "the <h4> over each note section, in a tab that is nothing but prose",
+    why: "the <h3> over each note section, in a tab that is nothing but prose",
   },
   {
-    file: "MemoryRegionTable.module.css",
+    file: "MemoryTable.module.css",
     selector: ".title",
-    heads: [".rowName", ".reason"],
-    why: "'SoM regions (N)' — the heading over the SoM's own region table",
+    heads: [".name", ".range"],
+    why: "'Memory map (N)' — the heading over the unified, address-ordered table",
   },
 ];
 
@@ -964,8 +921,8 @@ test("finalClassOf matches the selector CHROME actually names", () => {
       "the quoted value inside it must not be mistaken for one either",
   );
   assert.equal(
-    finalClassOf(".scaleBtn:last-child"),
-    ".scaleBtn",
+    finalClassOf(".sliceBtn:hover"),
+    ".sliceBtn",
     "a pseudo-class is not a class selector and must not change which class " +
       "is final",
   );

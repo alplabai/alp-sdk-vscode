@@ -319,6 +319,13 @@ const ALIASES = [
   { mirror: "MemorySpanKind", file: MEMORY_REL },
   { mirror: "MemoryAuthorityClass", file: MEMORY_REL },
   { mirror: "MemoryConflictKind", file: MEMORY_REL },
+  // The three OPEN unions on `MemoryRegion` (#664). `(string & {})` is a
+  // member like any other here: it is what keeps the union open, so a side
+  // that drops it starts rejecting values the other side still emits, and a
+  // side that adds one the other lacks widens the contract silently.
+  { mirror: "MemoryRegionSource", file: MEMORY_REL },
+  { mirror: "MemoryRegionKind", file: MEMORY_REL },
+  { mirror: "MemoryRegionStatus", file: MEMORY_REL },
   { mirror: "ManifestFreshness", file: STALENESS_REL },
   { mirror: "DependencyStatus", file: PLANNER_REL },
   { mirror: "DependencyActionEffect", file: PLANNER_REL },

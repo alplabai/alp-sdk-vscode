@@ -620,6 +620,150 @@ function feedState() {
   });
 }
 
+/**
+ * Every `li[role="treeitem"][data-row]` in `container` must have `aria-expanded="true"`
+ * IF AND ONLY IF its detail (`MemoryTable.tsx`'s `RowDetail`, stubbed CSS
+ * modules render as literal `class="detail"` in this harness — see
+ * `test/webview/run.mjs`'s css-module-stub) is actually present in the DOM.
+ * `showDetail` feeds both the attribute and the render gate today, so they
+ * agree by construction — but nothing asserted they MUST until this:
+ * reverting `aria-expanded={row.selected}` alone (leaving the render gate
+ * at `showDetail`) reintroduces an inert row that visibly renders its
+ * detail while announcing collapsed, and nothing in the suite noticed.
+ */
+function checkAriaExpandedMatchesDetail(
+  container: HTMLElement,
+  passName: string,
+  problems: string[],
+) {
+  for (const li of Array.from(
+    container.querySelectorAll('li[role="treeitem"][data-row]'),
+  )) {
+    const announced = li.getAttribute("aria-expanded") === "true";
+    const hasDetail = li.querySelector(".detail") !== null;
+    if (announced !== hasDetail) {
+      problems.push(
+        `${passName}: a row announces aria-expanded="${announced}" but its detail is ${
+          hasDetail ? "present" : "absent"
+        } in the DOM — the two must always agree`,
+      );
+    }
+  }
+}
+
+/**
+ * Dispatch a real `keydown` and hand the event back, so a check can read
+ * `defaultPrevented` as well as what the handler did with it.
+ *
+ * `bubbles` is not optional: React listens on the root container, never on
+ * the row itself, so an event dispatched without it reaches no handler at all
+ * and every assertion downstream of it passes by measuring nothing.
+ */
+function pressKey(el: Element, key: string): Event {
+  const view = window as unknown as { KeyboardEvent: typeof KeyboardEvent };
+  const event = new view.KeyboardEvent("keydown", {
+    key,
+    bubbles: true,
+    cancelable: true,
+  });
+  el.dispatchEvent(event);
+  return event;
+}
+
+/**
+ * A tab stop's own name, so a failure message says WHICH element it found.
+ *
+ * BOUNDED. When focus has fallen off the widget entirely `document
+ * .activeElement` is `<body>`, whose `textContent` is every rendered view in
+ * this harness at once — 70 KB of prose in what was meant to be a one-line
+ * failure. The tag name is what actually identifies that case.
+ */
+function describeStop(el: Element): string {
+  const name = (el.getAttribute("aria-label") || el.textContent || "").trim();
+  if (name.length === 0) return `<${el.tagName.toLowerCase()}>`;
+  // A row's accessible name is a ", "-joined list whose FIRST segment is the
+  // row's own name, so that segment is the identifying half; everything after
+  // it is authority class and provenance, which no failure here is about.
+  const head = name.split(", ")[0];
+  return head.length > 60 ? `<${el.tagName.toLowerCase()}>` : head;
+}
+
+/**
+ * `els` holds exactly ONE tab stop, it is `expected`, and every other element
+ * carries an explicit `tabindex="-1"`.
+ *
+ * READ FROM THE NEGATIVE, ON PURPOSE. Counting elements whose `tabindex`
+ * equals `"0"` reads 1 the moment the active one is marked, and goes on
+ * reading 1 whether the rest carry `-1` or carry no `tabindex` attribute at
+ * all — and a native `<button>` with no `tabindex` is Tab-reachable anyway.
+ * A positive count cannot see what is missing: absence is not -1. Both tab
+ * strips this harness checks were in exactly that state (three `role="tab"`
+ * buttons, no `tabindex` attribute on any of them), where a count of
+ * `tabindex="0"` reads 0 rather than the 3 tab stops a user actually meets.
+ */
+function checkRovingTabStop(
+  els: Element[],
+  expected: Element | null,
+  what: string,
+  passName: string,
+  problems: string[],
+) {
+  const stops = els.filter((e) => e.getAttribute("tabindex") === "0");
+  if (stops.length !== 1) {
+    problems.push(
+      `${passName}: ${stops.length} of ${els.length} ${what} carry tabindex="0", want exactly 1`,
+    );
+  } else if (expected && stops[0] !== expected) {
+    problems.push(
+      `${passName}: the ${what} tab stop is "${describeStop(stops[0])}", want "${describeStop(expected)}"`,
+    );
+  }
+  const stillReachable = els.filter(
+    (e) => e !== stops[0] && e.getAttribute("tabindex") !== "-1",
+  );
+  if (stillReachable.length > 0) {
+    problems.push(
+      `${passName}: ${stillReachable.length} of ${els.length} ${what} carry no tabindex="-1" and stay Tab-reachable — a single tabindex="0" does not make a roving model`,
+    );
+  }
+}
+
+/**
+ * Every heading in `container`, read in document order, starts at h1 and
+ * skips no rung on the way down.
+ *
+ * Two separate faults, and the flat-set one is the easier to miss. A panel
+ * whose headings are all h3 skips nothing BETWEEN them, so a "no skipped
+ * level" check alone calls it well-formed — while the outline it builds has
+ * no top at all, and a reader jumping by heading arrives in the middle of a
+ * document with nothing above them saying which one it is.
+ */
+function checkHeadingOutline(
+  container: HTMLElement,
+  passName: string,
+  problems: string[],
+) {
+  const levels = Array.from(
+    container.querySelectorAll("h1, h2, h3, h4, h5, h6"),
+  ).map((h) => Number(h.tagName.slice(1)));
+  if (levels.length === 0) {
+    problems.push(`${passName}: the view renders no headings at all`);
+    return;
+  }
+  if (levels[0] !== 1) {
+    problems.push(
+      `${passName}: the outline starts at h${levels[0]} — the panel has no root heading`,
+    );
+  }
+  for (let i = 1; i < levels.length; i++) {
+    if (levels[i] > levels[i - 1] + 1) {
+      problems.push(
+        `${passName}: the heading outline jumps from h${levels[i - 1]} to h${levels[i]}`,
+      );
+    }
+  }
+}
+
 const VIEWS: Array<[string, React.FC]> = [
   ["overview", OverviewView],
   ["sidebar-hub", SidebarHubView],
@@ -632,6 +776,35 @@ const VIEWS: Array<[string, React.FC]> = [
   ["hardware-explorer", HardwareExplorerView],
   ["build-plan", BuildPlanView],
   ["models", ModelsView],
+];
+
+// The memory tab's own content, over the `feedState()` manifest — shared by
+// the wide-width "build-plan" pass below and the narrow-width pass further
+// down (Task 8, #484 phase 4), so both check the SAME set of strings. A
+// narrow-width pass that invented its own shorter list could pass by
+// checking less, not by proving nothing was actually dropped.
+const MEMORY_TAB_NEEDLES = [
+  "alp_shmem0", // a sized carve-out, drawn as a band
+  "0x80540000 – 0x80580000", // its extent, both ends
+  "mram_main", // the region it came from
+  "+0 b in storage", // the partition: an offset, never an address
+  "64.0 kib", // its size
+  // m55_hp's slot extent, named as tan's measurement rather than
+  // folded into the address beside it.
+  "5.50 mib · tan size",
+  "peer slice skipped", // a degraded link's reason, verbatim
+  // #484 phase 4: the single piecewise rail's own caption — never
+  // "true scale"/"equalized" (both retired with the second rail) and
+  // never a "22×" magnification factor (retired with DETAIL_FACTOR).
+  "piecewise scale",
+  // D4: the conflict the allocator never checks, stated before the
+  // picture — a carve-out pinned onto the HP image slot.
+  "covers an image load address",
+  "0x802b0000",
+  // #484 phase 4 (Task 6): the one-sentence legend that now sits
+  // ABOVE the chart, after `AuthorityLegend` — the scale-mode prose
+  // it replaced is gone along with the modes themselves.
+  "the rail is a schematic",
 ];
 
 // Text a broken/degraded UI shows — flagged so we SEE the problem, not skip it.
@@ -760,41 +933,40 @@ async function main() {
         (memoryTab as HTMLButtonElement).click();
         await settle();
         const memText = (container.textContent || "").toLowerCase();
-        for (const needle of [
-          "alp_shmem0", // a sized carve-out, drawn as a band
-          "0x80540000 – 0x80580000", // its extent, both ends
-          "mram_main", // the region it came from
-          "+0 b in storage", // the partition: an offset, never an address
-          "64.0 kib", // its size
-          // m55_hp's slot extent, named as tan's measurement rather than
-          // folded into the address beside it.
-          "5.50 mib · tan size",
-          "peer slice skipped", // a degraded link's reason, verbatim
-          // D3: true scale by default, with the fixed magnified top band
-          // beside it and Equalized offered as a labelled alternative.
-          "true scale",
-          // The window runs from the lowest pinned base to the furthest reach,
-          // budgets included: 0x80010000 (m55_he's load address) to
-          // 0x802b0000 + 5 767 168 B (m55_hp's tan-size budget) = 0x80830000.
-          // A 22x rail covers 1/22 of that = 387 258.18 B, floored to 387 258.
-          "22× top 378.2 kib",
-          "equalized",
-          // D4: the conflict the allocator never checks, stated before the
-          // picture — a carve-out pinned onto the HP image slot.
-          "covers an image load address",
-          "0x802b0000",
-          // D4: the aperture, named beside the map with no extent of its own.
-          // The legend that replaced four paragraphs of prose.
-          "bands are extents, lines are a base with no size",
-        ]) {
+        for (const needle of MEMORY_TAB_NEEDLES) {
           if (!memText.includes(needle)) {
             problems.push(`build-plan: memory tab missing "${needle}"`);
           }
         }
+        // #484 phase 4: a run neither a span nor a region occupies is
+        // COMPRESSED and MARKED, never silently drawn to scale or dropped.
+        // This manifest carries no `memory:` region table at all, so the
+        // 0x2a0000 B run between m55_he's own load address (0x80010000)
+        // and the start of m55_hp's own slot / tan-size budget (0x802b0000)
+        // is covered by nothing — a real gap, not a contrived one. Mutation
+        // this catches: a `layoutRail` (or its caller) that treats an
+        // uncovered run as just another extent, which would silently draw
+        // it to scale instead of announcing the compression.
+        const gapMarks = container.querySelectorAll('[data-segment="gap"]');
+        if (gapMarks.length === 0) {
+          problems.push("build-plan: no compressed gap was marked on the rail");
+        }
+        for (const mark of Array.from(gapMarks)) {
+          const label =
+            mark.getAttribute("aria-label") || mark.textContent || "";
+          if (!/\d/.test(label)) {
+            problems.push(
+              "build-plan: a compressed gap does not state how much it compressed",
+            );
+          }
+        }
         // An address is an integer or it is not an address. `0x80291745.d`
-        // reached a real screen: the detail window was computed as
-        // `hi - (hi - lo) / 22`, which is almost never whole, and
-        // `toString(16)` renders the remainder as hex digits after a dot.
+        // reached a real screen under the old fixed-magnification detail
+        // rail: its window was computed as `hi - (hi - lo) / 22`, almost
+        // never whole, and `toString(16)` rendered the remainder as hex
+        // digits after a dot. That arithmetic is gone with the rail
+        // (#484 phase 4), but the piecewise rail does its own division
+        // (`layoutRail`'s `addressAt`) and this regression guard stays.
         //
         // Checked per LEAF ELEMENT, not on `container.textContent`: that glues
         // adjacent elements with no separator, so a legitimate
@@ -815,12 +987,28 @@ async function main() {
         // marker is a hairline rather than a block is a CSS class the harness
         // cannot see, since run.mjs stubs CSS modules with a key-echoing Proxy
         // (test/webview.cssModuleKeys.test.js is what covers the class names).
+        // `[data-kind]` lives in the per-row DETAIL, one interaction away —
+        // select a slot-image row first.
+        const slotRow = Array.from(
+          container.querySelectorAll('li[role="treeitem"][data-row]'),
+        ).find((li) =>
+          (li.getAttribute("aria-label") || "").startsWith("m55_hp"),
+        );
+        if (!slotRow) {
+          problems.push('build-plan: no row found for "m55_hp"');
+        } else {
+          (slotRow as HTMLLIElement).click();
+          await settle();
+        }
         const markers = Array.from(
           container.querySelectorAll('[data-kind="slot_image"]'),
         );
         if (markers.length === 0) {
           problems.push("build-plan: memory tab drew no slot markers");
         }
+        // The deepest headings this panel has live on the Memory tab, so the
+        // outline is checked with that tab open.
+        checkHeadingOutline(container, "build-plan/memory", problems);
         // The prose moved OUT of the map and into its own tab. Assert it
         // landed there rather than simply vanishing.
         const notesTab = tabs.find((b) =>
@@ -836,18 +1024,35 @@ async function main() {
             "alp-sdk#1365", // the issue that gates whether the region table can appear at all
             "not in", // "...not in system-manifest-v1 at all" for an older/pending manifest
             "nothing here is editable", // and why it stays read-only
+            // #484 phase 4 (Task 6): the band/line encoding claim moved OUT
+            // of the map's own legend and into this tab's prose
+            // (MemoryNotes.tsx); the old memory-tab needle that used to pin
+            // it there was retired along with the legend text, and this is
+            // that claim re-pinned where it now actually lives.
+            "a band is an extent. a line is a base with no size",
           ]) {
             if (!notes.includes(needle)) {
               problems.push(`build-plan: notes tab missing "${needle}"`);
             }
           }
-          // The map must not be on screen at the same time.
-          if (notes.includes("22× top")) {
+          // The map must not be on screen at the same time. "piecewise
+          // scale" is the rail's own caption (#484 phase 4) — present only
+          // while the chart itself is mounted.
+          if (notes.includes("piecewise scale")) {
             problems.push("build-plan: the notes tab still renders the map");
           }
+          // And again with Notes open: this tab's headings come from a
+          // different component, so it is its own outline, not a subset of
+          // the one checked above.
+          checkHeadingOutline(container, "build-plan/notes", problems);
         }
         (tabs[0] as HTMLButtonElement).click();
         await settle();
+        // And a third time with Slices open. It is the tab this panel opens
+        // on, and it was the only one of the three whose outline nothing
+        // pinned — a heading added at the wrong rung there would have
+        // shipped green.
+        checkHeadingOutline(container, "build-plan/slices", problems);
       }
 
       // `tan build --plan` is deferred (tan-cli#427), so on the pinned CLI the
@@ -1030,6 +1235,7 @@ async function main() {
   // 1` is one character away from `>= 1`, and an older tan that sends no
   // category is exactly the case nobody re-runs by hand.
   {
+    const problemsBefore = problems.length;
     const CHIP_ROW = '[aria-label="Filter examples by domain"]';
     const example = (id: string, group?: string) => ({
       id,
@@ -1142,7 +1348,7 @@ async function main() {
     }
 
     console.log(
-      `  ${problems.length === 0 ? "PASS" : "FAIL"}  example-filter-degrade: the filter row appears only when it can narrow`,
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  example-filter-degrade: the filter row appears only when it can narrow`,
     );
   }
 
@@ -1155,6 +1361,7 @@ async function main() {
   // and assert the panel states it once, in the neutral style, with the actions
   // it cannot drive switched off.
   {
+    const problemsBefore = problems.length;
     const container = document.createElement("div");
     document.body.appendChild(container);
     const refusal = (sub: string) => ({
@@ -1236,7 +1443,7 @@ async function main() {
       problems.push("models-cli-gap: Refresh was disabled, but it still works");
     }
     console.log(
-      `  ${problems.length === 0 ? "PASS" : "FAIL"}  models-cli-gap: one notice, unusable actions disabled`,
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  models-cli-gap: one notice, unusable actions disabled`,
     );
   }
 
@@ -1498,6 +1705,7 @@ async function main() {
   // a boundary rendering a bare "something went wrong" swaps a blank panel for
   // an uninformative one and no bug report survives it.
   {
+    const problemsBefore = problems.length;
     const container = document.createElement("div");
     document.body.appendChild(container);
     function Throws(): React.ReactElement {
@@ -1529,11 +1737,11 @@ async function main() {
       );
     }
     console.log(
-      `  ${problems.length === 0 ? "PASS" : "FAIL"}  error-boundary: caught a throwing render`,
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  error-boundary: caught a throwing render`,
     );
   }
 
-  // ── the SoM region backdrop, rpmsg-aen (#484 phase 2) ──
+  // ── the SoM region table, rpmsg-aen (#484 phase 2) ──
   // A real emitted golden with a resolved region table: mcuboot / two image
   // slots / reserved / storage / atoc all resolve, mram_main does not. Runs
   // the real parser + narrower, exactly like feedState() above.
@@ -1592,19 +1800,95 @@ async function main() {
       (memoryTab as HTMLButtonElement).click();
       await settle();
       const memText = (container.textContent || "").toLowerCase();
-      for (const needle of [
-        "vendor image · locked", // mcuboot
-        "customer · written at flash time", // he_slot0 / hp_slot0
-        "no writer · reserved", // reserved
-        "customer · writable at runtime", // storage
-        "secure enclave · locked", // atoc
-        "a placeholder, not an address", // mram_main's reason, verbatim
-        "som regions (7)", // the table's own heading
-      ]) {
-        if (!memText.includes(needle.toLowerCase())) {
-          problems.push(`memory-regions-aen: missing "${needle}"`);
+      if (!memText.includes("memory map (9)")) {
+        problems.push('memory-regions-aen: missing "memory map (9)"');
+      }
+
+      // ── a selection that arrives from the RAIL opens the row it lands on ──
+      //
+      // Run here, before anything has been clicked in the table, so exactly
+      // one row ends up selected and the check cannot be reading a leftover.
+      // The rail's `<g class="hit">` is a mouse-only affordance with no role
+      // and no tabIndex, so it takes a dispatched MouseEvent rather than
+      // `.click()` — jsdom puts `click()` on HTMLElement, and this is an
+      // SVGElement.
+      //
+      // The detail is the only surface carrying kind, authority, cores, note
+      // and reason. A rail click that highlights a row without opening it
+      // leaves the reader with a colour and no facts, and clicking that row
+      // in the table to get them would DESELECT it — two clicks to see
+      // anything. Nothing in this suite clicked the rail before, so drift
+      // here was invisible.
+      const railHit = container.querySelector('svg[role="img"] .hit');
+      if (!railHit) {
+        problems.push(
+          "memory-regions-aen: the rail draws no clickable span — the chart-driven selection cannot be checked",
+        );
+      } else {
+        railHit.dispatchEvent(
+          new (
+            window as unknown as { MouseEvent: typeof MouseEvent }
+          ).MouseEvent("click", { bubbles: true, cancelable: true }),
+        );
+        await settle();
+        const selectedRows = Array.from(
+          container.querySelectorAll(
+            'li[role="treeitem"][data-row][aria-selected="true"]',
+          ),
+        );
+        if (selectedRows.length !== 1) {
+          problems.push(
+            `memory-regions-aen: clicking a rail span selected ${selectedRows.length} row(s), want exactly 1`,
+          );
+        } else {
+          const picked = selectedRows[0];
+          if (picked.getAttribute("aria-expanded") !== "true") {
+            problems.push(
+              `memory-regions-aen: a rail click selected "${(picked.getAttribute("aria-label") || "").split(", ")[0]}" but left it aria-expanded="${picked.getAttribute("aria-expanded")}" — the reader gets a highlight and none of the facts`,
+            );
+          }
+          if (picked.querySelector(".detail") === null) {
+            problems.push(
+              "memory-regions-aen: a rail click selected a row whose detail is not in the DOM",
+            );
+          }
         }
       }
+      // The authority label and the reason are now in the per-row DETAIL,
+      // one interaction away rather than always visible — select the row
+      // before checking for the text it reveals.
+      for (const [rowName, needle] of [
+        ["mcuboot", "vendor image · locked"],
+        ["he_slot0", "customer · written at flash time"],
+        ["hp_slot0", "customer · written at flash time"],
+        ["reserved", "no writer · reserved"],
+        ["storage", "customer · writable at runtime"],
+        ["atoc", "secure enclave · locked"],
+        ["mram_main", "a placeholder, not an address"], // its reason, verbatim
+      ] as const) {
+        const rowEl = Array.from(
+          container.querySelectorAll('li[role="treeitem"][data-row]'),
+        ).find((li) =>
+          (li.getAttribute("aria-label") || "").startsWith(rowName),
+        );
+        if (!rowEl) {
+          problems.push(`memory-regions-aen: no row found for "${rowName}"`);
+          continue;
+        }
+        (rowEl as HTMLLIElement).click();
+        await settle();
+        const text = (container.textContent || "").toLowerCase();
+        if (!text.includes(needle.toLowerCase())) {
+          problems.push(
+            `memory-regions-aen: selecting "${rowName}" did not reveal "${needle}"`,
+          );
+        }
+      }
+      // mram_main is selected (the last click above) and every other row is
+      // not — an ordinary selected row and eight ordinary unselected rows,
+      // checked in one pass: `aria-expanded` must match detail presence for
+      // every one of them.
+      checkAriaExpandedMatchesDetail(container, "memory-regions-aen", problems);
       for (const forbidden of ["free", "remaining"]) {
         if (memText.includes(forbidden)) {
           problems.push(
@@ -1622,13 +1906,1280 @@ async function main() {
           `memory-regions-aen: chart aria-label "${ariaLabel}" does not span 0x80000000-0x80580000 — the window did not grow over the SoM's regions`,
         );
       }
+
+      // ── #484 phase 4: one piecewise rail, not two fixed-magnification
+      //    ones (Task 5) ──
+      const svgs = container.querySelectorAll("svg");
+      if (svgs.length !== 1) {
+        problems.push(
+          `memory-regions-aen: ${svgs.length} rails drawn, want exactly 1`,
+        );
+      }
+      if ((container.textContent || "").includes("22×")) {
+        problems.push(
+          "memory-regions-aen: the fixed 22× magnification caption survived",
+        );
+      }
+      // The span `<g>`s used to carry `role="button"` + `tabIndex={0}` — a
+      // second, competing keyboard target for what the table already
+      // exposes as an `option`. Mutation this catches: reinstating either
+      // attribute on the rail's own hit targets.
+      const focusableInSvg = container.querySelectorAll("svg [tabindex]");
+      if (focusableInSvg.length !== 0) {
+        problems.push(
+          `memory-regions-aen: ${focusableInSvg.length} focusable descendants inside svg[role=img]`,
+        );
+      }
+      // NO POSITIVE GAP CHECK HERE, ON PURPOSE. rpmsg-aen's six regions
+      // (mcuboot..atoc) tile the window end to end — mcuboot's own end IS
+      // he_slot0's own base, and so on down to atoc — so there is nothing
+      // for the piecewise scale to compress in THIS fixture; asserting a
+      // gap here would be asserting something this data cannot produce.
+      // The gap-marking assertion runs instead in the "build-plan" pass
+      // below, whose hand-built manifest carries a real one: m55_he's own
+      // load address and m55_hp's slot sit 0x2a0000 B apart with nothing
+      // declared between them.
+      //
+      // A NEGATIVE gap check DOES belong here, and only here: aen is the
+      // only fixture with a resolved region table, so it is the only one
+      // that can catch a mutation dropping region intervals out of
+      // `occupied` (`railBoundaries`, MemoryChart.tsx) — that would spawn
+      // SPURIOUS gaps across these six tiled regions, and the "build-plan"
+      // manifest below has no region table to exercise that path at all.
+      // Do not "fix" this back into a positive assertion — the tiling is
+      // the reason it must stay negative.
+      if (container.querySelectorAll('[data-segment="gap"]').length !== 0) {
+        problems.push(
+          "memory-regions-aen: a gap was marked where the six regions tile " +
+            "the window end to end — occupied coverage from the region " +
+            "table was dropped somewhere",
+        );
+      }
+      //
+      // Axis ticks land ONLY at declared boundaries — checked against an
+      // INDEPENDENT oracle (the unified table's own `[data-col="range"]`
+      // text, a completely different render path from the rail's own tick
+      // computation), not by re-calling layoutRail/binaryTicks here, which
+      // would only prove the test agrees with itself. Every `.tickLabel`
+      // (the primary-ink, "boundary" tick) must format an address that
+      // ALSO appears in some row's own range — a mutation that drew
+      // boundary-ink ticks from `binaryTicks` (arithmetic, power-of-two)
+      // instead of segment endpoints would very likely produce one that
+      // does not.
+      const tableForTicks = container.querySelector(
+        'ul[aria-label="Memory map rows"]',
+      );
+      const rangeAddrs = new Set(
+        Array.from(
+          tableForTicks?.querySelectorAll('[data-col="range"]') ?? [],
+        ).flatMap(
+          (el) => (el.textContent || "").match(/0x[0-9a-fA-F]+/g) ?? [],
+        ),
+      );
+      const boundaryTickLabels = Array.from(
+        container.querySelectorAll('[data-tick="boundary"]'),
+      ).map((g) => (g.textContent || "").trim());
+      if (boundaryTickLabels.length === 0) {
+        problems.push("memory-regions-aen: no boundary tick was drawn");
+      }
+      for (const label of boundaryTickLabels) {
+        if (!rangeAddrs.has(label)) {
+          problems.push(
+            `memory-regions-aen: boundary tick "${label}" is not any row's own address — a declared-boundary tick landed somewhere nothing real begins or ends`,
+          );
+        }
+      }
+      // A computed ("interior") tick must never coincide with a declared
+      // one — that would be the same address drawn twice, once in each
+      // ink, which is indistinguishable from a single mistaken tick.
+      const interiorTickLabels = Array.from(
+        container.querySelectorAll('[data-tick="interior"]'),
+      ).map((g) => (g.textContent || "").trim());
+      for (const label of interiorTickLabels) {
+        if (boundaryTickLabels.includes(label)) {
+          problems.push(
+            `memory-regions-aen: "${label}" is drawn as both a boundary and an interior tick`,
+          );
+        }
+      }
+
+      // ── #484 phase 3: the two lists collapse into one address-ordered
+      //    table (Task 4) ──
+      const table = container.querySelector('ul[aria-label="Memory map rows"]');
+      if (!table) {
+        problems.push("memory-regions-aen: no unified memory table found");
+      } else {
+        const firstRow = table.querySelector('li[role="treeitem"][data-row]');
+        const firstName = (firstRow?.textContent || "").toLowerCase();
+        if (!firstName.includes("he_slot0")) {
+          problems.push(
+            `memory-regions-aen: first row is "${firstName.trim()}" — the writable group must sort first`,
+          );
+        }
+        const columns = firstRow?.querySelectorAll("[data-col]") ?? [];
+        if (columns.length !== 4) {
+          problems.push(
+            `memory-regions-aen: row renders ${columns.length} columns at rest, want exactly 4`,
+          );
+        }
+        for (const cls of [
+          "customer_runtime",
+          "customer_image",
+          "locked",
+          "reserved",
+          "composite",
+        ]) {
+          // A DELIMITED token, not a bare substring: `region.authorityClass`
+          // is joined as its own segment (`joinAccessibleName`'s ", "
+          // separator), so splitting on it and requiring an EXACT segment
+          // match is what actually proves the class reached the accessible
+          // name — a bare `.includes(cls)` is satisfied by the PROSE label
+          // too ("no writer · reserved" contains "reserved"), which is a
+          // different field passing the same check. `.slice(1)` drops the
+          // row's own NAME (segment 0): "reserved" is coincidentally also
+          // this fixture's region name, and a bare-substring check on the
+          // full label would keep passing off that collision alone even
+          // with `authorityClass` deleted from the join.
+          const found = Array.from(
+            table.querySelectorAll('li[role="treeitem"][data-row]'),
+          ).some((li) =>
+            (li.getAttribute("aria-label") || "")
+              .split(", ")
+              .slice(1)
+              .includes(cls),
+          );
+          if (!found) {
+            problems.push(
+              `memory-regions-aen: authority class "${cls}" reaches no row's accessible name — deferred must not mean dropped`,
+            );
+          }
+        }
+        // `[data-tier-group]`, not `[role="group"]`: every expanded row now owns
+        // a group of its own, so the bare role counts those too.
+        const groups = table.querySelectorAll("[data-tier-group]");
+        // `[data-tier-group]` is how the three are COUNTED (an expanded row
+        // owns a group of its own now, so the bare role over-counts), but a
+        // data attribute carries no semantics — so the role each of them
+        // must carry is asserted here, separately. Without it the tier `li`
+        // is a bare listitem inside `ul[role="tree"]`: not an allowed owned
+        // element, the `role="presentation"` wrapper re-parents the rows
+        // onto THAT instead of the tree, every group label is lost, and each
+        // toggle's `aria-controls` names a generic listitem. It is also the
+        // premise the rows' explicit `aria-level={1}` rests on — that the
+        // tier groups are sibling groupings under the tree, not parent
+        // nodes.
+        for (const g of Array.from(groups)) {
+          const role = g.getAttribute("role");
+          if (role !== "group") {
+            problems.push(
+              `memory-regions-aen: the "${g.getAttribute("data-tier-group")}" tier container carries ${role === null ? "no role at all" : `role="${role}"`}, want role="group" — a bare listitem is not an allowed owned element of a tree`,
+            );
+          }
+        }
+        if (groups.length !== 3) {
+          problems.push(
+            `memory-regions-aen: ${groups.length} tier groups rendered, want exactly 3`,
+          );
+        }
+
+        // Membership by NAME, not by count. `byTier[row.tier]` and
+        // `<AuthoritySwatch tier={row.tier}>` read the same field, so a row
+        // misfiled by tier renders a perfectly self-consistent swatch —
+        // `groups.length !== 3` above passes even when every group is
+        // populated wrong. he_slot0/hp_slot0 CONTAIN m55_he/m55_hp's base
+        // addresses (0x80010000, 0x802b0000), so both spans now share their
+        // containing region's "yours" tier — the adjacency this whole table
+        // exists to produce.
+        const expectedByTier: Record<string, string[]> = {
+          yours: ["he_slot0", "m55_he", "hp_slot0", "m55_hp", "storage"],
+          locked: ["mcuboot", "atoc"],
+          unproven: ["reserved", "mram_main"],
+        };
+        for (const [tier, expectedNames] of Object.entries(expectedByTier)) {
+          const group = Array.from(groups).find(
+            (g) => g.getAttribute("data-tier-group") === tier,
+          );
+          const actualNames = group
+            ? Array.from(
+                group.querySelectorAll('li[role="treeitem"][data-row]'),
+              ).map(
+                (li) => (li.getAttribute("aria-label") || "").split(", ")[0],
+              )
+            : [];
+          const sortedActual = [...actualNames].sort();
+          const sortedExpected = [...expectedNames].sort();
+          if (JSON.stringify(sortedActual) !== JSON.stringify(sortedExpected)) {
+            problems.push(
+              `memory-regions-aen: "${tier}" group contains [${actualNames.join(", ")}], want exactly [${expectedNames.join(", ")}]`,
+            );
+          }
+        }
+
+        // Carried forward from Task 2. Its swatch gate can only read source
+        // text — `AuthoritySwatch` was mounted nowhere, so there was no
+        // rendered output to assert against, and measurement proved three
+        // mutations that kept that gate green: hardcoding `data-tier="yours"`,
+        // dropping the attribute, and returning null. This task is the first
+        // that mounts the component, so it is the first that can check what
+        // actually reaches the DOM.
+        for (const group of Array.from(groups)) {
+          const groupTier = group.getAttribute("data-tier-group");
+          for (const row of Array.from(
+            group.querySelectorAll('li[role="treeitem"][data-row]'),
+          )) {
+            const swatches = row.querySelectorAll("[data-tier]");
+            if (swatches.length !== 1) {
+              problems.push(
+                `memory-regions-aen: a row carries ${swatches.length} [data-tier] elements, want exactly 1`,
+              );
+              continue;
+            }
+            const tier = swatches[0].getAttribute("data-tier");
+            if (!["yours", "locked", "unproven"].includes(tier || "")) {
+              problems.push(
+                `memory-regions-aen: a row's swatch reads data-tier="${tier}", which is not one of the three tiers`,
+              );
+            }
+            if (groupTier && tier !== groupTier) {
+              problems.push(
+                `memory-regions-aen: a row in the "${groupTier}" group carries a "${tier}" swatch — the swatch is not following its row's tier`,
+              );
+            }
+          }
+        }
+
+        // The collapse toggle. Collapse "unproven": its rows must leave the
+        // tree, the OTHER two groups must still validate by name, and
+        // `aria-controls` must still resolve to a MOUNTED element (the group
+        // itself, empty of rows — not gone). Reopen and check the rows
+        // return.
+        //
+        // The toggle is found by matching its `aria-controls` against the
+        // group element's OWN id, read off the rendered `[data-tier-group]`.
+        // That is stronger than matching a literal both sides happen to
+        // spell the same way, and it is the only form that survives the
+        // per-instance ids the group now carries: this harness mounts five
+        // Build Plan panels into one document, so a hardcoded IDREF
+        // resolved to whichever panel rendered first.
+        const unprovenGroupId =
+          container.querySelector('[data-tier-group="unproven"]')?.id ?? "";
+        const unprovenToggle = Array.from(
+          container.querySelectorAll("button[aria-controls]"),
+        ).find(
+          (b) =>
+            !!unprovenGroupId &&
+            b.getAttribute("aria-controls") === unprovenGroupId,
+        );
+        if (!unprovenToggle) {
+          problems.push(
+            `memory-regions-aen: no toggle button controls the "unproven" group (its id is "${unprovenGroupId}")`,
+          );
+        } else {
+          const controlsId = unprovenToggle.getAttribute("aria-controls")!;
+          (unprovenToggle as HTMLButtonElement).click();
+          await settle();
+
+          const collapsedGroup = document.getElementById(controlsId);
+          if (!collapsedGroup) {
+            problems.push(
+              `memory-regions-aen: collapsing "unproven" left aria-controls="${controlsId}" resolving to nothing`,
+            );
+          } else if (!container.contains(collapsedGroup)) {
+            // The id must be unique across the DOCUMENT, not merely within
+            // this panel. Five Build Plan panels are mounted here, so a
+            // hardcoded IDREF resolves to whichever one rendered first —
+            // and a container-scoped lookup would never notice, because the
+            // right-looking element exists locally too.
+            problems.push(
+              `memory-regions-aen: aria-controls="${controlsId}" resolves to a group in a DIFFERENT panel — the IDREF is not unique in this document`,
+            );
+          } else if (
+            collapsedGroup.getAttribute("data-tier-group") !== "unproven"
+          ) {
+            problems.push(
+              `memory-regions-aen: aria-controls="${controlsId}" resolves to the "${collapsedGroup.getAttribute("data-tier-group")}" group, not "unproven"`,
+            );
+          } else {
+            const rowsWhileCollapsed = collapsedGroup.querySelectorAll(
+              'li[role="treeitem"][data-row]',
+            ).length;
+            if (rowsWhileCollapsed !== 0) {
+              problems.push(
+                `memory-regions-aen: "unproven" still has ${rowsWhileCollapsed} row(s) in the tree while collapsed, want 0`,
+              );
+            }
+          }
+
+          const groupsWhileCollapsed =
+            table.querySelectorAll("[data-tier-group]");
+          if (groupsWhileCollapsed.length !== 3) {
+            problems.push(
+              `memory-regions-aen: ${groupsWhileCollapsed.length} groups remain mounted while one is collapsed, want 3`,
+            );
+          }
+          for (const tier of ["yours", "locked"] as const) {
+            const group = Array.from(groupsWhileCollapsed).find(
+              (g) => g.getAttribute("data-tier-group") === tier,
+            );
+            const actualNames = group
+              ? Array.from(
+                  group.querySelectorAll('li[role="treeitem"][data-row]'),
+                ).map(
+                  (li) => (li.getAttribute("aria-label") || "").split(", ")[0],
+                )
+              : [];
+            const sortedActual = [...actualNames].sort();
+            const sortedExpected = [...expectedByTier[tier]].sort();
+            if (
+              JSON.stringify(sortedActual) !== JSON.stringify(sortedExpected)
+            ) {
+              problems.push(
+                `memory-regions-aen: while "unproven" is collapsed, "${tier}" group contains [${actualNames.join(", ")}], want exactly [${expectedByTier[tier].join(", ")}]`,
+              );
+            }
+          }
+
+          (unprovenToggle as HTMLButtonElement).click();
+          await settle();
+          // `getElementById`, not a `#${id}` selector. The id is a
+          // `useId()` value, and only React 19's selector-safe form survives
+          // interpolation into CSS — React 18's `:r0:` throws SyntaxError
+          // there. Its sibling above already reads the id this way.
+          const reopenedGroup = document.getElementById(controlsId);
+          const rowsAfterReopen = reopenedGroup
+            ? reopenedGroup.querySelectorAll('li[role="treeitem"][data-row]')
+                .length
+            : 0;
+          if (rowsAfterReopen !== expectedByTier.unproven.length) {
+            problems.push(
+              `memory-regions-aen: reopening "unproven" restored ${rowsAfterReopen} row(s), want ${expectedByTier.unproven.length}`,
+            );
+          }
+        }
+      }
+
+      // ── #484 phase 4 (Task 6): findings move up, the scale modes go
+      //    away ──
+      if ((container.textContent || "").includes("Equalized")) {
+        problems.push("memory-regions-aen: the Equalized mode button survived");
+      }
+      // A named LANDMARK, not a live region. `role="alert"` is assertive and
+      // is for content that appears after load; `FindingList` returns null
+      // when it has nothing, so its element enters the DOM already holding
+      // its content — the case a live region announces unreliably — and a
+      // static finding read off a manifest has nothing to interrupt anyone
+      // for. The name is what makes it navigable, so the name is checked.
+      const findingRegions = Array.from(
+        container.querySelectorAll('[role="region"]'),
+      );
+      const regionText = findingRegions
+        .map((a) => a.textContent || "")
+        .join(" ");
+      if (!regionText.includes("alp_default_rpmsg")) {
+        problems.push(
+          "memory-regions-aen: the blocked IPC carve-out is not in a named region above the chart",
+        );
+      }
+      for (const region of findingRegions) {
+        const labelledBy = region.getAttribute("aria-labelledby");
+        const label = labelledBy ? document.getElementById(labelledBy) : null;
+        if (!label) {
+          problems.push(
+            `memory-regions-aen: a findings region's aria-labelledby="${labelledBy}" resolves to nothing — an unnamed region is a landmark nobody can find`,
+          );
+        } else if (region.querySelector("h1, h2, h3, h4, h5, h6") !== label) {
+          problems.push(
+            "memory-regions-aen: a findings region is named by something other than its own heading",
+          );
+        }
+      }
+      // Membership above proves the text is IN a region somewhere; it says
+      // nothing about WHERE. "above the chart" is a position claim, so it
+      // needs a position check — the blocked-findings region must actually
+      // PRECEDE the chart's own <svg> in rendered document order, not just
+      // share a page with it. `compareDocumentPosition` is read on the
+      // RENDERED nodes, never inferred from source order.
+      const blockedAlert = findingRegions.find((a) =>
+        (a.textContent || "").includes("alp_default_rpmsg"),
+      );
+      if (!blockedAlert) {
+        problems.push(
+          "memory-regions-aen: no named region contains the blocked IPC carve-out",
+        );
+      } else if (
+        !svg ||
+        !(
+          blockedAlert.compareDocumentPosition(svg) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+        )
+      ) {
+        problems.push(
+          "memory-regions-aen: the blocked-findings region does not precede the chart in document order",
+        );
+      }
+      // #484 Task 7: the blocked-findings region carries two per-finding
+      // actions, dispatched through the host rather than a raw
+      // `vscode://file` href. Found by TEXT within the already-uniquely-
+      // identified `blockedAlert`, never by CSS module class: both render
+      // through the shared `Button` component, whose stubbed class ("btn")
+      // collides with ConfiguratorView.module.css's own `.btn` under
+      // run.mjs's css-module-stub — the same reason `.legendItem` (not
+      // `.legend`) is what the check just below keys on.
+      const findingButtons = blockedAlert
+        ? Array.from(blockedAlert.querySelectorAll("button"))
+        : [];
+      // #484: the button text is "Open board config", never a specific
+      // filename — the host, not this button, decides which file
+      // `collectProjectContext().boardYamlPath` resolves to, and a literal
+      // "Open board.yaml" would lie under a custom or absolute
+      // `alpSdk.boardYamlPath`. Checked here as the testable half of that
+      // choice: this exact text is what "the label stops naming a specific
+      // file" means in the rendered DOM.
+      const openFileBtn = findingButtons.find(
+        (b) => (b.textContent || "").trim() === "Open board config",
+      );
+      const copyBtn = findingButtons.find(
+        (b) => (b.textContent || "").trim() === "Copy",
+      );
+      if (!openFileBtn) {
+        problems.push(
+          'memory-regions-aen: no "Open board config" action on the blocked finding',
+        );
+      } else {
+        const postedBefore = g.__ALP_POSTED__.length;
+        (openFileBtn as HTMLButtonElement).click();
+        await tick();
+        // #484: no `path` field any more — the host resolves board.yaml
+        // itself (`collectProjectContext().boardYamlPath`), so the webview
+        // no longer names a path at all.
+        const openMsg = g.__ALP_POSTED__
+          .slice(postedBefore)
+          .find((m: { type: string }) => m.type === "openBoardYaml");
+        if (!openMsg) {
+          problems.push(
+            `memory-regions-aen: "Open board config" posted ${JSON.stringify(g.__ALP_POSTED__.slice(postedBefore))}, want a {type:"openBoardYaml"} message`,
+          );
+        }
+      }
+      if (!copyBtn) {
+        problems.push(
+          'memory-regions-aen: no "Copy" action on the blocked finding',
+        );
+      } else {
+        // "Copy" is the one label here that would be ambiguous with a second
+        // blocked finding on screen: each button copies its OWN finding's
+        // text, so one name would stand for two different actions. The name
+        // stays "Copy" (a button whose whole job is one word should not be
+        // read out as a sentence) and the finding rides in the DESCRIPTION,
+        // which is announced after the name. "Open board config" carries no
+        // such description on purpose — the host resolves the file, so two
+        // of those really are the same action.
+        const copyTitle = copyBtn.getAttribute("title") || "";
+        if (!copyTitle.includes("alp_default_rpmsg")) {
+          problems.push(
+            `memory-regions-aen: the "Copy" action's description is "${copyTitle}" — it does not name the finding it copies, so two of them would be indistinguishable`,
+          );
+        }
+        const postedBefore = g.__ALP_POSTED__.length;
+        (copyBtn as HTMLButtonElement).click();
+        await tick();
+        const copyMsg = g.__ALP_POSTED__
+          .slice(postedBefore)
+          .find((m: { type: string }) => m.type === "copyText");
+        // Tightened: `blockedFindingText` composes label, kind, cores AND
+        // reason — the old check here only ever looked for the label, so
+        // dropping kind/cores/reason from the composed string still passed.
+        // Every fragment below is real: this fixture's one blocked finding
+        // is `alp_default_rpmsg`, a `carve_out` (rendered "carve-out")
+        // whose endpoints are `a32_cluster`/`m55_hp`, refused because its
+        // region is "ineligible for an IPC carve-out".
+        const copyText = String((copyMsg as { text?: unknown })?.text ?? "");
+        const expectedFragments = [
+          "alp_default_rpmsg", // label
+          "carve-out", // kind
+          "a32_cluster ↔ m55_hp", // cores
+          "ineligible for an IPC carve-out", // reason, verbatim fragment
+        ];
+        const missing = expectedFragments.filter(
+          (fragment) => !copyText.includes(fragment),
+        );
+        if (!copyMsg || missing.length > 0) {
+          problems.push(
+            `memory-regions-aen: "Copy" text missing [${missing.join(", ")}] (got ${JSON.stringify(copyMsg)})`,
+          );
+        }
+      }
+      // `AuthorityLegend`'s own child — `.legendItem` is unique to
+      // AuthoritySwatch.module.css, so it cannot be confused with
+      // MemoryRegions.module.css's OWN `.legend` (the one-sentence
+      // schematic paragraph), which carries no such child and this stub
+      // build gives both classes the identical literal name "legend".
+      const legendItem = container.querySelector(".legendItem");
+      if (!legendItem) {
+        problems.push(
+          "memory-regions-aen: no AuthorityLegend rendered beside the chart",
+        );
+      } else if (
+        !svg ||
+        !(
+          legendItem.compareDocumentPosition(svg) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+        )
+      ) {
+        problems.push(
+          "memory-regions-aen: AuthorityLegend does not precede the chart in document order",
+        );
+      }
+      if (container.querySelectorAll("h3, h4").length === 0) {
+        problems.push(
+          "memory-regions-aen: the view still has no real headings",
+        );
+      }
+
+      // ── #484 phase 4 (Task 9): the keyboard model ──
+      //
+      // LAST in this pass, and it has to be. The tab-strip half below
+      // navigates AWAY from the Memory tab, which unmounts the chart and the
+      // table; `svg`, `blockedAlert` and `legendItem` above are live node
+      // references into exactly that subtree, and `compareDocumentPosition`
+      // on a detached node answers DISCONNECTED, not FOLLOWING.
+      {
+        const tree = container.querySelector(
+          'ul[aria-label="Memory map rows"]',
+        );
+        // TWO node sets, because the tree has two kinds of node. Every
+        // `treeitem` takes part in the arrow walk and can hold the tab stop;
+        // only the ROWS carry a tier, a swatch and a selection.
+        const nodesNow = (): HTMLElement[] =>
+          tree
+            ? Array.from(
+                tree.querySelectorAll<HTMLElement>('li[role="treeitem"]'),
+              )
+            : [];
+        const rowsNow = (): HTMLElement[] =>
+          tree
+            ? Array.from(
+                tree.querySelectorAll<HTMLElement>(
+                  'li[role="treeitem"][data-row]',
+                ),
+              )
+            : [];
+        const nameOf = (el: Element) =>
+          el.getAttribute("aria-label") || el.textContent || "";
+        // Read off `[data-tier-group]`, NOT `[role="group"]`: a detail node's
+        // nearest `role="group"` is its own parent group, so closest() on the
+        // role would answer "the detail's group" and every tier comparison
+        // below would be measuring the wrong thing.
+        const tierOf = (el: Element) =>
+          el.closest("[data-tier-group]")?.getAttribute("data-tier-group") ??
+          null;
+        const nodeNamed = (label: string) =>
+          nodesNow().find((r) => nameOf(r) === label) ?? null;
+        // A row's accessible name carries its authority class and provenance
+        // too; a failure message wants the row, not the whole segment list.
+        const shortName = (label: string) => {
+          const head = label.split(", ")[0];
+          return head.length > 60 ? `${head.slice(0, 57)}...` : head;
+        };
+
+        if (rowsNow().length === 0) {
+          problems.push(
+            "memory-regions-aen: the memory table exposes no treeitem rows",
+          );
+        } else {
+          // ── the construction the tree pattern forbids ──
+          //
+          // `aria-expanded` may only sit on a node that OWNS an expandable
+          // grouping element. On an end node it describes that node to
+          // assistive technology as a parent that is not there — and the
+          // coupling check above cannot see it, because it pins the
+          // attribute to the detail DIV's presence, which proves the
+          // attribute tracks the DOM and says nothing about whether the
+          // node is allowed to carry it at all.
+          for (const node of nodesNow()) {
+            const announced = node.getAttribute("aria-expanded");
+            const ownsGroup = node.querySelector('[role="group"]') !== null;
+            if (announced === "true" && !ownsGroup) {
+              problems.push(
+                `memory-regions-aen: "${shortName(nameOf(node))}" announces aria-expanded="true" but owns no role=group — an end node carrying it is announced as a parent that does not exist`,
+              );
+            }
+            if (!node.hasAttribute("data-row") && announced !== null) {
+              problems.push(
+                `memory-regions-aen: a detail node carries aria-expanded="${announced}" — it owns nothing, so it must carry none`,
+              );
+            }
+          }
+          // And the level the reader is told. The tier groups sit directly
+          // under the tree as sibling groupings, so a row is level 1 and the
+          // detail it owns is level 2 — not the level 2 / level 3 a group
+          // ancestor implies with no level 1 anywhere above it.
+          for (const node of nodesNow()) {
+            const want = node.hasAttribute("data-row") ? "1" : "2";
+            const got = node.getAttribute("aria-level");
+            if (got !== want) {
+              problems.push(
+                `memory-regions-aen: "${shortName(nameOf(node))}" is aria-level="${got}", want "${want}"`,
+              );
+            }
+          }
+
+          // The invariant first, with no claim about WHICH node holds the
+          // stop: clicks earlier in this pass already moved it.
+          checkRovingTabStop(
+            nodesNow(),
+            null,
+            "nodes",
+            "memory-regions-aen",
+            problems,
+          );
+
+          const home = pressKey(nodesNow()[0], "Home");
+          await settle();
+          if (document.activeElement !== nodesNow()[0]) {
+            problems.push(
+              `memory-regions-aen: Home focused "${describeStop(document.activeElement as Element)}", want the first node "${shortName(nameOf(nodesNow()[0]))}"`,
+            );
+          }
+          checkRovingTabStop(
+            nodesNow(),
+            nodesNow()[0],
+            "nodes",
+            "memory-regions-aen",
+            problems,
+          );
+          if (!home.defaultPrevented) {
+            problems.push(
+              "memory-regions-aen: Home on a row did not preventDefault — the panel scrolls out from under the row that just took focus",
+            );
+          }
+
+          // ArrowDown all the way down, one node at a time, checking the one
+          // it lands on by NAME. A count-only check ("still 9 rows") cannot
+          // tell a walk that moves from one that stands still.
+          let crossedTier = false;
+          let walkBroke = false;
+          const order = nodesNow().map(nameOf);
+          for (let i = 1; i < order.length && !walkBroke; i++) {
+            const from = document.activeElement as HTMLElement;
+            pressKey(from, "ArrowDown");
+            await settle();
+            const landed = document.activeElement as Element | null;
+            if (!landed || nameOf(landed) !== order[i]) {
+              problems.push(
+                `memory-regions-aen: ArrowDown from "${shortName(order[i - 1])}" landed on "${landed ? describeStop(landed) : "nothing"}", want "${shortName(order[i])}"`,
+              );
+              walkBroke = true;
+            } else if (tierOf(landed) !== tierOf(nodeNamed(order[i - 1])!)) {
+              crossedTier = true;
+            }
+          }
+          if (!walkBroke && !crossedTier) {
+            problems.push(
+              "memory-regions-aen: ArrowDown never left the tier group it started in — the arrows must cross group boundaries, not stop at them",
+            );
+          }
+          const last = nodesNow()[nodesNow().length - 1];
+          if (!walkBroke) {
+            checkRovingTabStop(
+              nodesNow(),
+              last,
+              "nodes",
+              "memory-regions-aen",
+              problems,
+            );
+            // Past the end is a no-op, not a wrap: a tree does not wrap.
+            pressKey(last, "ArrowDown");
+            await settle();
+            if (document.activeElement !== nodesNow()[nodesNow().length - 1]) {
+              problems.push(
+                `memory-regions-aen: ArrowDown past the last node moved to "${describeStop(document.activeElement as Element)}" — it must stand still, not wrap`,
+              );
+            }
+            pressKey(last, "ArrowUp");
+            await settle();
+            if (document.activeElement !== nodesNow()[nodesNow().length - 2]) {
+              problems.push(
+                `memory-regions-aen: ArrowUp from the last node focused "${describeStop(document.activeElement as Element)}", want "${shortName(order[order.length - 2])}"`,
+              );
+            }
+          }
+
+          const end = pressKey(nodesNow()[0], "End");
+          await settle();
+          if (document.activeElement !== nodesNow()[nodesNow().length - 1]) {
+            problems.push(
+              `memory-regions-aen: End focused "${describeStop(document.activeElement as Element)}", want the last node "${shortName(order[order.length - 1])}"`,
+            );
+          }
+          if (!end.defaultPrevented) {
+            problems.push(
+              "memory-regions-aen: End on a row did not preventDefault",
+            );
+          }
+          pressKey(nodesNow()[0], "Home");
+          await settle();
+          pressKey(nodesNow()[0], "ArrowUp");
+          await settle();
+          if (document.activeElement !== nodesNow()[0]) {
+            problems.push(
+              `memory-regions-aen: ArrowUp from the first node moved to "${describeStop(document.activeElement as Element)}" — it must stand still, not wrap to the last`,
+            );
+          }
+
+          // Expansion is its OWN key and its own state. The row it runs on
+          // must be collapsed AND unselected, so the check can prove
+          // `aria-selected` did not move with `aria-expanded`.
+          const collapsed = rowsNow().find(
+            (r) =>
+              r.getAttribute("aria-expanded") === "false" &&
+              r.getAttribute("aria-selected") === "false" &&
+              !r.hasAttribute("aria-disabled"),
+          );
+          if (!collapsed) {
+            problems.push(
+              "memory-regions-aen: no collapsed, unselected row to expand — the expansion key cannot be checked",
+            );
+          } else {
+            const label = nameOf(collapsed);
+            const right = pressKey(collapsed, "ArrowRight");
+            await settle();
+            const expandedRow = nodeNamed(label);
+            if (!expandedRow) {
+              problems.push(
+                `memory-regions-aen: "${shortName(label)}" disappeared when it was expanded`,
+              );
+            } else {
+              if (expandedRow.getAttribute("aria-expanded") !== "true") {
+                problems.push(
+                  `memory-regions-aen: ArrowRight left "${shortName(label)}" announcing aria-expanded="${expandedRow.getAttribute("aria-expanded")}"`,
+                );
+              }
+              if (expandedRow.querySelector(".detail") === null) {
+                problems.push(
+                  `memory-regions-aen: ArrowRight expanded "${shortName(label)}" but revealed no detail`,
+                );
+              }
+              if (expandedRow.getAttribute("aria-selected") !== "false") {
+                problems.push(
+                  `memory-regions-aen: ArrowRight also SELECTED "${shortName(label)}" — expansion has its own key so that it does not drag the selection (and the rail's highlight) with it`,
+                );
+              }
+              // REACHABLE, not merely announced. A row that says "expanded"
+              // over content the same navigation cannot enter is telling the
+              // reader about something they have no way to read.
+              const detailNode = expandedRow.querySelector(
+                '[role="group"] > [role="treeitem"]',
+              );
+              if (!detailNode) {
+                problems.push(
+                  `memory-regions-aen: "${shortName(label)}" announces expanded but owns no treeitem to move into`,
+                );
+              } else {
+                pressKey(expandedRow, "ArrowDown");
+                await settle();
+                if (document.activeElement !== detailNode) {
+                  problems.push(
+                    `memory-regions-aen: ArrowDown from the expanded "${shortName(label)}" focused "${describeStop(document.activeElement as Element)}", want the detail it just revealed`,
+                  );
+                }
+                pressKey(detailNode, "ArrowLeft");
+                await settle();
+                if (document.activeElement !== nodeNamed(label)) {
+                  problems.push(
+                    `memory-regions-aen: ArrowLeft from the detail focused "${describeStop(document.activeElement as Element)}", want its parent row "${shortName(label)}"`,
+                  );
+                }
+                if (
+                  nodeNamed(label)?.getAttribute("aria-expanded") !== "true"
+                ) {
+                  problems.push(
+                    `memory-regions-aen: ArrowLeft from the DETAIL collapsed "${shortName(label)}" — a child node returns to its parent, it does not close it`,
+                  );
+                }
+              }
+            }
+            if (!right.defaultPrevented) {
+              problems.push(
+                "memory-regions-aen: ArrowRight on a row did not preventDefault",
+              );
+            }
+            checkAriaExpandedMatchesDetail(
+              container,
+              "memory-regions-aen",
+              problems,
+            );
+
+            const left = pressKey(nodeNamed(label)!, "ArrowLeft");
+            await settle();
+            const collapsedRow = nodeNamed(label);
+            if (collapsedRow?.getAttribute("aria-expanded") !== "false") {
+              problems.push(
+                `memory-regions-aen: ArrowLeft left "${shortName(label)}" announcing aria-expanded="${collapsedRow?.getAttribute("aria-expanded")}"`,
+              );
+            }
+            if (collapsedRow?.querySelector(".detail") !== null) {
+              problems.push(
+                `memory-regions-aen: ArrowLeft collapsed "${shortName(label)}" but its detail is still in the DOM`,
+              );
+            }
+            if (!left.defaultPrevented) {
+              problems.push(
+                "memory-regions-aen: ArrowLeft on a row did not preventDefault",
+              );
+            }
+            checkAriaExpandedMatchesDetail(
+              container,
+              "memory-regions-aen",
+              problems,
+            );
+          }
+
+          // THE MIRROR OF THE ArrowRight CHECK ABOVE, and the half that was
+          // missing: ArrowRight was proved not to select, while ArrowLeft was
+          // only ever run on a row that was already unselected, so the
+          // inverse — that collapsing does not DESELECT — was never
+          // exercised. `onSelect` is a toggle and the rail's highlight reads
+          // the same state, so an ArrowLeft that reached it would clear the
+          // picture as a side effect of closing a row.
+          const openable = rowsNow().find(
+            (r) => !r.hasAttribute("aria-disabled"),
+          );
+          if (!openable) {
+            problems.push(
+              "memory-regions-aen: every row is inert — Enter cannot be checked",
+            );
+          } else {
+            const label = nameOf(openable);
+            if (openable.getAttribute("aria-selected") !== "true") {
+              pressKey(openable, "Enter");
+              await settle();
+            }
+            const selectedRow = nodeNamed(label);
+            if (
+              selectedRow?.getAttribute("aria-selected") !== "true" ||
+              selectedRow?.getAttribute("aria-expanded") !== "true"
+            ) {
+              problems.push(
+                `memory-regions-aen: Enter left "${shortName(label)}" aria-selected="${selectedRow?.getAttribute("aria-selected")}" aria-expanded="${selectedRow?.getAttribute("aria-expanded")}", want both true`,
+              );
+            } else {
+              pressKey(selectedRow, "ArrowLeft");
+              await settle();
+              const after = nodeNamed(label);
+              if (after?.getAttribute("aria-expanded") !== "false") {
+                problems.push(
+                  `memory-regions-aen: ArrowLeft did not collapse the SELECTED "${shortName(label)}"`,
+                );
+              }
+              if (after?.getAttribute("aria-selected") !== "true") {
+                problems.push(
+                  `memory-regions-aen: ArrowLeft DESELECTED "${shortName(label)}" — collapsing a row must not clear the selection, which is what the rail draws its highlight from`,
+                );
+              }
+              const stillSelected = tree
+                ? tree.querySelectorAll('[aria-selected="true"]').length
+                : 0;
+              if (stillSelected !== 1) {
+                problems.push(
+                  `memory-regions-aen: ${stillSelected} rows are selected after ArrowLeft, want exactly 1`,
+                );
+              }
+            }
+          }
+
+          // ── the CLICK twin of the ArrowLeft check above ──
+          //
+          // The keydown guard that stops a detail's key reaching its row had
+          // no counterpart on the click path, and `RowDetail` neither
+          // handled click nor stopped it propagating — so a click anywhere
+          // in the detail ran the ROW's handler. On a selected, expanded row
+          // that deselected it, cleared the rail's highlight and destroyed
+          // the very content that had just been clicked. Nothing in this
+          // suite clicked a detail node.
+          const expandedSelected = rowsNow().find(
+            (r) => r.getAttribute("aria-selected") === "true",
+          );
+          if (!expandedSelected) {
+            problems.push(
+              "memory-regions-aen: no selected row to open — the detail click cannot be checked",
+            );
+          } else {
+            const label = nameOf(expandedSelected);
+            if (expandedSelected.getAttribute("aria-expanded") !== "true") {
+              pressKey(expandedSelected, "ArrowRight");
+              await settle();
+            }
+            const openRow = nodeNamed(label);
+            const detail = openRow?.querySelector(
+              '[role="group"] > [role="treeitem"]',
+            );
+            if (!detail) {
+              problems.push(
+                `memory-regions-aen: "${shortName(label)}" could not be opened for the detail click`,
+              );
+            } else {
+              (detail as HTMLElement).click();
+              await settle();
+              const after = nodeNamed(label);
+              if (after?.getAttribute("aria-selected") !== "true") {
+                problems.push(
+                  `memory-regions-aen: clicking the detail DESELECTED "${shortName(label)}" — the click lands on the detail, which owns no selection, and the rail draws its highlight from that state`,
+                );
+              }
+              if (after?.getAttribute("aria-expanded") !== "true") {
+                problems.push(
+                  `memory-regions-aen: clicking the detail COLLAPSED "${shortName(label)}" — the click destroyed the content it landed on`,
+                );
+              }
+              if (after?.querySelector(".detail") === null) {
+                problems.push(
+                  `memory-regions-aen: clicking the detail of "${shortName(label)}" removed it from the DOM`,
+                );
+              }
+              if (document.activeElement === after) {
+                problems.push(
+                  `memory-regions-aen: clicking the detail moved the focus up to its row "${shortName(label)}" — the click belongs to the node it landed on`,
+                );
+              }
+            }
+          }
+          // And the same click on an UNSELECTED row's detail, which must not
+          // select it: the row-level handler running here is how an
+          // unselected row gained a selection nobody asked for.
+          const unselectedOpen = rowsNow().find(
+            (r) =>
+              r.getAttribute("aria-selected") === "false" &&
+              !r.hasAttribute("aria-disabled"),
+          );
+          if (!unselectedOpen) {
+            problems.push(
+              "memory-regions-aen: no unselected row to open — the second detail click cannot be checked",
+            );
+          } else {
+            const label = nameOf(unselectedOpen);
+            pressKey(unselectedOpen, "ArrowRight");
+            await settle();
+            const detail = nodeNamed(label)?.querySelector(
+              '[role="group"] > [role="treeitem"]',
+            );
+            if (!detail) {
+              problems.push(
+                `memory-regions-aen: ArrowRight did not open "${shortName(label)}" for the second detail click`,
+              );
+            } else {
+              (detail as HTMLElement).click();
+              await settle();
+              const after = nodeNamed(label);
+              if (after?.getAttribute("aria-selected") !== "false") {
+                problems.push(
+                  `memory-regions-aen: clicking the detail SELECTED "${shortName(label)}" — a detail click carries no selection`,
+                );
+              }
+              if (document.activeElement === after) {
+                problems.push(
+                  `memory-regions-aen: clicking an unselected row's detail yanked the focus up to the row "${shortName(label)}"`,
+                );
+              }
+            }
+          }
+
+          // ── the detail's GROUP WRAPPER, the third shape of the same
+          //    question ──
+          //
+          // Asking for the nearest `[role="treeitem"]` answers THE ROW when
+          // the click lands on the detail's own `<ul role="group">`, so the
+          // guard passed and the row was activated: bit for bit the symptom
+          // the detail-click guard exists to end, through a different pixel.
+          // The keydown path is immune — a `<ul>` is not focusable, so a
+          // keydown can never target one — which is why only a click check
+          // can see it.
+          //
+          // Latent today by stylesheet accident (the wrapper has no padding
+          // and its single flex child fills it), so nothing is exposed to a
+          // pointer. One padding on the wrapper, one margin on the detail,
+          // or a second child in that group arms it.
+          const wrapperHost = rowsNow().find(
+            (r) => r.getAttribute("aria-expanded") === "true",
+          );
+          const wrapper = wrapperHost?.querySelector('[role="group"]');
+          if (!wrapperHost || !wrapper) {
+            problems.push(
+              "memory-regions-aen: no expanded row with a detail group — the wrapper click cannot be checked",
+            );
+          } else {
+            const label = nameOf(wrapperHost);
+            const wasSelected = wrapperHost.getAttribute("aria-selected");
+            (wrapper as HTMLElement).click();
+            await settle();
+            const after = nodeNamed(label);
+            if (after?.getAttribute("aria-selected") !== wasSelected) {
+              problems.push(
+                `memory-regions-aen: clicking the detail's group wrapper changed the selection of "${shortName(label)}" from "${wasSelected}" to "${after?.getAttribute("aria-selected")}" — a group the row owns is not the row`,
+              );
+            }
+            if (after?.getAttribute("aria-expanded") !== "true") {
+              problems.push(
+                `memory-regions-aen: clicking the detail's group wrapper COLLAPSED "${shortName(label)}"`,
+              );
+            }
+            if (after?.querySelector(".detail") === null) {
+              problems.push(
+                `memory-regions-aen: clicking the detail's group wrapper removed the detail of "${shortName(label)}" from the DOM`,
+              );
+            }
+          }
+
+          // The other half, and it is the half a blunter guard breaks: every
+          // cell the ROW owns must still activate it. A guard written as a
+          // plain `target !== currentTarget` would pass the wrapper check
+          // above and fail all of these, which is why both directions are
+          // here.
+          for (const cell of [
+            '[data-col="name"]',
+            '[data-col="range"]',
+            '[data-col="size"]',
+            '[data-col="swatch"]',
+          ]) {
+            const host = rowsNow().find(
+              (r) =>
+                r.getAttribute("aria-selected") === "false" &&
+                !r.hasAttribute("aria-disabled") &&
+                r.querySelector(cell) !== null,
+            );
+            if (!host) {
+              problems.push(
+                `memory-regions-aen: no unselected row carries ${cell} — the row-cell click cannot be checked`,
+              );
+              continue;
+            }
+            const label = nameOf(host);
+            (host.querySelector(cell) as HTMLElement).click();
+            await settle();
+            if (nodeNamed(label)?.getAttribute("aria-selected") !== "true") {
+              problems.push(
+                `memory-regions-aen: clicking ${cell} did not select "${shortName(label)}" — the row's own cells must still activate it`,
+              );
+            }
+          }
+
+          const space = pressKey(rowsNow()[0], " ");
+          await settle();
+          if (!space.defaultPrevented) {
+            problems.push(
+              "memory-regions-aen: Space on a row did not preventDefault — a focusable <li> is not a button, so the page scrolls instead of selecting",
+            );
+          }
+          // The false-alarm direction. A handler that swallows every key it
+          // does not act on breaks type-ahead and every browser shortcut,
+          // and no positive check above can see it.
+          const unhandled = pressKey(rowsNow()[0], "b");
+          await settle();
+          if (unhandled.defaultPrevented) {
+            problems.push(
+              'memory-regions-aen: a key the table does not act on ("b") was preventDefault-ed',
+            );
+          }
+
+          // A collapsed group's rows leave the tree ENTIRELY — including the
+          // tab stop, which has to fall back to a node that still exists.
+          pressKey(rowsNow()[0], "End");
+          await settle();
+          const lastTier = tierOf(nodesNow()[nodesNow().length - 1]);
+          const lastGroupId =
+            container.querySelector(`[data-tier-group="${lastTier}"]`)?.id ??
+            "";
+          const lastToggle = Array.from(
+            container.querySelectorAll("button[aria-controls]"),
+          ).find(
+            (b) =>
+              !!lastGroupId && b.getAttribute("aria-controls") === lastGroupId,
+          );
+          if (!lastToggle) {
+            problems.push(
+              `memory-regions-aen: no toggle controls the "${lastTier}" group the tab stop sits in`,
+            );
+          } else {
+            (lastToggle as HTMLButtonElement).click();
+            await settle();
+            const survivors = nodesNow();
+            const strays = survivors.filter((r) => tierOf(r) === lastTier);
+            if (strays.length > 0) {
+              problems.push(
+                `memory-regions-aen: collapsing "${lastTier}" left ${strays.length} of its nodes in the tree`,
+              );
+            }
+            checkRovingTabStop(
+              survivors,
+              survivors[0] ?? null,
+              "nodes",
+              "memory-regions-aen",
+              problems,
+            );
+            (lastToggle as HTMLButtonElement).click();
+            await settle();
+          }
+        }
+
+        // ── the tab strip ──
+        const tabStops = () =>
+          Array.from(
+            container.querySelectorAll<HTMLElement>('button[role="tab"]'),
+          );
+        const selectedTab = () =>
+          tabStops().find((t) => t.getAttribute("aria-selected") === "true") ??
+          null;
+        checkRovingTabStop(
+          tabStops(),
+          selectedTab(),
+          "tabs",
+          "memory-regions-aen",
+          problems,
+        );
+
+        const panel = container.querySelector('[role="tabpanel"]');
+        if (!panel) {
+          problems.push(
+            "memory-regions-aen: no role=tabpanel wraps the tab content",
+          );
+        } else {
+          // RESOLUTION, not presence. An `aria-controls` naming an id that
+          // is not in the document announces a relationship that does not
+          // exist, and a check for "a tabpanel exists somewhere" passes
+          // every time regardless of what the tabs point at.
+          //
+          // Required of the SELECTED tab only. One panel is rendered at a
+          // time, and it is labelled by the selected tab — so an
+          // `aria-controls` on either of the others would claim that tab
+          // controls a panel belonging to a different one, which is false of
+          // both at every moment. Any tab that DOES carry the attribute must
+          // still resolve, so dropping it from the selected tab is caught
+          // too.
+          for (const t of tabStops()) {
+            const controls = t.getAttribute("aria-controls");
+            const isSelected = t.getAttribute("aria-selected") === "true";
+            if (!controls) {
+              if (isSelected) {
+                problems.push(
+                  `memory-regions-aen: the selected "${describeStop(t)}" tab carries no aria-controls`,
+                );
+              }
+              continue;
+            }
+            if (document.getElementById(controls) !== panel) {
+              problems.push(
+                `memory-regions-aen: the "${describeStop(t)}" tab's aria-controls="${controls}" does not resolve to the rendered tabpanel`,
+              );
+            } else if (!isSelected) {
+              problems.push(
+                `memory-regions-aen: the unselected "${describeStop(t)}" tab claims to control a panel labelled by a different tab`,
+              );
+            }
+          }
+          const labelledBy = panel.getAttribute("aria-labelledby");
+          if (!labelledBy) {
+            problems.push(
+              "memory-regions-aen: the tabpanel carries no aria-labelledby",
+            );
+          } else if (document.getElementById(labelledBy) !== selectedTab()) {
+            problems.push(
+              `memory-regions-aen: the tabpanel's aria-labelledby="${labelledBy}" does not resolve back to the selected tab`,
+            );
+          }
+        }
+
+        const strip = tabStops();
+        if (strip.length < 2) {
+          problems.push(
+            `memory-regions-aen: ${strip.length} tab(s) on the strip — too few to check arrow navigation`,
+          );
+        } else {
+          const from = selectedTab()!;
+          const fromIndex = strip.indexOf(from);
+          const right = pressKey(from, "ArrowRight");
+          await settle();
+          const next = strip[(fromIndex + 1) % strip.length];
+          if (document.activeElement !== next) {
+            problems.push(
+              `memory-regions-aen: ArrowRight on the tab strip focused "${describeStop(document.activeElement as Element)}", want "${describeStop(next)}"`,
+            );
+          }
+          if (next.getAttribute("aria-selected") !== "true") {
+            problems.push(
+              `memory-regions-aen: ArrowRight focused "${describeStop(next)}" without selecting it — the panel and the focus disagree about which tab is current`,
+            );
+          }
+          checkRovingTabStop(
+            tabStops(),
+            next,
+            "tabs",
+            "memory-regions-aen",
+            problems,
+          );
+          if (!right.defaultPrevented) {
+            problems.push(
+              "memory-regions-aen: ArrowRight on the tab strip did not preventDefault",
+            );
+          }
+
+          pressKey(strip[strip.length - 1], "End");
+          await settle();
+          if (document.activeElement !== strip[strip.length - 1]) {
+            problems.push(
+              `memory-regions-aen: End on the tab strip focused "${describeStop(document.activeElement as Element)}", want the last tab`,
+            );
+          }
+          // Past the last tab WRAPS — a three-tab strip is a ring, and the
+          // rows above deliberately do not wrap, so this also proves the two
+          // models are not one shared handler pretending to be two.
+          pressKey(strip[strip.length - 1], "ArrowRight");
+          await settle();
+          if (document.activeElement !== strip[0]) {
+            problems.push(
+              `memory-regions-aen: ArrowRight past the last tab focused "${describeStop(document.activeElement as Element)}", want the first tab`,
+            );
+          }
+          pressKey(strip[0], "ArrowLeft");
+          await settle();
+          if (document.activeElement !== strip[strip.length - 1]) {
+            problems.push(
+              `memory-regions-aen: ArrowLeft from the first tab focused "${describeStop(document.activeElement as Element)}", want the last tab`,
+            );
+          }
+          const homeTab = pressKey(strip[strip.length - 1], "Home");
+          await settle();
+          if (document.activeElement !== strip[0]) {
+            problems.push(
+              `memory-regions-aen: Home on the tab strip focused "${describeStop(document.activeElement as Element)}", want the first tab`,
+            );
+          }
+          if (!homeTab.defaultPrevented) {
+            problems.push(
+              "memory-regions-aen: Home on the tab strip did not preventDefault",
+            );
+          }
+          const before = describeStop(selectedTab()!);
+          const unhandledTab = pressKey(strip[0], "x");
+          await settle();
+          if (unhandledTab.defaultPrevented) {
+            problems.push(
+              'memory-regions-aen: a key the tab strip does not act on ("x") was preventDefault-ed',
+            );
+          }
+          if (describeStop(selectedTab()!) !== before) {
+            problems.push(
+              `memory-regions-aen: a key the tab strip does not act on changed the selected tab from "${before}" to "${describeStop(selectedTab()!)}"`,
+            );
+          }
+        }
+      }
     }
     console.log(
-      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-aen: the SoM region backdrop`,
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-aen: the SoM region table`,
     );
   }
 
-  // ── the SoM region backdrop, rpmsg-v2n (#484 phase 2) ──
+  // ── the SoM region table, rpmsg-v2n (#484 phase 2) ──
   // Three soc_derived regions, kind "unresolved" on every row (never
   // authored write_authority), and two of the three fall outside the
   // (unchanged) chart window.
@@ -1671,20 +3222,56 @@ async function main() {
       await settle();
       const memText = (container.textContent || "").toLowerCase();
       for (const needle of [
-        "class not proven", // every v2n region's `kind` is "unresolved"
         "ddr_main",
         "ocram_low",
         "m33_tcm",
-        "som regions (3)",
+        "memory map (4)", // 3 regions + 1 placed span (alp_default_rpmsg)
       ]) {
         if (!memText.includes(needle)) {
           problems.push(`memory-regions-v2n: missing "${needle}"`);
         }
       }
-      // A CURLY apostrophe, not a straight one: MemoryRegionTable.tsx
-      // renders this note with `&rsquo;`, which becomes U+2019 (’) in
-      // textContent — a straight `'` here would silently match zero rows
-      // every time, since `String.match` does not fold the two.
+      // "class not proven" (every v2n region's `kind` is "unresolved") is
+      // now in the per-row DETAIL, one interaction away — select a region
+      // first.
+      const ddrRow = Array.from(
+        container.querySelectorAll('li[role="treeitem"][data-row]'),
+      ).find((li) =>
+        (li.getAttribute("aria-label") || "").startsWith("ddr_main"),
+      );
+      if (!ddrRow) {
+        problems.push('memory-regions-v2n: no row found for "ddr_main"');
+      } else {
+        (ddrRow as HTMLLIElement).click();
+        await settle();
+        const text = (container.textContent || "").toLowerCase();
+        if (!text.includes("class not proven")) {
+          problems.push(
+            'memory-regions-v2n: selecting "ddr_main" did not reveal "class not proven"',
+          );
+        }
+      }
+      // `unstated` — previously asserted nowhere, though all three v2n
+      // regions carry it (no `write_authority` key at all). A delimited
+      // token, not a bare substring — see the aen pass's own comment for
+      // why a substring check is satisfied by prose instead.
+      const hasUnstated = Array.from(
+        container.querySelectorAll('li[role="treeitem"][data-row]'),
+      ).some((li) =>
+        (li.getAttribute("aria-label") || "")
+          .split(", ")
+          .slice(1)
+          .includes("unstated"),
+      );
+      if (!hasUnstated) {
+        problems.push(
+          'memory-regions-v2n: authority class "unstated" reaches no row\'s accessible name',
+        );
+      }
+      // A CURLY apostrophe, not a straight one: MemoryTable.tsx renders this
+      // note with `&rsquo;`, which becomes U+2019 (’) in textContent — a
+      // straight `'` here would silently match zero rows every time, since
+      // `String.match` does not fold the two.
       const outsideCount = (memText.match(/outside this map’s window/g) || [])
         .length;
       if (outsideCount !== 2) {
@@ -1783,6 +3370,21 @@ async function main() {
     } else {
       (memoryTab as HTMLButtonElement).click();
       await settle();
+      // "class not proven" is now in the per-row DETAIL, one interaction
+      // away — select odd_region first.
+      const oddRow = Array.from(
+        container.querySelectorAll('li[role="treeitem"][data-row]'),
+      ).find((li) =>
+        (li.getAttribute("aria-label") || "").startsWith("odd_region"),
+      );
+      if (!oddRow) {
+        problems.push(
+          'memory-regions-unrecognised: no row found for "odd_region"',
+        );
+      } else {
+        (oddRow as HTMLLIElement).click();
+        await settle();
+      }
       const memText = (container.textContent || "").toLowerCase();
       if (!memText.includes("class not proven")) {
         problems.push(
@@ -1802,6 +3404,120 @@ async function main() {
     }
     console.log(
       `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-unrecognised: unrecognised kind + outside_region wording`,
+    );
+  }
+
+  // ── a resolved region with ZERO placed spans (#484 Task 8) ──
+  // No fixture anywhere else in this file reaches `hasSpans === false &&
+  // hasRegions === true` — the ONE combination Task 8's own `.map`
+  // restructuring had to keep rendering both halves of (the "pins no
+  // address" paragraph, unconditional on regions, AND a region-only table),
+  // since before that task they were two SEPARATE conditions and after it
+  // they share one `.map` container. `memory: [...]` with no `ipc`, no
+  // `storage` and `slices: []` is the minimal manifest that reaches it: no
+  // carve-out, partition or slot image anywhere gives `buildMemoryView`
+  // nothing to place, while the one `memory[]` row still resolves.
+  {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const problemsBefore = problems.length;
+    const root = createRoot(container);
+    root.render(
+      React.createElement(
+        AppProvider,
+        null,
+        React.createElement(BuildPlanView),
+      ),
+    );
+    await settle();
+    feedState();
+    await settle();
+    feedState();
+    await settle();
+
+    const manifest = {
+      schema_version: 1,
+      generated_by: "scripts/alp_orchestrate.py",
+      hw_info: { sku: "E1M-AEN801", silicon: "alif:ensemble:e8" },
+      slices: [],
+      // `SystemManifestSection` (BuildPlanView.tsx) reads `manifest.ipc
+      // .length` and `manifest.helper_mcus.length` UNGUARDED on the Slices
+      // tab, so these three have to be real empty arrays, not simply
+      // absent — the same shape the "unrecognised kind" fixture above
+      // already carries for the same reason.
+      ipc: [],
+      helper_mcus: [],
+      boot_order: [],
+      memory: [
+        {
+          name: "mram_main",
+          source: "som_preset",
+          kind: "flash",
+          status: "ok",
+          base: 0x80000000,
+          size_bytes: 0x00100000,
+          write_authority: "vendor",
+        },
+      ],
+    };
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "systemManifestData",
+      postBuild: true,
+      manifest,
+      provenance: null,
+      memory: buildMemoryView(manifest as never),
+    });
+    await settle();
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "sliceSizesData",
+      report: {
+        schema: "alp-size/1",
+        slices: [],
+        summary: { over_budget: [], unknown_budget: [] },
+      },
+    });
+    await settle();
+
+    const tabs = Array.from(container.querySelectorAll('button[role="tab"]'));
+    const memoryTab = tabs.find((b) =>
+      (b.textContent || "").toLowerCase().includes("memory"),
+    );
+    if (!memoryTab) {
+      problems.push("memory-regions-region-only: no Memory tab found");
+    } else {
+      (memoryTab as HTMLButtonElement).click();
+      await settle();
+      const memText = (container.textContent || "").toLowerCase();
+      if (!memText.includes("this manifest pins no address")) {
+        problems.push(
+          "memory-regions-region-only: the empty-paragraph text did not render for a manifest with zero spans",
+        );
+      }
+      if (!memText.includes("memory map (1)")) {
+        problems.push(
+          'memory-regions-region-only: no "memory map (1)" — the region-only table did not render beside the empty paragraph',
+        );
+      }
+      if (!memText.includes("mram_main")) {
+        problems.push(
+          "memory-regions-region-only: the one resolved region's own name is missing from the table",
+        );
+      }
+      // No placed span means no rail: `.mapSide` (and therefore the chart)
+      // must not mount at all, not merely render empty.
+      if (container.querySelector('svg[role="img"]')) {
+        problems.push(
+          "memory-regions-region-only: a rail rendered with zero placed spans to draw",
+        );
+      }
+    }
+    for (const err of drainErrors()) {
+      problems.push(
+        `memory-regions-region-only: error reported during render — ${err}`,
+      );
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-region-only: a resolved region with zero placed spans still renders beside the (absent) rail`,
     );
   }
 
@@ -1887,7 +3603,7 @@ async function main() {
 
       const rows = Array.from(
         container.querySelectorAll(
-          'ul[aria-label="SoM regions"] [role="option"]',
+          'ul[aria-label="Memory map rows"] [role="treeitem"][data-row]',
         ),
       );
       if (rows.length !== 2) {
@@ -1898,7 +3614,7 @@ async function main() {
         (rows[0] as HTMLLIElement).click();
         await settle();
         const selectedCount = container.querySelectorAll(
-          'ul[aria-label="SoM regions"] [aria-selected="true"]',
+          'ul[aria-label="Memory map rows"] [aria-selected="true"]',
         ).length;
         if (selectedCount !== 0) {
           problems.push(
@@ -1911,12 +3627,484 @@ async function main() {
             'memory-regions-duplicate: missing "name shared by 2 rows, not joined"',
           );
         }
+        // Both rows here are `inert` (a duplicated name) — the ONLY case
+        // whose detail shows without ever being selected. `aria-expanded`
+        // must still agree with that.
+        checkAriaExpandedMatchesDetail(
+          container,
+          "memory-regions-duplicate",
+          problems,
+        );
       }
     }
     console.log(
       `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-duplicate: two same-named rows refuse the selection join`,
     );
   }
+
+  // ── a region table AND a genuine uncovered run, together (#484) ────────
+  // Neither vendored fixture can prove this: rpmsg-aen's six regions tile
+  // its window end to end (zero gaps, by construction of that data), and
+  // the "build-plan" pass's hand-built manifest has NO region table at all
+  // (its own gap comes entirely from a span's own budget interval). The
+  // REGION source of `railBoundaries`'s `occupied` array was isolated
+  // this way; the other two `occupied` sources were still unguarded
+  // EVERYWHERE — deleting either one's `occupied.push` line alone
+  // produced 0 problems across the whole harness — so this fixture
+  // carries THREE separate islands, one per `occupied` source, each the
+  // SOLE cover of its own run:
+  //
+  //   gap_region (region, resolved):        0x80000000 – 0x80010000  (64 KiB)
+  //   core_anchor (marker span):             0x80000000
+  //   [uncovered, always]                    0x80010000 – 0x80030000 (128 KiB)
+  //   carve_c (carve-out span, own extent):  0x80030000 – 0x80048000  (96 KiB)
+  //   [uncovered, always]                    0x80048000 – 0x80054000  (48 KiB)
+  //   core_budget (slot image, tan-size):    0x80054000 – 0x80068000  (80 KiB)
+  //   [uncovered, always]                    0x80068000 – 0x80072000  (40 KiB)
+  //   core_far (marker span):                                          0x80072000
+  //
+  // `core_anchor` is a MARKER (base only, no size, no budget): it pins the
+  // window's low end down to `gap_region`'s own base without contributing
+  // an interval of its own, so `gap_region`'s occupied.push is the ONLY
+  // thing covering 0x80000000–0x80010000. `carve_c` is an IPC carve-out
+  // with a resolved `carve_out_size`, so `endOf(carve_c)` resolves and its
+  // own `occupied.push({ lo: s.base, hi: end }` (the span's SIZE-RESOLVED
+  // end, MemoryChart.tsx) is the only thing covering 0x80030000–0x80048000
+  // — it carries no `tan size` budget, so the budget-end push never fires
+  // for it. `core_budget` is a slot image with NO `size_bytes` of its own
+  // (`endOf` is null) but a `tan size` budget (posted below) that resolves
+  // to 0x80068000, so its `occupied.push({ lo: s.base, hi: bEnd }` (the
+  // BUDGET-end push) is the only thing covering 0x80054000–0x80068000.
+  //
+  // The three ALWAYS-uncovered runs (128, 48 and 40 KiB) are the fixture's
+  // own control: they must stay gaps regardless of which source is
+  // mutated, so a check that only ever counted gaps could not tell "the
+  // right gaps" from "the wrong ones". Each of the three per-source checks
+  // below instead asserts that ONE SPECIFIC byte size is ABSENT from the
+  // gap set — the byte size that run would carry if its own source were
+  // dropped.
+  //
+  // `core_far`: a marker PAST `core_budget`'s own budget end,
+  // added because `core_budget`'s `bEnd` (0x80068000) used to equal this
+  // window's own `hi` — `windowOf` (regionWindow.ts) takes its `hi` from
+  // the maximum of every end INCLUDING budget ends, so a budget end that
+  // is also the window's own edge gets seeded into `layoutRail`'s `marks`
+  // for free (`marks = [...new Set([win.lo, win.hi, ...boundaries])]`,
+  // railScale.ts) — deleting `boundaries.push(bEnd)` alone then produced 0
+  // problems, because the address survived by coincidence, not because
+  // anything actually declared it. `core_far` pushes the window's own edge
+  // out to 0x80072000, so 0x80068000 is now STRICTLY INTERIOR and has no
+  // way to appear except through its own `boundaries.push`.
+  //
+  // The INVARIANT below is the fix for the CLASS this and the earlier
+  // finding are both instances of, not a fourth per-source pin: every
+  // declared address strictly inside the window — collected the same way
+  // `railBoundaries` collects them (span bases, span ends, budget ends,
+  // region lo/hi) — must appear as some segment's own boundary. That holds
+  // for any missing `boundaries.push`, including ones nobody has named yet,
+  // and does not depend on any one address happening to coincide with the
+  // window's own edge.
+  {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const problemsBefore = problems.length;
+    const root = createRoot(container);
+    root.render(
+      React.createElement(
+        AppProvider,
+        null,
+        React.createElement(BuildPlanView),
+      ),
+    );
+    await settle();
+    feedState();
+    await settle();
+    feedState();
+    await settle();
+
+    const manifest = {
+      schema_version: 1,
+      generated_by: "scripts/alp_orchestrate.py",
+      hw_info: { sku: "TEST-GAP-FIXTURE", silicon: "test:test:test" },
+      slices: [
+        {
+          core_id: "core_anchor",
+          os: "zephyr",
+          status: "ok",
+          flash_args: { slot0_load_address: "0x80000000" },
+        },
+        {
+          core_id: "core_budget",
+          os: "zephyr",
+          status: "ok",
+          flash_args: { slot0_load_address: "0x80054000" },
+        },
+        {
+          // Pushes the window's own edge past core_budget's own
+          // `bEnd` (0x80068000), so that address is strictly interior and
+          // cannot survive a deleted `boundaries.push(bEnd)` by coincidence.
+          core_id: "core_far",
+          os: "zephyr",
+          status: "ok",
+          flash_args: { slot0_load_address: "0x80072000" },
+        },
+      ],
+      ipc: [
+        {
+          name: "carve_c",
+          kind: "raw_shmem",
+          endpoints: ["core_anchor"],
+          carve_out_base: "0x80030000",
+          carve_out_size: "0x00018000",
+          cacheable: false,
+          mailbox_channel: 0,
+        },
+      ],
+      helper_mcus: [],
+      boot_order: [],
+      memory: [
+        {
+          name: "gap_region",
+          source: "som_preset",
+          kind: "flash",
+          status: "ok",
+          base: 0x80000000,
+          size_bytes: 0x00010000,
+          write_authority: "customer_runtime",
+          accessible_from: ["core_anchor"],
+        },
+      ],
+    };
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "systemManifestData",
+      postBuild: true,
+      manifest,
+      provenance: null,
+      memory: buildMemoryView(manifest as never),
+    });
+    await settle();
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "sliceSizesData",
+      report: {
+        schema: "alp-size/1",
+        slices: [
+          {
+            core_id: "core_budget",
+            os: "zephyr",
+            status: "ok",
+            flash: { used: 40000, total: 0x00014000, pct: 48.8 },
+            ram: { used: null, total: null, pct: null },
+            source: "size-tool",
+          },
+        ],
+        summary: { over_budget: [], unknown_budget: [] },
+      },
+    });
+    await settle();
+
+    const tabs = Array.from(container.querySelectorAll('button[role="tab"]'));
+    const memoryTab = tabs.find((b) =>
+      (b.textContent || "").toLowerCase().includes("memory"),
+    );
+    if (!memoryTab) {
+      problems.push("memory-regions-gap-fixture: no Memory tab found");
+    } else {
+      (memoryTab as HTMLButtonElement).click();
+      await settle();
+
+      const gapLabels = Array.from(
+        container.querySelectorAll('[data-segment="gap"]'),
+      ).map((el) => el.getAttribute("aria-label") || "");
+
+      const alwaysGaps = [
+        "128.0 KiB empty, compressed", // 0x80010000–0x80030000, covered by nothing ever
+        "48.0 KiB empty, compressed", // 0x80048000–0x80054000, covered by nothing ever
+        "40.0 KiB empty, compressed", // 0x80068000–0x80072000, covered by nothing ever
+      ];
+      for (const want of alwaysGaps) {
+        if (!gapLabels.includes(want)) {
+          problems.push(
+            `memory-regions-gap-fixture: expected gap "${want}" not found — gaps present: [${gapLabels.join(", ")}]`,
+          );
+        }
+      }
+
+      // Each entry: which `occupied` source covers the run, the run's own
+      // address range, and the byte-size text that run would carry if THIS
+      // mutation (and only this one) turned it into a gap too.
+      const perSourcePins: Array<[string, string, string]> = [
+        [
+          "the region push (occupied.push({ lo: r.lo, hi: r.hi }))",
+          "0x80000000–0x80010000",
+          "64.0 KiB empty, compressed",
+        ],
+        [
+          "the span's own size-resolved-end push (occupied.push({ lo: s.base, hi: end }))",
+          "0x80030000–0x80048000",
+          "96.0 KiB empty, compressed",
+        ],
+        [
+          "the budget-end push (occupied.push({ lo: s.base, hi: bEnd }))",
+          "0x80054000–0x80068000",
+          "80.0 KiB empty, compressed",
+        ],
+      ];
+      for (const [source, range, wouldBeGap] of perSourcePins) {
+        if (gapLabels.includes(wouldBeGap)) {
+          problems.push(
+            `memory-regions-gap-fixture: ${range} is marked as a gap ("${wouldBeGap}") — ${source} is not covering it`,
+          );
+        }
+      }
+
+      if (gapLabels.length !== 3) {
+        problems.push(
+          `memory-regions-gap-fixture: ${gapLabels.length} gap segment(s) marked, want exactly 3 — [${gapLabels.join(", ")}]`,
+        );
+      }
+
+      // ── the CLASS, not another instance ───────────
+      // Every declared address strictly inside the window must be some
+      // segment's own boundary — collected the same way `railBoundaries`
+      // (MemoryChart.tsx) collects them: span bases, a span's own
+      // size-resolved end, a budget end, and a resolved region's lo/hi.
+      // This is an INDEPENDENT list, reasoned by hand from the manifest
+      // above, not a re-derivation of railBoundaries's own output — the
+      // point is to check what the rail actually RENDERED against what the
+      // manifest actually DECLARED, not to check the code against itself.
+      const svg = container.querySelector('svg[role="img"]');
+      const windowMatch = /from (0x[0-9a-f]+) to (0x[0-9a-f]+)/i.exec(
+        svg?.getAttribute("aria-label") || "",
+      );
+      if (!windowMatch) {
+        problems.push(
+          "memory-regions-gap-fixture: could not read the window's own lo/hi off the chart's aria-label",
+        );
+      } else {
+        const winLo = parseInt(windowMatch[1], 16);
+        const winHi = parseInt(windowMatch[2], 16);
+        const declared = [
+          0x80000000, // core_anchor's base; also gap_region's own lo
+          0x80010000, // gap_region's own hi
+          0x80030000, // carve_c's base
+          0x80048000, // carve_c's own resolved end (base + carve_out_size)
+          0x80054000, // core_budget's base
+          0x80068000, // core_budget's own budget end (base + tan-size total)
+          0x80072000, // core_far's base
+        ];
+        const interior = [
+          ...new Set(declared.filter((a) => a > winLo && a < winHi)),
+        ];
+        const renderedBoundaries = new Set(
+          Array.from(container.querySelectorAll('[data-tick="boundary"]')).map(
+            (el) => (el.textContent || "").trim().toLowerCase(),
+          ),
+        );
+        for (const addr of interior) {
+          const hex = `0x${addr.toString(16).padStart(8, "0")}`;
+          if (!renderedBoundaries.has(hex)) {
+            problems.push(
+              `memory-regions-gap-fixture: declared address ${hex} is strictly inside the window [${windowMatch[1]}, ${windowMatch[2]}] but is not the boundary of any rendered segment`,
+            );
+          }
+        }
+      }
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-gap-fixture: all three occupied sources are individually load-bearing, and every declared interior address is a rendered boundary`,
+    );
+  }
+
+  // ── #484 Task 8: the rail draws at a genuinely MEASURED, narrower width ──
+  // Two things this pass can and cannot prove, stated up front because the
+  // task's own brief claimed more than jsdom can check: jsdom computes no
+  // text metrics, so a glyph overlapping its neighbour at a narrow width is
+  // invisible to it — "no clipped caption or truncated identifier" is NOT
+  // verified here. What IS verified: the rendered <svg> actually carries the
+  // MEASURED number (proving the measured code path ran, not the fallback),
+  // and every string the wide-width "build-plan" pass above expects is
+  // STILL present in the DOM at this narrower width — nothing was
+  // conditionally dropped, which is the one kind of "truncation" a DOM-level
+  // check like this one CAN see.
+  {
+    const NARROW_WIDTH = 340;
+    const problemsBefore = problems.length;
+    g.__ALP_TEST_CHART_WIDTH__ = NARROW_WIDTH;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    root.render(
+      React.createElement(
+        AppProvider,
+        null,
+        React.createElement(BuildPlanView),
+      ),
+    );
+    await settle();
+    feedState();
+    await settle();
+    feedState();
+    await settle();
+
+    const tabs = Array.from(container.querySelectorAll('button[role="tab"]'));
+    const memoryTab = tabs.find((b) =>
+      (b.textContent || "").toLowerCase().includes("memory"),
+    );
+    if (!memoryTab) {
+      problems.push("memory-narrow-width: no Memory tab found");
+    } else {
+      (memoryTab as HTMLButtonElement).click();
+      await settle();
+
+      const svg = container.querySelector('svg[role="img"]');
+      const svgWidth = svg?.getAttribute("width");
+      if (svgWidth !== String(NARROW_WIDTH)) {
+        problems.push(
+          `memory-narrow-width: svg width="${svgWidth}", want "${NARROW_WIDTH}" — the measured column width did not reach the rail`,
+        );
+      }
+      const viewBox = svg?.getAttribute("viewBox") || "";
+      if (!viewBox.startsWith(`0 0 ${NARROW_WIDTH} `)) {
+        problems.push(
+          `memory-narrow-width: viewBox="${viewBox}", want it to start "0 0 ${NARROW_WIDTH} "`,
+        );
+      }
+
+      const memText = (container.textContent || "").toLowerCase();
+      for (const needle of MEMORY_TAB_NEEDLES) {
+        if (!memText.includes(needle)) {
+          problems.push(
+            `memory-narrow-width: memory tab missing "${needle}" at a ${NARROW_WIDTH}-unit measured width — present at the wide width, so the narrow width itself dropped it`,
+          );
+        }
+      }
+      // Same fractional-address regression guard as the wide-width pass, per
+      // LEAF element — a narrower rail is a different `layoutRail` input,
+      // worth checking again rather than assumed to inherit the wide-width
+      // pass's own result.
+      for (const el of Array.from(container.querySelectorAll("*"))) {
+        if (el.children.length > 0) continue;
+        const frac = (el.textContent || "").match(
+          /0x[0-9a-fA-F]+\.[0-9a-fA-F]+/,
+        );
+        if (frac) {
+          problems.push(
+            `memory-narrow-width: memory tab rendered a fractional address "${frac[0]}"`,
+          );
+        }
+      }
+    }
+    for (const err of drainErrors()) {
+      problems.push(
+        `memory-narrow-width: error reported during render — ${err}`,
+      );
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-narrow-width: the rail is drawn at a genuinely measured, narrower width, with nothing dropped`,
+    );
+  }
+
+  // ── #484 Task 8: a measured width of 0 must still draw a real rail ──
+  // The corrections to this task's own brief are explicit: a rail that
+  // renders at width 0 must be a visible failure, not a quiet pass. 0 is
+  // also the real, unremarkable first-paint case (no ResizeObserver
+  // callback has fired yet) — not a contrived harness value, and the SAME
+  // default every other memory-tab pass in this file already runs under
+  // (jsdom-setup.js's own default). This pass turns that into an assertion
+  // instead of an unstated assumption.
+  {
+    const FALLBACK_WIDTH = "578"; // MemoryChart.tsx's own constant, mirrored
+    // here by hand — nothing ties the two spellings together automatically,
+    // the same caveat HATCH_PATTERN_ID's own comment states for itself.
+    const problemsBefore = problems.length;
+    g.__ALP_TEST_CHART_WIDTH__ = 0;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    root.render(
+      React.createElement(
+        AppProvider,
+        null,
+        React.createElement(BuildPlanView),
+      ),
+    );
+    await settle();
+    feedState();
+    await settle();
+    feedState();
+    await settle();
+
+    const tabs = Array.from(container.querySelectorAll('button[role="tab"]'));
+    const memoryTab = tabs.find((b) =>
+      (b.textContent || "").toLowerCase().includes("memory"),
+    );
+    if (!memoryTab) {
+      problems.push("memory-zero-width-fallback: no Memory tab found");
+    } else {
+      (memoryTab as HTMLButtonElement).click();
+      await settle();
+
+      const svg = container.querySelector('svg[role="img"]');
+      const svgWidth = svg?.getAttribute("width");
+      if (svgWidth !== FALLBACK_WIDTH) {
+        problems.push(
+          `memory-zero-width-fallback: svg width="${svgWidth}" for a measured width of 0, want "${FALLBACK_WIDTH}" — a measured 0 must fall back to a real drawing, never render a rail 0 units wide`,
+        );
+      }
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-zero-width-fallback: a measured 0 falls back to FALLBACK_WIDTH, never a 0-unit rail`,
+    );
+  }
+  // Reset for any pass that might run after this one — 0 is already the
+  // module default (jsdom-setup.js), but this global is shared harness
+  // state, and leaving it on whatever THIS block last set would make a
+  // later pass's chart width depend on file order rather than its own
+  // setup, exactly the kind of cross-pass leak this harness's other
+  // `g.__ALP_*__` globals are already careful to avoid.
+  g.__ALP_TEST_CHART_WIDTH__ = 0;
+
+  // ── the tier-group and tabpanel IDREF targets are unique ──
+  //
+  // SCOPED, and the label below says so. This does NOT check every `id` in
+  // the document: widened to `[id]` it reports live duplicates this task
+  // does not own, including `memory-authority-hatch` (MemoryChart.tsx),
+  // which is a harness artefact — production mounts one Build Plan panel per
+  // webview document, and the pattern is referenced from CSS as
+  // `fill: url(#memory-authority-hatch)`, which cannot take a generated id
+  // without restructuring how it is referenced. A gate whose name claims the
+  // document while measuring two selectors is a gate that reports PASS over
+  // a property that already fails.
+  //
+  // Placed here, after every pass, because that is the only point at which
+  // even the scoped property is measurable: an `id` collision needs two of
+  // the same component mounted at once, and by now several passes have each
+  // left a Build Plan panel with its Memory tab open. Inside any ONE pass a
+  // hardcoded id looks perfectly correct — the element it names exists
+  // locally — which is exactly how `memory-table-group-yours` survived:
+  // `aria-controls` on panel five's toggle resolved to panel one's group,
+  // and every container-scoped check agreed with itself.
+  const idBearing = Array.from(
+    document.querySelectorAll("[data-tier-group], [role='tabpanel'][id]"),
+  )
+    .map((el) => el.id)
+    .filter((id) => id !== "");
+  const duplicatedIds = Array.from(
+    new Set(idBearing.filter((id, i) => idBearing.indexOf(id) !== i)),
+  );
+  if (idBearing.length === 0) {
+    problems.push(
+      "tier-group/tabpanel-id-uniqueness: no tier group or tabpanel carried an id — this check measured nothing",
+    );
+  }
+  if (duplicatedIds.length > 0) {
+    problems.push(
+      `tier-group/tabpanel-id-uniqueness: ${duplicatedIds.length} of these id(s) appear on more than one element — [${duplicatedIds.join(", ")}] — so every aria-controls naming one resolves to whichever panel rendered first`,
+    );
+  }
+  console.log(
+    `  ${duplicatedIds.length === 0 && idBearing.length > 0 ? "PASS" : "FAIL"}  tier-group/tabpanel-id-uniqueness: ${idBearing.length} ids scanned (tier groups and tabpanels only, NOT the whole document), all distinct`,
+  );
 
   console.log(
     `\nwebview-ui: ${rendered}/${VIEWS.length} views rendered, ` +
