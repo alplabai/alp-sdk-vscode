@@ -663,3 +663,14 @@
   color: var(--text-primary);
   border-bottom-color: var(--accent);
 }
+
+/* The real `role="tabpanel"` around whichever reading is current.
+   It carries `.section`'s own column so wrapping the content in it changes
+   nothing: the slice list, the IPC chips and the helper-MCU chips used to be
+   siblings of the strip and spaced by `.section`'s gap, and they are now
+   siblings of each other inside this element instead. */
+.tabPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}

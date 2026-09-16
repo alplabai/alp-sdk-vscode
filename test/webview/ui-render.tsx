@@ -621,7 +621,7 @@ function feedState() {
 }
 
 /**
- * Every `li[role="option"]` in `container` must have `aria-expanded="true"`
+ * Every `li[role="treeitem"]` in `container` must have `aria-expanded="true"`
  * IF AND ONLY IF its detail (`MemoryTable.tsx`'s `RowDetail`, stubbed CSS
  * modules render as literal `class="detail"` in this harness — see
  * `test/webview/run.mjs`'s css-module-stub) is actually present in the DOM.
@@ -638,7 +638,7 @@ function checkAriaExpandedMatchesDetail(
   problems: string[],
 ) {
   for (const li of Array.from(
-    container.querySelectorAll('li[role="option"]'),
+    container.querySelectorAll('li[role="treeitem"]'),
   )) {
     const announced = li.getAttribute("aria-expanded") === "true";
     const hasDetail = li.querySelector(".detail") !== null;
@@ -649,6 +649,83 @@ function checkAriaExpandedMatchesDetail(
         } in the DOM — the two must always agree`,
       );
     }
+  }
+}
+
+/**
+ * Dispatch a real `keydown` and hand the event back, so a check can read
+ * `defaultPrevented` as well as what the handler did with it.
+ *
+ * `bubbles` is not optional: React listens on the root container, never on
+ * the row itself, so an event dispatched without it reaches no handler at all
+ * and every assertion downstream of it passes by measuring nothing.
+ */
+function pressKey(el: Element, key: string): Event {
+  const view = window as unknown as { KeyboardEvent: typeof KeyboardEvent };
+  const event = new view.KeyboardEvent("keydown", {
+    key,
+    bubbles: true,
+    cancelable: true,
+  });
+  el.dispatchEvent(event);
+  return event;
+}
+
+/**
+ * A tab stop's own name, so a failure message says WHICH element it found.
+ *
+ * BOUNDED. When focus has fallen off the widget entirely `document
+ * .activeElement` is `<body>`, whose `textContent` is every rendered view in
+ * this harness at once — 70 KB of prose in what was meant to be a one-line
+ * failure. The tag name is what actually identifies that case.
+ */
+function describeStop(el: Element): string {
+  const name = (el.getAttribute("aria-label") || el.textContent || "").trim();
+  if (name.length === 0) return `<${el.tagName.toLowerCase()}>`;
+  // A row's accessible name is a ", "-joined list whose FIRST segment is the
+  // row's own name, so that segment is the identifying half; everything after
+  // it is authority class and provenance, which no failure here is about.
+  const head = name.split(", ")[0];
+  return head.length > 60 ? `<${el.tagName.toLowerCase()}>` : head;
+}
+
+/**
+ * `els` holds exactly ONE tab stop, it is `expected`, and every other element
+ * carries an explicit `tabindex="-1"`.
+ *
+ * READ FROM THE NEGATIVE, ON PURPOSE. Counting elements whose `tabindex`
+ * equals `"0"` reads 1 the moment the active one is marked, and goes on
+ * reading 1 whether the rest carry `-1` or carry no `tabindex` attribute at
+ * all — and a native `<button>` with no `tabindex` is Tab-reachable anyway.
+ * A positive count cannot see what is missing: absence is not -1. Both tab
+ * strips this harness checks were in exactly that state (three `role="tab"`
+ * buttons, no `tabindex` attribute on any of them), where a count of
+ * `tabindex="0"` reads 0 rather than the 3 tab stops a user actually meets.
+ */
+function checkRovingTabStop(
+  els: Element[],
+  expected: Element | null,
+  what: string,
+  passName: string,
+  problems: string[],
+) {
+  const stops = els.filter((e) => e.getAttribute("tabindex") === "0");
+  if (stops.length !== 1) {
+    problems.push(
+      `${passName}: ${stops.length} of ${els.length} ${what} carry tabindex="0", want exactly 1`,
+    );
+  } else if (expected && stops[0] !== expected) {
+    problems.push(
+      `${passName}: the ${what} tab stop is "${describeStop(stops[0])}", want "${describeStop(expected)}"`,
+    );
+  }
+  const stillReachable = els.filter(
+    (e) => e !== stops[0] && e.getAttribute("tabindex") !== "-1",
+  );
+  if (stillReachable.length > 0) {
+    problems.push(
+      `${passName}: ${stillReachable.length} of ${els.length} ${what} carry no tabindex="-1" and stay Tab-reachable — a single tabindex="0" does not make a roving model`,
+    );
   }
 }
 
@@ -878,7 +955,7 @@ async function main() {
         // `[data-kind]` lives in the per-row DETAIL, one interaction away
         // (review round 1) — select a slot-image row first.
         const slotRow = Array.from(
-          container.querySelectorAll('li[role="option"]'),
+          container.querySelectorAll('li[role="treeitem"]'),
         ).find((li) =>
           (li.getAttribute("aria-label") || "").startsWith("m55_hp"),
         );
@@ -1692,7 +1769,7 @@ async function main() {
         ["mram_main", "a placeholder, not an address"], // its reason, verbatim
       ] as const) {
         const rowEl = Array.from(
-          container.querySelectorAll('li[role="option"]'),
+          container.querySelectorAll('li[role="treeitem"]'),
         ).find((li) =>
           (li.getAttribute("aria-label") || "").startsWith(rowName),
         );
@@ -1834,7 +1911,7 @@ async function main() {
       if (!table) {
         problems.push("memory-regions-aen: no unified memory table found");
       } else {
-        const firstRow = table.querySelector('li[role="option"]');
+        const firstRow = table.querySelector('li[role="treeitem"]');
         const firstName = (firstRow?.textContent || "").toLowerCase();
         if (!firstName.includes("he_slot0")) {
           problems.push(
@@ -1866,7 +1943,7 @@ async function main() {
           // full label would keep passing off that collision alone even
           // with `authorityClass` deleted from the join.
           const found = Array.from(
-            table.querySelectorAll('li[role="option"]'),
+            table.querySelectorAll('li[role="treeitem"]'),
           ).some((li) =>
             (li.getAttribute("aria-label") || "")
               .split(", ")
@@ -1904,7 +1981,7 @@ async function main() {
             (g) => g.getAttribute("data-tier-group") === tier,
           );
           const actualNames = group
-            ? Array.from(group.querySelectorAll('li[role="option"]')).map(
+            ? Array.from(group.querySelectorAll('li[role="treeitem"]')).map(
                 (li) => (li.getAttribute("aria-label") || "").split(", ")[0],
               )
             : [];
@@ -1927,7 +2004,7 @@ async function main() {
         for (const group of Array.from(groups)) {
           const groupTier = group.getAttribute("data-tier-group");
           for (const row of Array.from(
-            group.querySelectorAll('li[role="option"]'),
+            group.querySelectorAll('li[role="treeitem"]'),
           )) {
             const swatches = row.querySelectorAll("[data-tier]");
             if (swatches.length !== 1) {
@@ -1953,7 +2030,7 @@ async function main() {
         // The collapse toggle — clicked nowhere in this suite before round
         // 2, which is exactly how a dangling `aria-controls` (the group
         // unmounting along with its rows) went unnoticed. Collapse
-        // "unproven": its rows must leave the option set, the OTHER two
+        // "unproven": its rows must leave the tree, the OTHER two
         // groups must still validate by name, and `aria-controls` must
         // still resolve to a MOUNTED element (the group itself, empty of
         // rows — not gone). Reopen and check the rows return.
@@ -1978,11 +2055,12 @@ async function main() {
               `memory-regions-aen: collapsing "unproven" left aria-controls="${controlsId}" resolving to nothing`,
             );
           } else {
-            const rowsWhileCollapsed =
-              collapsedGroup.querySelectorAll('li[role="option"]').length;
+            const rowsWhileCollapsed = collapsedGroup.querySelectorAll(
+              'li[role="treeitem"]',
+            ).length;
             if (rowsWhileCollapsed !== 0) {
               problems.push(
-                `memory-regions-aen: "unproven" still has ${rowsWhileCollapsed} row(s) in the option set while collapsed, want 0`,
+                `memory-regions-aen: "unproven" still has ${rowsWhileCollapsed} row(s) in the tree while collapsed, want 0`,
               );
             }
           }
@@ -1998,7 +2076,7 @@ async function main() {
               (g) => g.getAttribute("data-tier-group") === tier,
             );
             const actualNames = group
-              ? Array.from(group.querySelectorAll('li[role="option"]')).map(
+              ? Array.from(group.querySelectorAll('li[role="treeitem"]')).map(
                   (li) => (li.getAttribute("aria-label") || "").split(", ")[0],
                 )
               : [];
@@ -2017,7 +2095,7 @@ async function main() {
           await settle();
           const reopenedGroup = container.querySelector(`#${controlsId}`);
           const rowsAfterReopen = reopenedGroup
-            ? reopenedGroup.querySelectorAll('li[role="option"]').length
+            ? reopenedGroup.querySelectorAll('li[role="treeitem"]').length
             : 0;
           if (rowsAfterReopen !== expectedByTier.unproven.length) {
             problems.push(
@@ -2168,6 +2246,407 @@ async function main() {
           "memory-regions-aen: the view still has no real headings",
         );
       }
+
+      // ── #484 phase 4 (Task 9): the keyboard model ──
+      //
+      // LAST in this pass, and it has to be. The tab-strip half below
+      // navigates AWAY from the Memory tab, which unmounts the chart and the
+      // table; `svg`, `blockedAlert` and `legendItem` above are live node
+      // references into exactly that subtree, and `compareDocumentPosition`
+      // on a detached node answers DISCONNECTED, not FOLLOWING.
+      {
+        const tree = container.querySelector(
+          'ul[aria-label="Memory map rows"]',
+        );
+        const rowsNow = (): HTMLElement[] =>
+          tree
+            ? Array.from(
+                tree.querySelectorAll<HTMLElement>('li[role="treeitem"]'),
+              )
+            : [];
+        const nameOf = (el: Element) => el.getAttribute("aria-label") || "";
+        const tierOf = (el: Element) =>
+          el.closest('[role="group"]')?.getAttribute("data-tier-group") ?? null;
+        const byName = (label: string) =>
+          rowsNow().find((r) => nameOf(r) === label) ?? null;
+        // A row's accessible name carries its authority class and provenance
+        // too; a failure message wants the row, not the whole segment list.
+        const shortName = (label: string) => label.split(", ")[0];
+
+        if (rowsNow().length === 0) {
+          problems.push(
+            "memory-regions-aen: the memory table exposes no treeitem rows — a list of rows that EXPAND is a tree, and nothing carries that role",
+          );
+        } else {
+          // The invariant first, with no claim about WHICH row holds the
+          // stop: clicks earlier in this pass already moved it.
+          checkRovingTabStop(
+            rowsNow(),
+            null,
+            "rows",
+            "memory-regions-aen",
+            problems,
+          );
+
+          const home = pressKey(rowsNow()[0], "Home");
+          await settle();
+          if (document.activeElement !== rowsNow()[0]) {
+            problems.push(
+              `memory-regions-aen: Home focused "${describeStop(document.activeElement as Element)}", want the first row "${nameOf(rowsNow()[0])}"`,
+            );
+          }
+          checkRovingTabStop(
+            rowsNow(),
+            rowsNow()[0],
+            "rows",
+            "memory-regions-aen",
+            problems,
+          );
+          if (!home.defaultPrevented) {
+            problems.push(
+              "memory-regions-aen: Home on a row did not preventDefault — the panel scrolls out from under the row that just took focus",
+            );
+          }
+
+          // ArrowDown all the way down, one row at a time, checking the row
+          // it lands on by NAME. A count-only check ("still 9 rows") cannot
+          // tell a walk that moves from one that stands still.
+          let crossedTier = false;
+          let walkBroke = false;
+          const order = rowsNow().map(nameOf);
+          for (let i = 1; i < order.length && !walkBroke; i++) {
+            const from = document.activeElement as HTMLElement;
+            pressKey(from, "ArrowDown");
+            await settle();
+            const landed = document.activeElement as Element | null;
+            if (!landed || nameOf(landed) !== order[i]) {
+              problems.push(
+                `memory-regions-aen: ArrowDown from "${shortName(order[i - 1])}" landed on "${landed ? describeStop(landed) : "nothing"}", want "${shortName(order[i])}"`,
+              );
+              walkBroke = true;
+            } else if (tierOf(landed) !== tierOf(byName(order[i - 1])!)) {
+              crossedTier = true;
+            }
+          }
+          if (!walkBroke && !crossedTier) {
+            problems.push(
+              "memory-regions-aen: ArrowDown never left the tier group it started in — the arrows must cross group boundaries, not stop at them",
+            );
+          }
+          const last = rowsNow()[rowsNow().length - 1];
+          if (!walkBroke) {
+            checkRovingTabStop(
+              rowsNow(),
+              last,
+              "rows",
+              "memory-regions-aen",
+              problems,
+            );
+            // Past the end is a no-op, not a wrap: a tree does not wrap.
+            pressKey(last, "ArrowDown");
+            await settle();
+            if (document.activeElement !== rowsNow()[rowsNow().length - 1]) {
+              problems.push(
+                `memory-regions-aen: ArrowDown past the last row moved to "${describeStop(document.activeElement as Element)}" — it must stand still, not wrap`,
+              );
+            }
+            pressKey(last, "ArrowUp");
+            await settle();
+            if (document.activeElement !== rowsNow()[rowsNow().length - 2]) {
+              problems.push(
+                `memory-regions-aen: ArrowUp from the last row focused "${describeStop(document.activeElement as Element)}", want "${shortName(order[order.length - 2])}"`,
+              );
+            }
+          }
+
+          const end = pressKey(rowsNow()[0], "End");
+          await settle();
+          if (document.activeElement !== rowsNow()[rowsNow().length - 1]) {
+            problems.push(
+              `memory-regions-aen: End focused "${describeStop(document.activeElement as Element)}", want the last row "${shortName(order[order.length - 1])}"`,
+            );
+          }
+          if (!end.defaultPrevented) {
+            problems.push(
+              "memory-regions-aen: End on a row did not preventDefault",
+            );
+          }
+          pressKey(rowsNow()[0], "Home");
+          await settle();
+          pressKey(rowsNow()[0], "ArrowUp");
+          await settle();
+          if (document.activeElement !== rowsNow()[0]) {
+            problems.push(
+              `memory-regions-aen: ArrowUp from the first row moved to "${describeStop(document.activeElement as Element)}" — it must stand still, not wrap to the last`,
+            );
+          }
+
+          // Expansion is its OWN key and its own state. The row it runs on
+          // must be one that is collapsed and not selected, so the check can
+          // prove `aria-selected` did not move with `aria-expanded`.
+          const collapsed = rowsNow().find(
+            (r) =>
+              r.getAttribute("aria-expanded") === "false" &&
+              r.getAttribute("aria-selected") === "false" &&
+              !r.hasAttribute("aria-disabled"),
+          );
+          if (!collapsed) {
+            problems.push(
+              "memory-regions-aen: no collapsed, unselected row to expand — the expansion key cannot be checked",
+            );
+          } else {
+            const label = nameOf(collapsed);
+            const right = pressKey(collapsed, "ArrowRight");
+            await settle();
+            const expandedRow = byName(label);
+            if (!expandedRow) {
+              problems.push(
+                `memory-regions-aen: "${shortName(label)}" disappeared when it was expanded`,
+              );
+            } else {
+              if (expandedRow.getAttribute("aria-expanded") !== "true") {
+                problems.push(
+                  `memory-regions-aen: ArrowRight left "${shortName(label)}" announcing aria-expanded="${expandedRow.getAttribute("aria-expanded")}"`,
+                );
+              }
+              if (expandedRow.querySelector(".detail") === null) {
+                problems.push(
+                  `memory-regions-aen: ArrowRight expanded "${shortName(label)}" but revealed no detail`,
+                );
+              }
+              if (expandedRow.getAttribute("aria-selected") !== "false") {
+                problems.push(
+                  `memory-regions-aen: ArrowRight also SELECTED "${shortName(label)}" — expansion has its own key so that it does not drag the selection (and the rail's highlight) with it`,
+                );
+              }
+            }
+            if (!right.defaultPrevented) {
+              problems.push(
+                "memory-regions-aen: ArrowRight on a row did not preventDefault",
+              );
+            }
+            checkAriaExpandedMatchesDetail(
+              container,
+              "memory-regions-aen",
+              problems,
+            );
+
+            const left = pressKey(byName(label)!, "ArrowLeft");
+            await settle();
+            const collapsedRow = byName(label);
+            if (collapsedRow?.getAttribute("aria-expanded") !== "false") {
+              problems.push(
+                `memory-regions-aen: ArrowLeft left "${shortName(label)}" announcing aria-expanded="${collapsedRow?.getAttribute("aria-expanded")}"`,
+              );
+            }
+            if (collapsedRow?.querySelector(".detail") !== null) {
+              problems.push(
+                `memory-regions-aen: ArrowLeft collapsed "${shortName(label)}" but its detail is still in the DOM`,
+              );
+            }
+            if (!left.defaultPrevented) {
+              problems.push(
+                "memory-regions-aen: ArrowLeft on a row did not preventDefault",
+              );
+            }
+            checkAriaExpandedMatchesDetail(
+              container,
+              "memory-regions-aen",
+              problems,
+            );
+          }
+
+          const space = pressKey(rowsNow()[0], " ");
+          await settle();
+          if (!space.defaultPrevented) {
+            problems.push(
+              "memory-regions-aen: Space on a row did not preventDefault — a focusable <li> is not a button, so the page scrolls instead of selecting",
+            );
+          }
+          // The false-alarm direction. A handler that swallows every key it
+          // does not act on breaks type-ahead and every browser shortcut,
+          // and no positive check above can see it.
+          const unhandled = pressKey(rowsNow()[0], "b");
+          await settle();
+          if (unhandled.defaultPrevented) {
+            problems.push(
+              'memory-regions-aen: a key the table does not act on ("b") was preventDefault-ed',
+            );
+          }
+
+          // A collapsed group's rows leave the tree ENTIRELY — including the
+          // tab stop, which has to fall back to a row that still exists.
+          pressKey(rowsNow()[0], "End");
+          await settle();
+          const lastTier = tierOf(rowsNow()[rowsNow().length - 1]);
+          const lastToggle = Array.from(
+            container.querySelectorAll("button[aria-controls]"),
+          ).find(
+            (b) =>
+              b.getAttribute("aria-controls") ===
+              `memory-table-group-${lastTier}`,
+          );
+          if (!lastToggle) {
+            problems.push(
+              `memory-regions-aen: no toggle controls the "${lastTier}" group the tab stop sits in`,
+            );
+          } else {
+            (lastToggle as HTMLButtonElement).click();
+            await settle();
+            const survivors = rowsNow();
+            const strays = survivors.filter((r) => tierOf(r) === lastTier);
+            if (strays.length > 0) {
+              problems.push(
+                `memory-regions-aen: collapsing "${lastTier}" left ${strays.length} of its rows in the tree`,
+              );
+            }
+            checkRovingTabStop(
+              survivors,
+              survivors[0] ?? null,
+              "rows",
+              "memory-regions-aen",
+              problems,
+            );
+            (lastToggle as HTMLButtonElement).click();
+            await settle();
+          }
+        }
+
+        // ── the tab strip ──
+        const tabStops = () =>
+          Array.from(
+            container.querySelectorAll<HTMLElement>('button[role="tab"]'),
+          );
+        const selectedTab = () =>
+          tabStops().find((t) => t.getAttribute("aria-selected") === "true") ??
+          null;
+        checkRovingTabStop(
+          tabStops(),
+          selectedTab(),
+          "tabs",
+          "memory-regions-aen",
+          problems,
+        );
+
+        const panel = container.querySelector('[role="tabpanel"]');
+        if (!panel) {
+          problems.push(
+            "memory-regions-aen: no role=tabpanel wraps the tab content",
+          );
+        } else {
+          // RESOLUTION, not presence. An `aria-controls` naming an id that
+          // is not in the document announces a relationship that does not
+          // exist, and a check for "a tabpanel exists somewhere" passes
+          // every time regardless of what the tabs point at.
+          for (const t of tabStops()) {
+            const controls = t.getAttribute("aria-controls");
+            if (!controls) {
+              problems.push(
+                `memory-regions-aen: the "${describeStop(t)}" tab carries no aria-controls`,
+              );
+            } else if (document.getElementById(controls) !== panel) {
+              problems.push(
+                `memory-regions-aen: the "${describeStop(t)}" tab's aria-controls="${controls}" does not resolve to the rendered tabpanel`,
+              );
+            }
+          }
+          const labelledBy = panel.getAttribute("aria-labelledby");
+          if (!labelledBy) {
+            problems.push(
+              "memory-regions-aen: the tabpanel carries no aria-labelledby",
+            );
+          } else if (document.getElementById(labelledBy) !== selectedTab()) {
+            problems.push(
+              `memory-regions-aen: the tabpanel's aria-labelledby="${labelledBy}" does not resolve back to the selected tab`,
+            );
+          }
+        }
+
+        const strip = tabStops();
+        if (strip.length < 2) {
+          problems.push(
+            `memory-regions-aen: ${strip.length} tab(s) on the strip — too few to check arrow navigation`,
+          );
+        } else {
+          const from = selectedTab()!;
+          const fromIndex = strip.indexOf(from);
+          const right = pressKey(from, "ArrowRight");
+          await settle();
+          const next = strip[(fromIndex + 1) % strip.length];
+          if (document.activeElement !== next) {
+            problems.push(
+              `memory-regions-aen: ArrowRight on the tab strip focused "${describeStop(document.activeElement as Element)}", want "${describeStop(next)}"`,
+            );
+          }
+          if (next.getAttribute("aria-selected") !== "true") {
+            problems.push(
+              `memory-regions-aen: ArrowRight focused "${describeStop(next)}" without selecting it — the panel and the focus disagree about which tab is current`,
+            );
+          }
+          checkRovingTabStop(
+            tabStops(),
+            next,
+            "tabs",
+            "memory-regions-aen",
+            problems,
+          );
+          if (!right.defaultPrevented) {
+            problems.push(
+              "memory-regions-aen: ArrowRight on the tab strip did not preventDefault",
+            );
+          }
+
+          pressKey(strip[strip.length - 1], "End");
+          await settle();
+          if (document.activeElement !== strip[strip.length - 1]) {
+            problems.push(
+              `memory-regions-aen: End on the tab strip focused "${describeStop(document.activeElement as Element)}", want the last tab`,
+            );
+          }
+          // Past the last tab WRAPS — a three-tab strip is a ring, and the
+          // rows above deliberately do not wrap, so this also proves the two
+          // models are not one shared handler pretending to be two.
+          pressKey(strip[strip.length - 1], "ArrowRight");
+          await settle();
+          if (document.activeElement !== strip[0]) {
+            problems.push(
+              `memory-regions-aen: ArrowRight past the last tab focused "${describeStop(document.activeElement as Element)}", want the first tab`,
+            );
+          }
+          pressKey(strip[0], "ArrowLeft");
+          await settle();
+          if (document.activeElement !== strip[strip.length - 1]) {
+            problems.push(
+              `memory-regions-aen: ArrowLeft from the first tab focused "${describeStop(document.activeElement as Element)}", want the last tab`,
+            );
+          }
+          const homeTab = pressKey(strip[strip.length - 1], "Home");
+          await settle();
+          if (document.activeElement !== strip[0]) {
+            problems.push(
+              `memory-regions-aen: Home on the tab strip focused "${describeStop(document.activeElement as Element)}", want the first tab`,
+            );
+          }
+          if (!homeTab.defaultPrevented) {
+            problems.push(
+              "memory-regions-aen: Home on the tab strip did not preventDefault",
+            );
+          }
+          const before = describeStop(selectedTab()!);
+          const unhandledTab = pressKey(strip[0], "x");
+          await settle();
+          if (unhandledTab.defaultPrevented) {
+            problems.push(
+              'memory-regions-aen: a key the tab strip does not act on ("x") was preventDefault-ed',
+            );
+          }
+          if (describeStop(selectedTab()!) !== before) {
+            problems.push(
+              `memory-regions-aen: a key the tab strip does not act on changed the selected tab from "${before}" to "${describeStop(selectedTab()!)}"`,
+            );
+          }
+        }
+      }
     }
     console.log(
       `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-aen: the SoM region backdrop`,
@@ -2230,7 +2709,7 @@ async function main() {
       // now in the per-row DETAIL, one interaction away — select a region
       // first (review round 1).
       const ddrRow = Array.from(
-        container.querySelectorAll('li[role="option"]'),
+        container.querySelectorAll('li[role="treeitem"]'),
       ).find((li) =>
         (li.getAttribute("aria-label") || "").startsWith("ddr_main"),
       );
@@ -2251,7 +2730,7 @@ async function main() {
       // token, not a bare substring — see the aen pass's own comment for
       // why a substring check is satisfied by prose instead.
       const hasUnstated = Array.from(
-        container.querySelectorAll('li[role="option"]'),
+        container.querySelectorAll('li[role="treeitem"]'),
       ).some((li) =>
         (li.getAttribute("aria-label") || "")
           .split(", ")
@@ -2368,7 +2847,7 @@ async function main() {
       // "class not proven" is now in the per-row DETAIL, one interaction
       // away — select odd_region first (review round 1).
       const oddRow = Array.from(
-        container.querySelectorAll('li[role="option"]'),
+        container.querySelectorAll('li[role="treeitem"]'),
       ).find((li) =>
         (li.getAttribute("aria-label") || "").startsWith("odd_region"),
       );
@@ -2598,7 +3077,7 @@ async function main() {
 
       const rows = Array.from(
         container.querySelectorAll(
-          'ul[aria-label="Memory map rows"] [role="option"]',
+          'ul[aria-label="Memory map rows"] [role="treeitem"]',
         ),
       );
       if (rows.length !== 2) {

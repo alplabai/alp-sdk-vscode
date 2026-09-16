@@ -30,9 +30,8 @@
   gap: var(--space-4);
 }
 
-/* The per-tier toggle buttons — rendered as the listbox's sibling, not its
- * child (review round 1: a button is not a valid listbox/group/option
- * participant). */
+/* The per-tier toggle buttons — rendered as the tree's sibling, not its
+ * child: a button is not a valid tree/group/treeitem participant. */
 .groupToggles {
   display: flex;
   flex-direction: column;
