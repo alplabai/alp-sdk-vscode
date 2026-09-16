@@ -588,7 +588,7 @@ function Rail({
  * rpmsg-v2n a THIRD simultaneous depiction of `ocram_low` (the region gutter
  * and the table both already name it). `aria-label` keeps the name reachable
  * without drawing it a third time; threading it into the table row itself is
- * left as a follow-up (see the task report), not done here.
+ * left as a follow-up, not done here.
  */
 function ApertureBar({
   aperture,
