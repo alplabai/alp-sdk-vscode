@@ -33,19 +33,28 @@
 // stays read-only.
 //
 // ---------------------------------------------------------------------------
-// WHY THE SCANNED SCOPE IS THE REAL MODULE GRAPH, AND NOTHING ELSE
+// WHAT THIS GATE GUARANTEES, AND WHAT IT DELIBERATELY DOES NOT
 // ---------------------------------------------------------------------------
 //
-// The property this file defends is REACHABILITY: can anything the Memory
-// view actually pulls in reach the extension host? That is a statement about
-// the import graph, and no amount of text matching can express it. Earlier
-// designs tried, and each was defeated by a different indirection — a file
-// named by hand missed a new sibling; a regex import closure dropped an
-// unresolved specifier on the floor and shipped a `postMessage` inside a
-// scanned file with the gate green; a directory listing was escaped by simply
-// putting the transport in a file one directory up and importing it back in.
-// That last one is the tell: a listing describes WHERE a file sits, and the
-// hazard has nothing to do with where a file sits.
+// THE PROPERTY, EXACTLY: no module in the Memory view's import closure
+// imports the host transport module (`src/vscode.ts`), except
+// `blockedFindingActions.ts` — which may send exactly the two message types
+// named below, read from the AST of its own `postMessage(...)` call sites.
+//
+// That is NARROWER than "the memory view has no path back to the extension
+// host", which is what this header used to claim, and the gap is not
+// pedantic: every entry under DELIBERATELY OUTSIDE is a real path this file
+// does not close. Read that list before trusting this gate.
+//
+// WHY A GRAPH AND NOT TEXT. Reachability is a statement about the import
+// graph, and no text search can express it. Earlier designs tried, and each
+// was defeated by a different indirection — a file named by hand missed a new
+// sibling; a regex import closure dropped an unresolved specifier on the floor
+// and shipped a `postMessage` inside a scanned file with the gate green; a
+// directory listing was escaped by putting the transport in a file one
+// directory up and importing it back in. That last one is the tell: a listing
+// describes WHERE a file sits, and the hazard has nothing to do with where a
+// file sits.
 //
 // So the scope is DERIVED, by the TypeScript compiler itself, from the
 // modules the Memory view's entry components import — transitively, through
@@ -58,35 +67,69 @@
 // wrote it — never a silent narrowing, which is the single way a derived
 // scope can be worse than a hand-written one.
 //
-// THE SCOPE FOLLOWS BINDINGS, NOT WHOLE BARRELS. `MemoryRegions.tsx` imports
+// AN IMPORT SHAPE THIS WALK DOES NOT MODEL IS ALSO A HARD FAILURE. The walk
+// follows static imports, `export … from`, `import = require(…)` and
+// `import("…")`. Anything else built on the `import` keyword —
+// `import.meta.glob("./*.ts")` being the one that actually turns up — is
+// refused by name rather than skipped, because a bundler expanding a pattern
+// into modules the compiler never resolves is precisely how a module joins
+// the view unseen.
+//
+// THE SCOPE FOLLOWS BINDINGS, NOT WHOLE MODULES. `MemoryRegions.tsx` imports
 // `{ Button }` from `../../shared/ui`, a barrel that also re-exports
 // components which legitimately DO talk to the host (the Markdown and
 // ResourceLink components both post messages, correctly, for their own
-// features). Co-location in a barrel is not a path the memory view can take:
-// it cannot call into a component it never imported. So a re-export hop is
-// followed only for the names actually asked for, down to the module that
-// declares them — `../../shared/ui` → `./Button` → `Button.tsx`, and nothing
-// else. Those two host-talking components are excluded by the derivation
-// itself, not by being named in a list; put the transport behind a binding
-// the view DOES import, anywhere in the tree, and the walk arrives at it.
+// features). A re-export hop is therefore followed only for the names
+// actually asked for, down to the module that declares them —
+// `../../shared/ui` → `./Button` → `Button.tsx`, and nothing else. Those two
+// host-talking components are excluded by the derivation itself, not by being
+// named in a list; put the transport behind a binding the view DOES import,
+// anywhere in the tree, and the walk arrives at it.
+//
+// Be precise about why that is safe, because the obvious justification is
+// false: the unimported barrel siblings ARE still evaluated. Measured — a
+// module-level poster in a `shared/ui` sibling the view never imports reaches
+// the bundle (55150 bytes with it, 55123 without). What the view cannot do is
+// CALL into a component it never imported, and a transport call is what sends
+// a message. So this scope is sound for "who can send", and it is NOT a claim
+// that nothing else in a touched barrel runs.
 //
 // TYPE-ONLY EDGES ARE NOT FOLLOWED. `import type { … }` is erased by the
 // compiler and evaluates nothing at run time, so it cannot be a path back to
 // the host. This is also why the protocol mirror (`types.ts`) is out of
 // scope: it must name every wire field, including the ones an editor would
-// target, and it is reached only through erased edges.
+// target, and it is reached only through erased edges. That reasoning holds
+// only while `verbatimModuleSyntax` is off, which a test below pins.
 //
-// The transport ban is therefore a graph property — "no module in the derived
-// set imports the host transport module, except the one sanctioned file" —
-// compared by RESOLVED PATH, so `../../vscode`, `../vscode`, a re-export of
-// it, or a helper in another directory that wraps it are all the same edge.
+// The transport ban is therefore a graph property, compared by RESOLVED PATH,
+// so `../../vscode`, `../vscode`, a re-export of it, or a helper in another
+// directory that wraps it are all the same edge.
 //
-// One shape a reachability gate cannot see, stated plainly rather than
-// papered over: a file NOTHING imports. It is not in the graph because it is
-// not in the program — never evaluated, never bundled, absent from
-// `dist/main.js`. It becomes visible to this gate the moment it is wired to
-// anything the view imports, which is also the moment it becomes able to do
-// harm.
+// DELIBERATELY OUTSIDE THIS GATE — none of these is caught, and the first is
+// the most likely next edit on this code:
+//
+//  1. A SIBLING COMPONENT rendered by `BuildPlanView.tsx` beside
+//     `<MemoryRegions/>`. A new `MemoryLegend.tsx` that posts `writeBoardYaml`
+//     passes this gate, because nothing the Memory view imports reaches it.
+//     The directory classification this file replaced DID catch that, so this
+//     is a real loss of coverage, recorded rather than hidden. It was not
+//     restored because the only mechanisms available are a hand-written
+//     exemption list — the construct that was deleted for letting one line
+//     remove a file from every scan at once — or a naming convention, which
+//     is that list under another name. "Which tab renders this" is a semantic
+//     fact the import graph does not carry: the container legitimately posts
+//     for the Slices tab through `useBuildPlan.ts`.
+//  2. A PROP-INJECTED CALLBACK. Give `MemoryRegions` an
+//     `onHostAction?: () => void` and wire it from the out-of-scope parent,
+//     and the message ships (`writeBoardYaml in dist/main.js: 1`). The view's
+//     own modules hold no transport edge, which is all this gate reads.
+//  3. A FILE NOTHING IMPORTS. Not in the graph because it is not in the
+//     program. Sound for THIS package as it is built today — one `index.html`
+//     entry, `format: "iife"`, no code splitting, no `require.context` — and
+//     verified with a real build, not assumed. It becomes visible the moment
+//     it is wired to anything the view imports.
+//  4. MODULE-EVALUATION SIDE EFFECTS in a co-located barrel sibling, per the
+//     measurement above.
 //
 // One level down, inside the one file allowed to reach the host at all, the
 // message check reads the ARGUMENT AST of each real `postMessage(...)` call:
@@ -265,6 +308,10 @@ function walk(project, ast, is) {
    *  plain string. Either one means the walk below is INCOMPLETE, so every
    *  test refuses to draw a conclusion until this is empty. */
   const unresolved = [];
+  /** Uses of the `import` keyword in a shape this walk does not model. Refused
+   *  for the same reason: an edge it cannot see is an edge it must not
+   *  pretend to have checked. */
+  const unauditable = [];
   /** Every followed edge: `{ from, to, specifier }`, resolved files only. */
   const edges = [];
   /** file -> { wanted: Set<string> | null, processed: boolean } */
@@ -399,10 +446,30 @@ function walk(project, ast, is) {
       } else if (token.kind === ast.SyntaxKind.StringLiteral) {
         strings.push(token.text);
       } else if (token.kind === ast.SyntaxKind.ImportKeyword) {
-        // A static `import … from` produces this token too, but its parent is
-        // the import STATEMENT; only `import("…")` has a call for a parent.
         const parent = token.parent;
-        if (parent && is.isCallExpression(parent)) dynamicCalls.push(parent);
+        if (parent && is.isCallExpression(parent)) {
+          // `import("./x")` — a real edge, resolved with all the others.
+          dynamicCalls.push(parent);
+        } else if (
+          parent &&
+          (is.isImportDeclaration(parent) ||
+            is.isImportEqualsDeclaration(parent))
+        ) {
+          // A static import; the statement walk already resolved it.
+        } else {
+          // Every other construct built on the `import` keyword loads modules
+          // in a way this walk does not model. `import.meta.glob(…)` is the
+          // live example and the reason this branch exists: its parent is a
+          // MetaProperty, not a call, so it fell through both arms above and
+          // was skipped — a bundler expanding a pattern into real modules the
+          // compiler resolves none of, joining the view unseen. Silent
+          // narrowing is the one failure this derivation exists to prevent,
+          // so an unmodelled shape is refused, never skipped.
+          unauditable.push({
+            from: file,
+            shape: parent ? ast.formatSyntaxKind(parent.kind) : "no parent",
+          });
+        }
       }
       token = ast.findNextToken(token, sourceFile, sourceFile);
     }
@@ -521,21 +588,41 @@ function walk(project, ast, is) {
   }
 
   const reachable = [...state.keys()].sort();
-  return { reachable, edges, unresolved, tokensOf, program, ast, is };
+  return {
+    reachable,
+    edges,
+    unresolved,
+    unauditable,
+    tokensOf,
+    program,
+    ast,
+    is,
+    compilerOptions: program.getCompilerOptions(),
+  };
 }
 
 /** Every test starts here. A walk that dropped a specifier has narrowed the
  *  scope, and a narrowed scope makes every assertion below pass for the wrong
  *  reason — the exact failure mode this derivation replaces. */
 function assertNothingWasDropped(graph) {
-  if (graph.unresolved.length === 0) return;
-  const detail = graph.unresolved
-    .map((u) => `  ${rel(u.from)} imports "${u.specifier}" — ${u.reason}`)
-    .join("\n");
+  const problems = graph.unresolved.map(
+    (u) => `  ${rel(u.from)} imports "${u.specifier}" — ${u.reason}`,
+  );
+  for (const u of graph.unauditable) {
+    problems.push(
+      `  ${rel(u.from)} uses the \`import\` keyword inside a ${u.shape}, a ` +
+        "shape this walk does not model. It follows static imports, " +
+        '`export … from`, `import = require(…)` and `import("…")`, and ' +
+        'nothing else — `import.meta.glob("./*.ts")` is what usually brings ' +
+        "this up: the bundler expands it into real modules and the compiler " +
+        "resolves none of them.",
+    );
+  }
+  if (problems.length === 0) return;
   assert.fail(
     "the memory view's module graph could not be resolved completely, so " +
       "the scope below would be narrower than the code really is:\n" +
-      detail +
+      problems.join("\n") +
       "\nFix the specifier, or teach this gate the resolution it needs — " +
       "never let it narrow silently.",
   );
@@ -565,6 +652,25 @@ test("the memory view's module graph resolves completely", async () => {
     graph.reachable.length >= 10,
     `the walk derived only ${graph.reachable.length} module(s); the memory ` +
       "view is larger than that, so the walk is broken",
+  );
+});
+
+test("the type-only exemption still rests on erasure", async () => {
+  const graph = await moduleGraph();
+  // This walk does not follow an edge whose bindings are all types, because
+  // the compiler erases the statement and nothing runs. That holds ONLY while
+  // `verbatimModuleSyntax` is off: turn it on and `import { type X } from
+  // "./x"` is emitted as written, so the module really is evaluated and every
+  // type-only edge skipped above becomes a live one. Nothing else pins this,
+  // so the day someone enables the flag should be a loud failure here rather
+  // than a quiet loss of coverage.
+  assert.ok(
+    !graph.compilerOptions.verbatimModuleSyntax,
+    "the webview's tsconfig.json now enables verbatimModuleSyntax, which " +
+      "makes an all-types import statement survive into the emitted module " +
+      "— the type-only edges this walk skips would then really run, and the " +
+      "derived scope would be missing them. Follow those edges (drop the " +
+      "type-only exemption in this file) before turning the flag on.",
   );
 });
 
@@ -608,8 +714,10 @@ function checkPostMessageCall(call, file, ast, is) {
     is.isObjectLiteralExpression(argument),
     `${where}: postMessage(...) is called with ` +
       `${ast.formatSyntaxKind(argument.kind)}, not a single inline object ` +
-      "literal — a variable, a function call or a spread of one cannot be " +
-      "audited by this gate and is refused outright",
+      "literal — only a literal written at the call site can be read here, " +
+      "so a variable, a function call, a spread of one, or a cast wrapping " +
+      "any of them (a cast around an otherwise fine literal included) is " +
+      "refused outright",
   );
 
   const typeValues = [];
