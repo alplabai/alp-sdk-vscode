@@ -65,10 +65,23 @@ function loadWithStubs(relPath, stubs) {
  * call (and the `interactive` option it was given) is captured. Returns
  * handles to drive it: `requestBuildPlan()` (the webview message) and
  * `fileChanged()` (the board.yaml/system-manifest.yaml watcher firing).
+ *
+ * `workspaceRoot` defaults to the fixed root every pre-existing test in this
+ * file relies on; pass `null` to mount with no workspace folder open at all
+ * (#484 Task 7's `openWorkspaceFile` refusal case) — `collectProjectContext`
+ * is stubbed directly (see below), so `null` reaches `BuildPlanPanel` the
+ * same way an empty `vscode.workspace.workspaceFolders` would through the
+ * real resolver.
  */
-function mountPanel() {
+function mountPanel(workspaceRoot = "/home/dev/proj") {
   const calls = [];
   const posted = [];
+  // #484 Task 7: what `openWorkspaceFile`/`copyText` actually did, captured
+  // the same way `calls`/`posted` capture everything else this panel does —
+  // never inferred from an unchanged count (see the tests below for why).
+  const opened = [];
+  const logs = [];
+  const clipboard = [];
   let onMessage = () => {};
   const watcherHandlers = [];
   const panel = {
@@ -102,11 +115,21 @@ function mountPanel() {
     vscode: {
       window: {
         createWebviewPanel: () => panel,
-        workspaceFolders: [{ uri: { fsPath: "/home/dev/proj" } }],
+        workspaceFolders: workspaceRoot
+          ? [{ uri: { fsPath: workspaceRoot } }]
+          : undefined,
+        // #484 Task 7: `openWorkspaceFile` calls this directly with a `Uri`
+        // (never `openTextDocument` first) — mirrors the brief's own sketch.
+        showTextDocument: (uri) => {
+          opened.push(uri.fsPath);
+          return Promise.resolve({});
+        },
       },
       workspace: {
         get workspaceFolders() {
-          return [{ uri: { fsPath: "/home/dev/proj" } }];
+          return workspaceRoot
+            ? [{ uri: { fsPath: workspaceRoot } }]
+            : undefined;
         },
         createFileSystemWatcher: () => ({
           onDidChange(handler) {
@@ -122,8 +145,19 @@ function mountPanel() {
         }),
       },
       ViewColumn: { Active: 1 },
-      Uri: { joinPath: () => ({}), parse: (value) => value },
-      env: { openExternal: async () => true },
+      Uri: {
+        joinPath: () => ({}),
+        parse: (value) => value,
+        file: (fsPath) => ({ fsPath }),
+      },
+      env: {
+        openExternal: async () => true,
+        clipboard: {
+          writeText: async (text) => {
+            clipboard.push(text);
+          },
+        },
+      },
     },
     "../alpCli/vscodeAdapter": {
       runAlpCommand: async (_context, args, cwd, options) => {
@@ -138,9 +172,10 @@ function mountPanel() {
     // `collectProjectContext()`, not `workspaceFolders[0]` directly. The real
     // resolver needs `vscode.workspace.getConfiguration`, absent from this
     // file's `vscode` stub, so it is stubbed here with the same
-    // "/home/dev/proj" root the old direct read used.
+    // `workspaceRoot` the old direct read used — `null` when the test wants
+    // no workspace folder open at all.
     "../project/vscodeAdapter": {
-      collectProjectContext: () => ({ workspaceRoot: "/home/dev/proj" }),
+      collectProjectContext: () => ({ workspaceRoot }),
     },
     "../util": {
       BUILD_RUN_NAME: "build",
@@ -148,7 +183,10 @@ function mountPanel() {
       isStreamedRunActive: () => false,
       releaseStreamedRun: () => {},
       reserveStreamedRun: () => true,
-      log() {},
+      // #484 Task 7: `openWorkspaceFile` logs every refusal — captured here
+      // so a refusal is a POSITIVE, checkable fact, not an inference from a
+      // count that merely did not move.
+      log: (message) => logs.push(message),
     },
   });
 
@@ -157,8 +195,14 @@ function mountPanel() {
   return {
     calls,
     posted,
+    opened,
+    logs,
+    clipboard,
     requestBuildPlan: () => onMessage({ type: "requestBuildPlan" }),
     fileChanged: () => watcherHandlers.forEach((handler) => handler()),
+    openWorkspaceFile: (relativePath) =>
+      onMessage({ type: "openWorkspaceFile", path: relativePath }),
+    copyText: (text) => onMessage({ type: "copyText", text }),
   };
 }
 
@@ -260,4 +304,88 @@ test("BuildPlanPanel: no trigger spawns a deferred `tan build` flag, and the pan
     "the on-disk facts are still posted, and they matter MORE now than when " +
       "nothing was rendered: they are what dates the manifest on screen",
   );
+});
+
+// ── #484 Task 7: `openWorkspaceFile` / `copyText` ───────────────────────────
+//
+// This is the only place on this branch where a string the WEBVIEW supplies
+// reaches the filesystem, so the containment check is tested past the
+// obvious `../..` case. Every refusal below is asserted through `opened`
+// staying put AND `logs` gaining a specific, matching entry — never through
+// `opened.length` alone, which would pass identically whether the handler
+// refused on purpose or merely threw for an unrelated reason (an unknown
+// message type, a typo in a property name) before ever reaching the
+// containment check.
+const WORKSPACE_ROOT = "/home/dev/proj";
+
+test("openWorkspaceFile opens a path inside the workspace", async () => {
+  const { opened, logs, openWorkspaceFile } = mountPanel(WORKSPACE_ROOT);
+  openWorkspaceFile("board.yaml");
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(opened, [path.join(WORKSPACE_ROOT, "board.yaml")]);
+  assert.deepEqual(logs, [], "a successful open must not also log a refusal");
+});
+
+test("openWorkspaceFile refuses a classic ../.. traversal", async () => {
+  const { opened, logs, openWorkspaceFile } = mountPanel(WORKSPACE_ROOT);
+  openWorkspaceFile("../../etc/passwd");
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(opened, [], "nothing must open");
+  assert.equal(logs.length, 1, "the refusal must be logged, not silent");
+  assert.match(logs[0], /refused/);
+  assert.match(logs[0], /outside the workspace root/);
+});
+
+test("openWorkspaceFile refuses an absolute path, which discards the workspace root outright", async () => {
+  // `path.resolve(root, "/etc/passwd")` returns `/etc/passwd` — the root is
+  // discarded whenever the second argument is itself absolute — so a check
+  // that only looks for ".." in the raw input would never see this one.
+  const { opened, logs, openWorkspaceFile } = mountPanel(WORKSPACE_ROOT);
+  openWorkspaceFile("/etc/passwd");
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(opened, []);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /refused/);
+  assert.match(logs[0], /outside the workspace root/);
+});
+
+test("openWorkspaceFile refuses a sibling directory that merely shares the root as a string prefix", async () => {
+  // Built FROM the mounted root, so it is real: `${WORKSPACE_ROOT}-evil/x`
+  // resolves to a directory that sits next to the workspace, not inside it.
+  // `resolved.startsWith(root)` — the naive fix for the absolute-path hole
+  // above — is TRUE for this path, because "/home/dev/proj-evil/x" really
+  // does start with the literal string "/home/dev/proj". The mutation test
+  // in this task's report reproduces exactly that swap and shows this case
+  // then passes.
+  const sibling = `${WORKSPACE_ROOT}-evil/x`;
+  const { opened, logs, openWorkspaceFile } = mountPanel(WORKSPACE_ROOT);
+  openWorkspaceFile(sibling);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(opened, []);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /refused/);
+  assert.match(logs[0], /outside the workspace root/);
+});
+
+test("openWorkspaceFile refuses everything when no workspace folder is open, without throwing", async () => {
+  const { opened, logs, openWorkspaceFile } = mountPanel(null);
+  assert.doesNotThrow(() => openWorkspaceFile("board.yaml"));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(opened, []);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /refused/);
+  assert.match(logs[0], /no workspace folder is open/);
+});
+
+test("copyText writes the given string to the clipboard", async () => {
+  const { clipboard, copyText } = mountPanel(WORKSPACE_ROOT);
+  copyText("alp_default_rpmsg — carve-out — some reason");
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(clipboard, ["alp_default_rpmsg — carve-out — some reason"]);
 });

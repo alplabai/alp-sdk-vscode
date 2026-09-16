@@ -918,6 +918,37 @@ export interface FlashSliceMessage {
   coreId: string;
 }
 
+/**
+ * Open a file inside the workspace, through the host (#484 Task 7).
+ *
+ * The Memory tab's promoted blocked-findings alert (`MemoryRegions.tsx`'s
+ * `BlockedFindings`) uses this to open the file that declares the finding —
+ * a raw `vscode://file` href is not reliable under the webview CSP, so the
+ * webview asks the host to call `vscode.window.showTextDocument` instead.
+ *
+ * `path` is a project-relative path (e.g. `"board.yaml"`), never absolute on
+ * the wire. The host still resolves it against the workspace root and
+ * refuses anything that resolves outside it — see
+ * `BuildPlanPanel.openWorkspaceFile` (`ideHub/buildPlanPanel.ts`) for the
+ * containment check and why a naive prefix comparison is not enough.
+ */
+export interface OpenWorkspaceFileMessage {
+  type: "openWorkspaceFile";
+  path: string;
+}
+
+/**
+ * Copy plain text to the system clipboard, through the host (#484 Task 7).
+ *
+ * The webview cannot reach `navigator.clipboard` reliably under the webview
+ * CSP either, so this goes through `vscode.env.clipboard.writeText` the same
+ * way `openWorkspaceFile` goes through `showTextDocument`.
+ */
+export interface CopyTextMessage {
+  type: "copyText";
+  text: string;
+}
+
 /** Ask the host to open a folder picker for the new project's parent directory. */
 export interface PickProjectLocationMessage {
   type: "pickProjectLocation";
@@ -961,6 +992,8 @@ export type WebviewToExtMessage =
   | MaterialiseBuildPlanMessage
   | RunBuildMessage
   | FlashSliceMessage
+  | OpenWorkspaceFileMessage
+  | CopyTextMessage
   | RequestModelsMessage
   | BuildModelMessage
   | CheckModelFitMessage

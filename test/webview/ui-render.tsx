@@ -2056,6 +2056,57 @@ async function main() {
           "memory-regions-aen: the blocked-findings alert does not precede the chart in document order",
         );
       }
+      // #484 Task 7: the blocked-findings alert carries two per-finding
+      // actions, dispatched through the host rather than a raw
+      // `vscode://file` href. Found by TEXT within the already-uniquely-
+      // identified `blockedAlert`, never by CSS module class: both render
+      // through the shared `Button` component, whose stubbed class ("btn")
+      // collides with ConfiguratorView.module.css's own `.btn` under
+      // run.mjs's css-module-stub — the same reason `.legendItem` (not
+      // `.legend`) is what the check just below keys on.
+      const findingButtons = blockedAlert
+        ? Array.from(blockedAlert.querySelectorAll("button"))
+        : [];
+      const openFileBtn = findingButtons.find(
+        (b) => (b.textContent || "").trim() === "Open board.yaml",
+      );
+      const copyBtn = findingButtons.find(
+        (b) => (b.textContent || "").trim() === "Copy",
+      );
+      if (!openFileBtn) {
+        problems.push(
+          'memory-regions-aen: no "Open board.yaml" action on the blocked finding',
+        );
+      } else {
+        const postedBefore = g.__ALP_POSTED__.length;
+        (openFileBtn as HTMLButtonElement).click();
+        await tick();
+        const openMsg = g.__ALP_POSTED__
+          .slice(postedBefore)
+          .find((m: { type: string }) => m.type === "openWorkspaceFile");
+        if (!openMsg || openMsg.path !== "board.yaml") {
+          problems.push(
+            `memory-regions-aen: "Open board.yaml" posted ${JSON.stringify(openMsg)}, want {type:"openWorkspaceFile",path:"board.yaml"}`,
+          );
+        }
+      }
+      if (!copyBtn) {
+        problems.push(
+          'memory-regions-aen: no "Copy" action on the blocked finding',
+        );
+      } else {
+        const postedBefore = g.__ALP_POSTED__.length;
+        (copyBtn as HTMLButtonElement).click();
+        await tick();
+        const copyMsg = g.__ALP_POSTED__
+          .slice(postedBefore)
+          .find((m: { type: string }) => m.type === "copyText");
+        if (!copyMsg || !String(copyMsg.text).includes("alp_default_rpmsg")) {
+          problems.push(
+            `memory-regions-aen: "Copy" did not post the finding's own text (got ${JSON.stringify(copyMsg)})`,
+          );
+        }
+      }
       // `AuthorityLegend`'s own child — `.legendItem` is unique to
       // AuthoritySwatch.module.css, so it cannot be confused with
       // MemoryRegions.module.css's OWN `.legend` (the one-sentence

@@ -187,6 +187,12 @@ export class BuildPlanPanel {
       case "flashSlice":
         this.handleSliceCommand(msg.coreId);
         break;
+      case "openWorkspaceFile":
+        this.openWorkspaceFile(msg.path);
+        break;
+      case "copyText":
+        void vscode.env.clipboard.writeText(msg.text);
+        break;
       case "openUrl":
         if (msg.url.startsWith("https://") || msg.url.startsWith("vscode://")) {
           void vscode.env.openExternal(vscode.Uri.parse(msg.url));
@@ -614,6 +620,68 @@ export class BuildPlanPanel {
       name: FLASH_RUN_NAME,
       cwd,
     });
+  }
+
+  /**
+   * Open a workspace-relative path in the editor (#484 Task 7) — the Memory
+   * tab's promoted blocked-findings alert asks for this so the customer can
+   * jump straight to `board.yaml`, which is the one file every declared
+   * carve-out, partition and slot image comes from (`MemoryUnresolved`
+   * itself carries no per-finding path — see its own doc). A raw
+   * `vscode://file` href is not reliable under the webview CSP, so this
+   * goes through `vscode.window.showTextDocument` instead.
+   *
+   * REFUSES ANYTHING OUTSIDE THE WORKSPACE ROOT — this is the only place on
+   * this branch where a string the webview supplies reaches the filesystem,
+   * so the containment check has to survive more than the obvious `../..`
+   * case:
+   *
+   *  - An ABSOLUTE path escapes with no `..` at all. `path.resolve(root,
+   *    "/etc/passwd")` returns `/etc/passwd` outright — `path.resolve`
+   *    discards its first argument whenever the second is itself absolute —
+   *    so a check that only looks for `".."` in the raw input never fires.
+   *  - A bare `resolved.startsWith(root)` accepts a SIBLING directory: it is
+   *    true for `/tmp/ws-evil/x` when `root` is `/tmp/ws`, because that is a
+   *    real (if accidental) string prefix. This is the classic hole and the
+   *    easy one to write by accident.
+   *
+   * So containment is decided from `path.relative(root, resolved)` instead:
+   * inside means a non-empty relative path that is not `..`, does not start
+   * with `../`, and is not itself absolute (a relative path can still resolve
+   * to something `path.isAbsolute` on some inputs `path.relative` produces).
+   *
+   * NO WORKSPACE FOLDER OPEN is refused the same way, with no fallback root
+   * — `collectProjectContext().workspaceRoot` reads
+   * `vscode.workspace.workspaceFolders` through the same resolver
+   * `requireWorkspace` uses, so an empty/undefined `workspaceFolders` already
+   * comes back as `undefined` here rather than throwing.
+   *
+   * Every refusal is logged (`[buildPlan] openWorkspaceFile refused …`) so it
+   * is observable from the outside, not merely silent — see
+   * `test/ideHub.buildPlanPanel.test.js`.
+   */
+  private openWorkspaceFile(relativePath: string): void {
+    const root = collectProjectContext().workspaceRoot;
+    if (!root) {
+      log(
+        `[buildPlan] openWorkspaceFile refused "${relativePath}": no workspace folder is open`,
+      );
+      return;
+    }
+    const resolved = path.resolve(root, relativePath);
+    const rel = path.relative(root, resolved);
+    const inside =
+      rel !== "" &&
+      rel !== ".." &&
+      !rel.startsWith(".." + path.sep) &&
+      !path.isAbsolute(rel);
+    if (!inside) {
+      log(
+        `[buildPlan] openWorkspaceFile refused "${relativePath}": resolves outside the workspace root`,
+      );
+      return;
+    }
+    void vscode.window.showTextDocument(vscode.Uri.file(resolved));
   }
 
   private dispose(): void {

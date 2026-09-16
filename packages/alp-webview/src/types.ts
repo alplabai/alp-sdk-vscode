@@ -1242,6 +1242,21 @@ export interface FlashSliceMessage {
   coreId: string;
 }
 
+/** Open a file inside the workspace, through the host (#484 Task 7) — a raw
+ *  `vscode://file` href is not reliable under the webview CSP. `path` is
+ *  project-relative; the host refuses anything that resolves outside the
+ *  workspace root. */
+export interface OpenWorkspaceFileMessage {
+  type: "openWorkspaceFile";
+  path: string;
+}
+
+/** Copy plain text to the system clipboard, through the host (#484 Task 7). */
+export interface CopyTextMessage {
+  type: "copyText";
+  text: string;
+}
+
 export type WebviewToExtMessage =
   | ReadyMessage
   | RunCommandMessage
@@ -1270,6 +1285,8 @@ export type WebviewToExtMessage =
   | MaterialiseBuildPlanMessage
   | RunBuildMessage
   | FlashSliceMessage
+  | OpenWorkspaceFileMessage
+  | CopyTextMessage
   | RequestModelsMessage
   | BuildModelMessage
   | CheckModelFitMessage

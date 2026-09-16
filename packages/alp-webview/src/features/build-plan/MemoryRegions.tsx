@@ -36,7 +36,13 @@ import type {
   MemoryView,
   SliceSize,
 } from "../../types";
+import { Button } from "../../shared/ui";
 import { AuthorityLegend } from "./AuthoritySwatch";
+import {
+  DECLARING_FILE,
+  copyFindingText,
+  openDeclaringFile,
+} from "./blockedFindingActions";
 import { formatAddress, formatBytes } from "./format";
 import { MemoryChart } from "./MemoryChart";
 import { MemoryTable } from "./MemoryTable";
@@ -160,6 +166,17 @@ function OutsideRegionNotice({ findings }: { findings: MemoryConflict[] }) {
   );
 }
 
+/** The finding's own displayed text, composed for "Copy" — label, kind,
+ *  cores (when the manifest names any) and the resolver's reason, verbatim.
+ *  Composed here rather than re-read off the DOM so "Copy" always copies
+ *  exactly what the row itself renders, never a re-derived subset. */
+function blockedFindingText(f: MemoryUnresolved): string {
+  const parts = [f.label, KIND_LABEL[f.kind]];
+  if (f.cores.length > 0) parts.push(f.cores.join(" ↔ "));
+  parts.push(f.reason ?? "(no reason given)");
+  return parts.join(" — ");
+}
+
 /**
  * Declared entries the allocator refused outright (`status === "blocked"`),
  * promoted out of the "Declared, not placed" list below and into the same
@@ -168,6 +185,12 @@ function OutsideRegionNotice({ findings }: { findings: MemoryConflict[] }) {
  * wrong, not a still-pending fact to skim later. Every other unresolved
  * status (`pending`, the emitter's own `unresolved`, …) stays in the list
  * below: not yet placed is not the same claim as refused.
+ *
+ * Two actions per finding (#484 Task 7): open the file that declares it
+ * (always `board.yaml` — see `blockedFindingActions.ts`'s own doc) and copy
+ * its text. Both `ghost`-appearance — DESIGN.md's Selected-Not-Suggested
+ * rule reserves `{colors.accent}`/`{colors.button-bg}` for what is selected
+ * or the primary action, and neither applies to a row-level utility action.
  */
 function BlockedFindings({ findings }: { findings: MemoryUnresolved[] }) {
   return (
@@ -189,6 +212,17 @@ function BlockedFindings({ findings }: { findings: MemoryUnresolved[] }) {
           )}
           <span className={styles.reasonCallout}>
             {f.reason ?? "(no reason given)"}
+          </span>
+          <span className={styles.findingActions}>
+            <Button appearance="ghost" onClick={openDeclaringFile}>
+              Open {DECLARING_FILE}
+            </Button>
+            <Button
+              appearance="ghost"
+              onClick={() => copyFindingText(blockedFindingText(f))}
+            >
+              Copy
+            </Button>
           </span>
         </>
       )}
