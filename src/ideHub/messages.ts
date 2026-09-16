@@ -919,35 +919,35 @@ export interface FlashSliceMessage {
 }
 
 /**
- * Open the project's board.yaml, resolved by the HOST (#484 Task 7 fix
- * round 1, finding 1) — carries no path, because the webview does not know
- * (and must not guess) where board.yaml actually is: a custom or absolute
- * `alpSdk.boardYamlPath`, or a multi-root workspace where it is not under
- * `workspaceFolders[0]`, both make a webview-side literal wrong. The host
- * answers from `collectProjectContext().boardYamlPath` — see
+ * Open the project's board.yaml, resolved by the HOST (#484) — carries no
+ * path, because the webview does not know (and must not guess) where
+ * board.yaml actually is: a custom or absolute `alpSdk.boardYamlPath`, or a
+ * multi-root workspace where it is not under `workspaceFolders[0]`, both
+ * make a webview-side literal wrong. The host answers from
+ * `collectProjectContext().boardYamlPath` — see
  * `BuildPlanPanel.openBoardYaml`.
  *
- * A sibling `OpenWorkspaceFileMessage { path: string }` — a WEBVIEW-supplied,
- * containment-checked relative path — existed through fix round 1 and was
- * deleted in round 2 (#484 Task 7 fix round 2, item 7): it had no product
- * caller anywhere in `packages/alp-webview/src`, existed only to keep its
- * own tests green, and left a webview-reachable sink (a string turned into
- * a filesystem path and opened) that could rot unexercised, plus a live
- * precedent for a future edit to add a `path` back onto THIS message "for
- * symmetry". If a future control genuinely needs to open a path the webview
- * itself names, re-add that message deliberately, and read
- * `BuildPlanPanel`'s deleted `openWorkspaceFile` in this commit's history
- * for the two containment traps its containment check had to survive: an
- * absolute path discards `path.resolve`'s root argument outright, and a
- * bare `resolved.startsWith(root)` accepts a sibling directory that merely
- * shares the root as a string prefix.
+ * A sibling `OpenWorkspaceFileMessage { path: string }` — a WEBVIEW-
+ * supplied, containment-checked relative path — existed in an earlier
+ * version and was deleted (#484): it had no product caller anywhere in
+ * `packages/alp-webview/src`, existed only to keep its own tests green, and
+ * left a webview-reachable sink (a string turned into a filesystem path and
+ * opened) that could rot unexercised, plus a live precedent for a future
+ * edit to add a `path` back onto THIS message "for symmetry". If a future
+ * control genuinely needs to open a path the webview itself names, re-add
+ * that message deliberately, and read `BuildPlanPanel`'s deleted
+ * `openWorkspaceFile` in this commit's history for the two containment traps
+ * its containment check had to survive: an absolute path discards
+ * `path.resolve`'s root argument outright, and a bare
+ * `resolved.startsWith(root)` accepts a sibling directory that merely shares
+ * the root as a string prefix.
  */
 export interface OpenBoardYamlMessage {
   type: "openBoardYaml";
 }
 
 /**
- * Copy plain text to the system clipboard, through the host (#484 Task 7).
+ * Copy plain text to the system clipboard, through the host (#484).
  *
  * The webview cannot reach `navigator.clipboard` reliably under the webview
  * CSP either, so this goes through `vscode.env.clipboard.writeText` the same

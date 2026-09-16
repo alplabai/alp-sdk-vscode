@@ -6,13 +6,12 @@
 // are. MemoryTable.tsx renders; this module decides which rows exist, which
 // tier each belongs in, and the order they render in.
 //
-// Round 1 of review found this logic component-local, which is exactly why
-// nothing could reach it: a harness assertion that reads a row's rendered
-// `data-tier` against `byTier[row.tier]` can never disagree with itself when
-// both read the same field off the same object. Moving tier derivation and
-// sort order here, with their own unit tests asserting group MEMBERSHIP by
-// name rather than by re-reading the field under test, is what actually
-// closes that hole.
+// This logic was component-local, which is exactly why nothing could reach it:
+// a harness assertion that reads a row's rendered `data-tier` against
+// `byTier[row.tier]` can never disagree with itself when both read the same
+// field off the same object. Moving tier derivation and sort order here, with
+// their own unit tests asserting group MEMBERSHIP by name rather than by
+// re-reading the field under test, is what actually closes that hole.
 
 import type { MemoryRegion, MemorySpan, SliceSize } from "../../types";
 import { type AuthorityTier, tierOf } from "./authorityTier";
@@ -258,12 +257,12 @@ function regionRow(
  * name match. `span.region` (a carve-out's `carve_out_region`) says which
  * aperture the resolver allocated FROM, by declaration; it is not
  * necessarily the region a span's address physically lands inside, and a
- * `slot_image` span carries no `region` at all. Round 1 review measured the
- * defect the old name-based derivation produced: `m55_he` (span, `region:
- * null`) and `he_slot0` (region, `customer_image`) share the base
- * `0x80010000`, yet the name join put `m55_he` in "unproven" and `he_slot0`
- * in "yours" — separated by an entire "Locked" group, in a table whose
- * whole point is putting the two on adjacent rows.
+ * `slot_image` span carries no `region` at all. The old name-based
+ * derivation's defect is concrete: `m55_he` (span, `region: null`) and
+ * `he_slot0` (region, `customer_image`) share the base `0x80010000`, yet the
+ * name join put `m55_he` in "unproven" and `he_slot0` in "yours" — separated
+ * by an entire "Locked" group, in a table whose whole point is putting the two
+ * on adjacent rows.
  *
  * Fail-closed to `"unproven"` when the base is absent, or when it is
  * contained by zero or by two-or-more resolved regions — an ambiguous

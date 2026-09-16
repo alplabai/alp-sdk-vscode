@@ -28,7 +28,8 @@ const TOKENS_CSS = fs.readFileSync(
 
 // ---------------------------------------------------------------------------
 // Colour math (ports contrast.py's maths verbatim — same formulas, same
-// rounding behaviour, so a ratio computed here matches the audit's).
+// rounding behaviour, so a ratio computed here matches the figures recorded
+// here).
 // ---------------------------------------------------------------------------
 
 function parseColor(raw) {
@@ -90,10 +91,10 @@ function contrast(rgb1, rgb2) {
 // ---------------------------------------------------------------------------
 // VS Code canonical registerColor() defaults for Dark+, Light+, High Contrast
 // Dark and High Contrast Light — for exactly the `--vscode-*` variables this
-// file's tokens resolve to. Sourced the same way the audit was:
-// microsoft/vscode's `src/vs/platform/theme/common/colors/*.ts` and
+// file's tokens resolve to. Sourced from microsoft/vscode's
+// `src/vs/platform/theme/common/colors/*.ts` and
 // `src/vs/workbench/contrib/terminal/common/terminalColorRegistry.ts`
-// (fetched 2026-09-12), and — for the round-1 mistake buildPlan.chartContrast
+// (fetched 2026-09-12), and — for the earlier mistake buildPlan.chartContrast
 // still pins a regression test against — `extensions/git/package.json`'s
 // `contributes.colors` defaults.
 //
@@ -125,7 +126,7 @@ const VSCODE_DEFAULTS = {
     // regression back to `--vscode-charts-orange` fails with a real,
     // computed ratio instead of a missing-lookup error.
     "--vscode-charts-orange": "#EA5C0055",
-    // Round 1's mistake: opaque, but extension-contributed (the Git
+    // An earlier mistake: opaque, but extension-contributed (the Git
     // extension's package.json, not the core colour registry) and too close
     // in hue to --chart-5. Kept here so a regression back to it is caught
     // with real numbers, not a missing-lookup error.
@@ -191,7 +192,7 @@ const VSCODE_DEFAULTS = {
     // Light's own chrome is black-on-white everywhere else, and VS Code did
     // not chase pure #000000 for the terminal palette in this one theme.
     // It is recorded because ansiBlack was evaluated as the pressed-text
-    // colour (round 3) and declined (round 4): #292929 on HC Light's accent
+    // colour, then declined: #292929 on HC Light's accent
     // reaches only 2.66:1, while the --accent-fg white that ships reads
     // 5.47:1 there unaided. No HC Light override exists or is needed.
     "--vscode-terminal-ansiBlack": "#292929",

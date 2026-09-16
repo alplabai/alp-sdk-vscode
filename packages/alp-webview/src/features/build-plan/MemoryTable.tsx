@@ -15,9 +15,8 @@
 // `test/memoryRegions.readOnly.test.js`'s VIEW_FILES covers this file too.
 //
 // This file renders; `memoryTableRows.ts` decides which rows exist, which
-// tier each belongs in, and the order they render in — moved there in
-// review round 1 so that logic is unit-testable on its own, not only
-// through a jsdom render.
+// tier each belongs in, and the order they render in — moved there so that
+// logic is unit-testable on its own, not only through a jsdom render.
 
 import { useEffect, useId, useState } from "react";
 import type {

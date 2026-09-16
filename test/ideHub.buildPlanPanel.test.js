@@ -68,7 +68,7 @@ function loadWithStubs(relPath, stubs) {
  *
  * Every field is independently overridable, since `collectProjectContext()`
  * is stubbed directly (never the real resolver) and `openBoardYaml`
- * (#484 Task 7 fix round 1) reads `.boardYamlPath` off that same stub,
+ * (#484) reads `.boardYamlPath` off that same stub,
  * separately from `.workspaceRoot`:
  *
  *  - `workspaceRoot` defaults to the fixed root every pre-existing test
@@ -83,7 +83,7 @@ function loadWithStubs(relPath, stubs) {
  *    that `openBoardYaml` trusts whatever `boardYamlPath` it is handed.)
  *  - `showTextDocument` defaults to a stub that records into `opened` and
  *    resolves; pass a rejecting one to exercise the "file could not be
- *    opened" failure path (fix round 1, finding 2).
+ *    opened" failure path.
  */
 function mountPanel({
   workspaceRoot = "/home/dev/proj",
@@ -92,13 +92,13 @@ function mountPanel({
 } = {}) {
   const calls = [];
   const posted = [];
-  // #484 Task 7: what `openBoardYaml`/`copyText` actually did, captured the
+  // #484: what `openBoardYaml`/`copyText` actually did, captured the
   // same way `calls`/`posted` capture everything else this panel does —
   // never inferred from an unchanged count (see the tests below for why).
   const opened = [];
   const logs = [];
   const clipboard = [];
-  // #484 Task 7 fix round 2, item 4: every plan `notifyAsync` was handed —
+  // #484: every plan `notifyAsync` was handed —
   // the user-visible half. A raw `log()` call alone reaches only the "Alp
   // SDK" output channel, which nothing surfaces on its own; this is what
   // proves a failure also reaches the toast/status-bar layer a customer
@@ -151,7 +151,7 @@ function mountPanel({
         workspaceFolders: workspaceRoot
           ? [{ uri: { fsPath: workspaceRoot } }]
           : undefined,
-        // #484 Task 7: `openBoardYaml` calls this directly with a `Uri`.
+        // #484: `openBoardYaml` calls this directly with a `Uri`.
         showTextDocument: showTextDocumentStub,
       },
       workspace: {
@@ -196,7 +196,7 @@ function mountPanel({
       runAlpStreamed: async () => {},
     },
     "./webviewHtml": { buildWebviewHtml: () => "<html></html>" },
-    // #484 Task 7 fix round 2, item 4: a capturing stub, not a no-op — see
+    // #484: a capturing stub, not a no-op — see
     // `notifications` above.
     "../notify/vscodeAdapter": {
       notifyAsync: (plan) => notifications.push(plan),
@@ -206,10 +206,9 @@ function mountPanel({
     // resolver needs `vscode.workspace.getConfiguration`, absent from this
     // file's `vscode` stub, so it is stubbed here directly — `workspaceRoot:
     // null` when the test wants no workspace folder open at all,
-    // `boardYamlPath` independently overridable for #484 Task 7's
-    // `openBoardYaml` (fix round 1, finding 1: NOT re-derived from
-    // `workspaceRoot` by the handler under test, so this stub must not
-    // silently keep them coupled either).
+    // `boardYamlPath` independently overridable for #484's `openBoardYaml`
+    // (NOT re-derived from `workspaceRoot` by the handler under test, so
+    // this stub must not silently keep them coupled either).
     "../project/vscodeAdapter": {
       collectProjectContext: () => ({ workspaceRoot, boardYamlPath }),
     },
@@ -349,7 +348,7 @@ test("copyText writes the given string to the clipboard", async () => {
   assert.deepEqual(clipboard, ["alp_default_rpmsg — carve-out — some reason"]);
 });
 
-// ── #484 Task 7 fix round 1, finding 1: `openBoardYaml` ─────────────────────
+// ── #484: `openBoardYaml` ───────────────────────────────────────────────────
 //
 // The file opened is `collectProjectContext().boardYamlPath`, resolved by
 // the HOST, never re-derived here as `path.join(workspaceRoot,
@@ -358,13 +357,13 @@ test("copyText writes the given string to the clipboard", async () => {
 // `workspaceRoot` in the stub — exactly the coupling a hardcoded join would
 // have assumed.
 //
-// #484 Task 7 fix round 2, item 7: `openBoardYaml` is now the ONLY way any
+// #484: `openBoardYaml` is now the ONLY way any
 // string reaches the filesystem from this panel at all, and it takes no
 // webview input whatsoever — `OpenBoardYamlMessage` carries no `path` field.
 // The sibling `openWorkspaceFile` handler (a webview-supplied,
 // containment-checked relative path) was deleted outright: it had no
-// product caller, and its own tests are deleted with it. See this round's
-// commit message for the two containment traps its removal costs — an
+// product caller, and its own tests are deleted with it. See the commit
+// message for the two containment traps its removal costs — an
 // absolute path discarding `path.resolve`'s root argument, and a bare
 // `startsWith` accepting a sibling directory — recorded there so the
 // knowledge survives for whoever adds a real webview-named-path control
@@ -408,7 +407,7 @@ test("openBoardYaml opens an absolute alpSdk.boardYamlPath OUTSIDE the workspace
 });
 
 test("openBoardYaml trusts boardYamlPath verbatim, never re-deriving it from workspaceRoot", async () => {
-  // #484 Task 7 fix round 2, item 6: this test used to be titled as a
+  // #484: this test used to be titled as a
   // "multi-root workspace" case, but it never exercised multi-root
   // RESOLUTION — `collectProjectContext()` is stubbed wholesale here, so
   // `resolveWorkspaceRoot`'s real folder-picking logic (which folder
@@ -439,7 +438,7 @@ test("openBoardYaml trusts boardYamlPath verbatim, never re-deriving it from wor
   assert.deepEqual(notifications, []);
 });
 
-// ── #484 Task 7 fix round 2, item 4: both failure paths are USER-VISIBLE ────
+// ── #484: both failure paths are USER-VISIBLE ───────────────────────────────
 //
 // A raw `log()` call alone reaches only the "Alp SDK" output channel, which
 // nothing surfaces on its own — the button did nothing, silently. Both

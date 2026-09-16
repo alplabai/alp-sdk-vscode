@@ -517,7 +517,7 @@ export class BuildPlanPanel {
         // contributes at least its own `alp.conf` — a real materialise of the
         // sample project writes five files. Zero means the run did not do its
         // job, and the caller is about to build against whatever was already on
-        // disk. Related and NOT fixed here: tan-cli#505 item 3 — a PARTIAL loss
+        // disk. Related and NOT fixed here: tan-cli#505 — a PARTIAL loss
         // (one slice demoted, its `configArtefacts` dropped) still arrives as
         // `ok: true`, `issues: []`, exit 0, with no demotion signal anywhere in
         // the envelope. This extension cannot detect that until tan reports it;
@@ -627,7 +627,7 @@ export class BuildPlanPanel {
    * blocked-findings alert asks for this so the customer can jump straight
    * to the one file every declared carve-out and partition comes from
    * (`MemoryUnresolved` itself carries no per-finding path — see its own
-   * doc). #484 Task 7 fix round 1, finding 1.
+   * doc). #484.
    *
    * THE PATH IS `collectProjectContext().boardYamlPath`, NEVER a webview
    * string and NEVER `path.join(workspaceRoot, "board.yaml")` — the latter
@@ -658,18 +658,18 @@ export class BuildPlanPanel {
    * webview supplied, and a legitimately configured absolute
    * `alpSdk.boardYamlPath` can sit outside the workspace root by design —
    * validating a host-resolved value as though it were an untrusted webview
-   * string would refuse the customer's own valid configuration. (#484 Task 7
-   * fix round 2, item 7: the sibling `openWorkspaceFile` handler that DID
-   * validate a webview-supplied path was deleted outright — it had no
-   * product caller and existed only to keep its own tests green. See the
-   * commit message for the two containment traps its removal costs.)
+   * string would refuse the customer's own valid configuration. (The sibling
+   * `openWorkspaceFile` handler that DID validate a webview-supplied path was
+   * deleted outright — it had no product caller and existed only to keep its
+   * own tests green. See the commit message for the two containment traps its
+   * removal costs.)
    *
-   * BOTH FAILURE PATHS ARE USER-VISIBLE, not log-only (#484 Task 7 fix
-   * round 2, item 4). A raw `log()` call reaches only the "Alp SDK" output
-   * channel, which nothing surfaces on its own — a customer whose project
-   * has no board.yaml yet, or whose editor refuses to open the resolved
-   * file (missing, a directory, a binary), saw a button that did nothing
-   * and no way to learn why. Both paths now go through `notifyAsync`, the
+   * BOTH FAILURE PATHS ARE USER-VISIBLE, not log-only (#484). A raw `log()`
+   * call reaches only the "Alp SDK" output channel, which nothing surfaces
+   * on its own — a customer whose project has no board.yaml yet, or whose
+   * editor refuses to open the resolved file (missing, a directory, a
+   * binary), saw a button that did nothing and no way to learn why. Both
+   * paths now go through `notifyAsync`, the
    * same mechanism every other user-facing failure in this file uses
    * (`requireWorkspace`, `handleMaterialiseBuildPlan`'s failure branches):
    *
@@ -693,7 +693,7 @@ export class BuildPlanPanel {
    * of showing it, so a second manual `log()` here would double-log the
    * identical line — this file's OWN other failure branches (e.g.
    * `handleMaterialiseBuildPlan`'s `shapeError` case) already rely on
-   * exactly that and call `notifyAsync` alone. The previous round's two
+   * exactly that and call `notifyAsync` alone. An earlier version's two
    * different ad hoc log levels ("info" for the refusal, "warn" for the
    * failed open) are what "consistent" replaces: both are now derived from
    * the SAME two purpose-built planners, chosen for what each state

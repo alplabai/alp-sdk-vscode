@@ -278,7 +278,7 @@ test("AuthoritySwatch actually renders a <span className={styles.swatch}> — ki
 //
 // ANCHORED ON THE SWATCH'S OWN HASHED CLASS, not on any hashed class
 // followed by `[data-tier=...]` — the same mistake `chartContrast.test.js`'s
-// gutter check corrected after a round-2 review proved an unscoped regex
+// gutter check corrected after further testing proved an unscoped regex
 // stayed green with every `.gutter[data-tier]` rule deleted, because
 // `AuthoritySwatch.module.css`'s OWN `.swatch[data-tier="…"]` rules
 // satisfied it instead. Here the risk runs the other way: `MemoryChart`'s
@@ -383,7 +383,7 @@ test("the gutter's three tiers are pairwise distinguishable in every covered the
   }
 });
 
-// Round 1 fix review found the SELECTED state's own ring under this same 3:1
+// The SELECTED state's own ring was found under this same 3:1
 // floor: `--border-focus` (== --accent) measured as low as 1.85:1 (Light+)
 // against the "yours" fill, four of five covered themes under the bar this
 // file already holds the fills themselves to. A same-family accent ring on

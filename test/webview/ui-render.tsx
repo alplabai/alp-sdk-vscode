@@ -626,11 +626,10 @@ function feedState() {
  * modules render as literal `class="detail"` in this harness — see
  * `test/webview/run.mjs`'s css-module-stub) is actually present in the DOM.
  * `showDetail` feeds both the attribute and the render gate today, so they
- * agree by construction — but nothing asserted they MUST until this: the
- * reviewer proved `aria-expanded={row.selected}` (reverting only the
- * attribute, leaving the render gate at `showDetail`) reintroduces an inert
- * row that visibly renders its detail while announcing collapsed, and nothing
- * in the suite noticed.
+ * agree by construction — but nothing asserted they MUST until this:
+ * reverting `aria-expanded={row.selected}` alone (leaving the render gate
+ * at `showDetail`) reintroduces an inert row that visibly renders its
+ * detail while announcing collapsed, and nothing in the suite noticed.
  */
 function checkAriaExpandedMatchesDetail(
   container: HTMLElement,
@@ -988,8 +987,8 @@ async function main() {
         // marker is a hairline rather than a block is a CSS class the harness
         // cannot see, since run.mjs stubs CSS modules with a key-echoing Proxy
         // (test/webview.cssModuleKeys.test.js is what covers the class names).
-        // `[data-kind]` lives in the per-row DETAIL, one interaction away
-        // (review round 1) — select a slot-image row first.
+        // `[data-kind]` lives in the per-row DETAIL, one interaction away —
+        // select a slot-image row first.
         const slotRow = Array.from(
           container.querySelectorAll('li[role="treeitem"][data-row]'),
         ).find((li) =>
@@ -1856,8 +1855,8 @@ async function main() {
         }
       }
       // The authority label and the reason are now in the per-row DETAIL,
-      // one interaction away rather than always visible (review round 1) —
-      // select the row before checking for the text it reveals.
+      // one interaction away rather than always visible — select the row
+      // before checking for the text it reveals.
       for (const [rowName, needle] of [
         ["mcuboot", "vendor image · locked"],
         ["he_slot0", "customer · written at flash time"],
@@ -2118,7 +2117,7 @@ async function main() {
 
         // Carried forward from Task 2. Its swatch gate can only read source
         // text — `AuthoritySwatch` was mounted nowhere, so there was no
-        // rendered output to assert against, and the review proved three
+        // rendered output to assert against, and measurement proved three
         // mutations that kept that gate green: hardcoding `data-tier="yours"`,
         // dropping the attribute, and returning null. This task is the first
         // that mounts the component, so it is the first that can check what
@@ -2329,13 +2328,13 @@ async function main() {
       const findingButtons = blockedAlert
         ? Array.from(blockedAlert.querySelectorAll("button"))
         : [];
-      // #484 Task 7 fix round 2, item 5: the button text is "Open board
-      // config", never a specific filename — the host, not this button,
-      // decides which file `collectProjectContext().boardYamlPath` resolves
-      // to, and a literal "Open board.yaml" would lie under a custom or
-      // absolute `alpSdk.boardYamlPath`. Checked here as the testable half
-      // of that choice: this exact text is what "the label stops naming a
-      // specific file" means in the rendered DOM.
+      // #484: the button text is "Open board config", never a specific
+      // filename — the host, not this button, decides which file
+      // `collectProjectContext().boardYamlPath` resolves to, and a literal
+      // "Open board.yaml" would lie under a custom or absolute
+      // `alpSdk.boardYamlPath`. Checked here as the testable half of that
+      // choice: this exact text is what "the label stops naming a specific
+      // file" means in the rendered DOM.
       const openFileBtn = findingButtons.find(
         (b) => (b.textContent || "").trim() === "Open board config",
       );
@@ -2350,9 +2349,9 @@ async function main() {
         const postedBefore = g.__ALP_POSTED__.length;
         (openFileBtn as HTMLButtonElement).click();
         await tick();
-        // #484 Task 7 fix round 1, finding 1: no `path` field any more — the
-        // host resolves board.yaml itself (`collectProjectContext()
-        // .boardYamlPath`), so the webview no longer names a path at all.
+        // #484: no `path` field any more — the host resolves board.yaml
+        // itself (`collectProjectContext().boardYamlPath`), so the webview
+        // no longer names a path at all.
         const openMsg = g.__ALP_POSTED__
           .slice(postedBefore)
           .find((m: { type: string }) => m.type === "openBoardYaml");
@@ -2387,14 +2386,13 @@ async function main() {
         const copyMsg = g.__ALP_POSTED__
           .slice(postedBefore)
           .find((m: { type: string }) => m.type === "copyText");
-        // Tightened (fix round 1, minor finding): `blockedFindingText`
-        // composes label, kind, cores AND reason — the old check here only
-        // ever looked for the label, so dropping kind/cores/reason from the
-        // composed string still passed. Every fragment below is real: this
-        // fixture's one blocked finding is `alp_default_rpmsg`, a
-        // `carve_out` (rendered "carve-out") whose endpoints are
-        // `a32_cluster`/`m55_hp`, refused because its region is "ineligible
-        // for an IPC carve-out".
+        // Tightened: `blockedFindingText` composes label, kind, cores AND
+        // reason — the old check here only ever looked for the label, so
+        // dropping kind/cores/reason from the composed string still passed.
+        // Every fragment below is real: this fixture's one blocked finding
+        // is `alp_default_rpmsg`, a `carve_out` (rendered "carve-out")
+        // whose endpoints are `a32_cluster`/`m55_hp`, refused because its
+        // region is "ineligible for an IPC carve-out".
         const copyText = String((copyMsg as { text?: unknown })?.text ?? "");
         const expectedFragments = [
           "alp_default_rpmsg", // label
@@ -3235,7 +3233,7 @@ async function main() {
       }
       // "class not proven" (every v2n region's `kind` is "unresolved") is
       // now in the per-row DETAIL, one interaction away — select a region
-      // first (review round 1).
+      // first.
       const ddrRow = Array.from(
         container.querySelectorAll('li[role="treeitem"][data-row]'),
       ).find((li) =>
@@ -3253,7 +3251,7 @@ async function main() {
           );
         }
       }
-      // `unstated` — asserted nowhere before round 1, though all three v2n
+      // `unstated` — previously asserted nowhere, though all three v2n
       // regions carry it (no `write_authority` key at all). A delimited
       // token, not a bare substring — see the aen pass's own comment for
       // why a substring check is satisfied by prose instead.
@@ -3373,7 +3371,7 @@ async function main() {
       (memoryTab as HTMLButtonElement).click();
       await settle();
       // "class not proven" is now in the per-row DETAIL, one interaction
-      // away — select odd_region first (review round 1).
+      // away — select odd_region first.
       const oddRow = Array.from(
         container.querySelectorAll('li[role="treeitem"][data-row]'),
       ).find((li) =>
@@ -3644,18 +3642,17 @@ async function main() {
     );
   }
 
-  // ── a region table AND a genuine uncovered run, together (#484 phase 4,
-  //    round-2 + round-3 + round-4 fix review) ──
+  // ── a region table AND a genuine uncovered run, together (#484) ────────
   // Neither vendored fixture can prove this: rpmsg-aen's six regions tile
   // its window end to end (zero gaps, by construction of that data), and
   // the "build-plan" pass's hand-built manifest has NO region table at all
-  // (its own gap comes entirely from a span's own budget interval). Round 2
-  // isolated the REGION source of `railBoundaries`'s `occupied` array this
-  // way. Round 3 found the other two `occupied` sources still unguarded
-  // EVERYWHERE — deleting either one's `occupied.push` line alone produced
-  // 0 problems across the whole harness — so this fixture carries THREE
-  // separate islands, one per `occupied` source, each the SOLE cover of its
-  // own run:
+  // (its own gap comes entirely from a span's own budget interval). The
+  // REGION source of `railBoundaries`'s `occupied` array was isolated
+  // this way; the other two `occupied` sources were still unguarded
+  // EVERYWHERE — deleting either one's `occupied.push` line alone
+  // produced 0 problems across the whole harness — so this fixture
+  // carries THREE separate islands, one per `occupied` source, each the
+  // SOLE cover of its own run:
   //
   //   gap_region (region, resolved):        0x80000000 – 0x80010000  (64 KiB)
   //   core_anchor (marker span):             0x80000000
@@ -3687,7 +3684,7 @@ async function main() {
   // gap set — the byte size that run would carry if its own source were
   // dropped.
   //
-  // `core_far` (round 4): a marker PAST `core_budget`'s own budget end,
+  // `core_far`: a marker PAST `core_budget`'s own budget end,
   // added because `core_budget`'s `bEnd` (0x80068000) used to equal this
   // window's own `hi` — `windowOf` (regionWindow.ts) takes its `hi` from
   // the maximum of every end INCLUDING budget ends, so a budget end that
@@ -3699,8 +3696,8 @@ async function main() {
   // out to 0x80072000, so 0x80068000 is now STRICTLY INTERIOR and has no
   // way to appear except through its own `boundaries.push`.
   //
-  // The INVARIANT below (round 4) is the fix for the CLASS this and round
-  // 3's finding are both instances of, not a fourth per-source pin: every
+  // The INVARIANT below is the fix for the CLASS this and the earlier
+  // finding are both instances of, not a fourth per-source pin: every
   // declared address strictly inside the window — collected the same way
   // `railBoundaries` collects them (span bases, span ends, budget ends,
   // region lo/hi) — must appear as some segment's own boundary. That holds
@@ -3743,7 +3740,7 @@ async function main() {
           flash_args: { slot0_load_address: "0x80054000" },
         },
         {
-          // Round 4: pushes the window's own edge past core_budget's own
+          // Pushes the window's own edge past core_budget's own
           // `bEnd` (0x80068000), so that address is strictly interior and
           // cannot survive a deleted `boundaries.push(bEnd)` by coincidence.
           core_id: "core_far",
@@ -3866,7 +3863,7 @@ async function main() {
         );
       }
 
-      // ── round 4: the CLASS, not another instance ──
+      // ── the CLASS, not another instance ───────────
       // Every declared address strictly inside the window must be some
       // segment's own boundary — collected the same way `railBoundaries`
       // (MemoryChart.tsx) collects them: span bases, a span's own

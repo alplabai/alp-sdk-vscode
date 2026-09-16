@@ -10,12 +10,12 @@
 // headers).
 //
 // `test/memoryRegions.readOnly.test.js` is what enforces this split, and
-// THIS FILE IS IN ITS SCOPE TOO (fix round 1, finding 3) — the gate bans the
-// host TRANSPORT itself, not just mutation, so relocating the two calls out
-// of the five files above closes nothing on its own. The gate instead names
-// this file explicitly and allows exactly the two message types below
+// THIS FILE IS IN ITS SCOPE TOO — the gate bans the host TRANSPORT itself,
+// not just mutation, so relocating the two calls out of the five files
+// above closes nothing on its own. The gate instead names this file
+// explicitly and allows exactly the two message types below
 // (`openBoardYaml`, `copyText`) and nothing else — no dispatched command,
-// no third message type. That allowance is the coordinator's ruling on the
+// no third message type. That allowance is a deliberate ruling on the
 // design (open-file/copy through host messages needs SOME transport)
 // balanced against the gate's own intent (no UNAUDITED path back to the
 // host); it is not a way around the gate.
@@ -35,13 +35,13 @@ import { postMessage } from "../../vscode";
 
 /**
  * The label this feature always shows for the "Open" action — deliberately
- * NOT a filename (#484 Task 7 fix round 2, item 5).
+ * NOT a filename (#484).
  *
  * IPC carve-outs (`ipc:`) and storage partitions (`storage:`) — the only two
  * kinds `MemoryUnresolved` ever carries (`slotSpans()` in
  * `@alp-sdk/core/systemManifest/memoryView` returns spans only; a slot image
  * can never be a blocked finding) — are both board.yaml root keys
- * (`@alp-sdk/core`'s `BoardConfig`). Through fix round 1 this constant WAS
+ * (`@alp-sdk/core`'s `BoardConfig`). An earlier version of this constant WAS
  * `"board.yaml"`, and the button read "Open board.yaml" — which is a claim
  * about which FILE opens, and the button does not control that: the host
  * resolves `collectProjectContext().boardYamlPath`, which a customer's own

@@ -1,31 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// WCAG contrast for the Memory tab's chart — pinning the fixes from the
-// Build Plan panel's colour-contrast audit (assessment §4) and two review
-// rounds, not re-deriving them from memory: every ratio below is computed
+// WCAG contrast for the Memory tab's chart — pinning the fixes from the Build
+// Plan panel's colour-contrast measurements and the two corrections that
+// followed, not re-deriving them from memory: every ratio below is computed
 // from the CSS's OWN declared tokens (read straight out of tokens.css /
 // MemoryChart.module.css / Button.module.css — and, for the accent button's
-// `[data-tier]` survival, the BUILT dist/main.css, since a CSS Modules class
-// is hashed and only the built artifact can tell a working selector from
-// dead markup), resolved to VS Code's canonical Dark+/Light+/High-Contrast-
-// Dark/High-Contrast-Light registerColor() defaults plus one real shipping
-// default (2026 Dark, which has a TRANSLUCENT focusBorder — the other four
-// themes' is opaque). If a future edit repoints one of these rules at an
-// unsafe token, this recomputes and fails — it does not compare against a
-// hardcoded "was" value.
+// `[data-tier]` survival, the BUILT dist/main.css, since a CSS Modules class is
+// hashed and only the built artifact can tell a working selector from dead
+// markup), resolved to VS Code's canonical
+// Dark+/Light+/High-Contrast-Dark/High-Contrast-Light registerColor() defaults
+// plus one real shipping default (2026 Dark, which has a TRANSLUCENT
+// focusBorder — the other four themes' is opaque). If a future edit repoints
+// one of these rules at an unsafe token, this recomputes and fails — it does
+// not compare against a hardcoded "was" value.
 //
 // Defects pinned:
 //   1. Every chart-series band/marker LABEL against its own series' 30%
 //      band fill (was: the series colour on itself, failing in both themes
 //      for all six series; now: --chart-label-fg, one token for all six).
 //   2. --chart-3 is opaque in every default theme and separated from
-//      --chart-5 (was: charts.orange, never opaque, both themes; round 1's
+//      --chart-5 (was: charts.orange, never opaque, both themes; an earlier
 //      gitDecoration.modifiedResourceForeground was opaque but
 //      extension-contributed AND too close in hue to --chart-5; now:
 //      terminal.ansiCyan — core, opaque, ~145° from --chart-5's hue).
 //   3. --accent-fg (white) vs --accent: six real/current themes pass;
 //      Dark+/Light+ are an accepted, declined shortfall pinned exactly (the
-//      round-4 record from the pressed scale-toggle button audit).
+//      figure recorded earlier for the pressed scale-toggle button).
 //   4. The chart's meaning-bearing strokes (rail frame, tick, the computed-
 //      mark tick) against their backdrop (was: --border-default; now
 //      --border-chart, or, for a DECLARED axis boundary, --text-primary),
@@ -40,17 +40,16 @@
 // adapted — there is no fill/token left on those selectors to re-derive a
 // ratio from.
 //
-// NOT RETIRED, ONLY RETARGETED (fix round 1 caught this): the
-// `--accent-fg`/`--accent` PAIR itself did not die with `.scaleBtn` — it
-// still ships on `.btn[data-appearance="accent"]` (Button.module.css), the
-// "toggles / segmented controls" appearance that inherited the deleted
-// toggle's role. Defect 3 below reads THAT selector. The High-Contrast-Dark
-// `:global(...)` override was genuinely `.scaleBtn`-specific (no such
-// override exists on the button component) and stays gone — but the
+// NOT RETIRED, ONLY RETARGETED: the `--accent-fg`/`--accent` PAIR itself did
+// not die with `.scaleBtn` — it still ships on `.btn[data-appearance="accent"]`
+// (Button.module.css), the "toggles / segmented controls" appearance that
+// inherited the deleted toggle's role. Defect 3 below reads THAT selector. The
+// High-Contrast-Dark `:global(...)` override was genuinely `.scaleBtn`-specific
+// (no such override exists on the button component) and stays gone — but the
 // BUILT-ARTIFACT verification method it demonstrated (a CSS Modules class is
 // hashed, so only the compiled output can tell a working selector from dead
-// markup) is restored below against something this branch actually ships:
-// the authority gutter's three `[data-tier]` rules surviving Vite.
+// markup) is restored below against something this branch actually ships: the
+// authority gutter's three `[data-tier]` rules surviving Vite.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -86,7 +85,7 @@ const BUTTON_CSS = fs.readFileSync(
  * keeps the [data-tier] test below from being satisfied by a DIFFERENT
  * class that happens to share the same attribute vocabulary —
  * `AuthoritySwatch.module.css`'s `.swatch[data-tier="…"]` rules do exactly
- * that, and a round-2 fix review proved the unscoped regex passed against
+ * that, and a later measurement proved the unscoped regex passed against
  * them even with every `.gutter[data-tier]` rule deleted from source. */
 function builtGutterClass(distCss) {
   const re = /\._([\w-]+)\{pointer-events:none\}/;
@@ -102,7 +101,8 @@ function builtGutterClass(distCss) {
 
 // ---------------------------------------------------------------------------
 // Colour math (ports contrast.py's maths verbatim — same formulas, same
-// rounding behaviour, so a ratio computed here matches the audit's).
+// rounding behaviour, so a ratio computed here matches the figures recorded
+// here).
 // ---------------------------------------------------------------------------
 
 /** Composite an (r,g,b,a 0-255) foreground over an OPAQUE (r,g,b) background. */
@@ -268,7 +268,7 @@ function fillTokenFor(selector) {
 /** `{ bg, fg }` tokens for `.btn[data-appearance="accent"] { ... }`, read out
  * of Button.module.css — the "toggles / segmented controls" appearance that
  * inherited the deleted scale-toggle's role, and so inherited its
- * --accent/--accent-fg audit too (round-1 fix review). */
+ * --accent/--accent-fg contrast check too. */
 function accentButtonTokens() {
   const re = /\.btn\[data-appearance="accent"\]\s*\{([^}]*)\}/;
   const m = re.exec(BUTTON_CSS);
@@ -413,16 +413,16 @@ test("--chart-3 is not the extension-contributed gitDecoration token", () => {
 });
 
 test("--chart-3 is separated from --chart-5 by hue in Dark+ and Light+", () => {
-  // Hue delta, not a raw WCAG swatch-to-swatch contrast: the six-series
-  // palette is a categorical hue scheme (its own EXISTING pairs already sit
-  // as low as ~1.1:1 raw contrast — 1-vs-5 in Dark+, 2-vs-6 in Light+ — and
-  // are not defects), so hue proximity is what the audit actually flagged.
-  // Threshold 19°: the palette's true minimum surviving gap is 20.0-20.1°
-  // (chart-1 vs chart-3 itself, in Dark+/Light+/HC Light — HC Dark's own
-  // ansiCyan value separates further, ~32°), so 15° left a 5° corridor a
-  // future edit could degrade that pair into and stay green. 19° is
-  // comfortably above round 1's actual collision (chart-3 vs chart-5: ~13°
-  // Dark+, ~6° Light+) and just below the true 20.0° floor.
+  // Hue delta, not a raw WCAG swatch-to-swatch contrast: the six-series palette
+  // is a categorical hue scheme (its own EXISTING pairs already sit as low as
+  // ~1.1:1 raw contrast — 1-vs-5 in Dark+, 2-vs-6 in Light+ — and are not
+  // defects), so hue proximity is what was actually flagged. Threshold 19°: the
+  // palette's true minimum surviving gap is 20.0-20.1° (chart-1 vs chart-3
+  // itself, in Dark+/Light+/HC Light — HC Dark's own ansiCyan value separates
+  // further, ~32°), so 15° left a 5° corridor a future edit could degrade that
+  // pair into and stay green. 19° is comfortably above the superseded pairing's
+  // actual collision (chart-3 vs chart-5: ~13° Dark+, ~6° Light+) and just
+  // below the true 20.0° floor.
   for (const theme of ["dark", "light"]) {
     const c3 = resolvedOpaqueRgb(theme, "--chart-3", null);
     const c5 = resolvedOpaqueRgb(theme, "--chart-5", null);
@@ -455,24 +455,22 @@ test("--chart-3's fallback literal is held to the same bar as the variable", () 
 });
 
 // ---------------------------------------------------------------------------
-// Defect 3 — --accent-fg (white) vs --accent, on the appearance that
-// inherited the deleted scale-toggle's role. Six themes pass (asserted);
-// Dark+/Light+ are an accepted, declined shortfall (pinned at their exact
-// value) — the same round-4 record the original `.scaleBtn` audit reached,
-// re-measured against `.btn[data-appearance="accent"]` now that the toggle
-// itself is gone.
+// Defect 3 — --accent-fg (white) vs --accent, on the appearance that inherited
+// the deleted scale-toggle's role. Six themes pass (asserted); Dark+/Light+ are
+// an accepted, declined shortfall (pinned at their exact value) — the same
+// figure the original `.scaleBtn` measurement reached, re-measured against
+// `.btn[data-appearance="accent"]` now that the toggle itself is gone.
 //
-// High Contrast Dark is NOT part of that retired-theme record — it is a
-// CURRENT theme, and a round-2 fix review found it measures 2.57:1 here,
-// below even the 3:1 non-text floor. The retired `.scaleBtn` control had a
-// real, built-artifact-verified `:global(.vscode-high-contrast)` override
-// that reached >=4.5:1 there (round 4 of the original audit); the shared
-// `Button` component this pair now ships on has NO such override, and this
-// branch does not add one (touching the shared Button component is outside
-// its scope — see this task's report for the follow-up recorded against
-// it). hcDark is pinned below at its exact measured value so a further
-// regression, or a silent "fix" that assumes parity with what `.scaleBtn`
-// shipped, cannot pass unnoticed.
+// High Contrast Dark is NOT part of that retired-theme record — it is a CURRENT
+// theme, and it measures 2.57:1 here, below even the 3:1 non-text floor. The
+// retired `.scaleBtn` control had a real, built-artifact-verified
+// `:global(.vscode-high-contrast)` override that reached >=4.5:1 there (as
+// originally measured); the shared `Button` component this pair now ships on
+// has NO such override, and this branch does not add one (touching the shared
+// Button component is outside its scope — see this task's report for the
+// follow-up recorded against it). hcDark is pinned below at its exact measured
+// value so a further regression, or a silent "fix" that assumes parity with
+// what `.scaleBtn` shipped, cannot pass unnoticed.
 // ---------------------------------------------------------------------------
 
 test("--accent-fg (white) vs --accent: six real/current themes pass; Dark+/Light+/hcDark are pinned shortfalls, none silently reintroduced worse", () => {
@@ -517,7 +515,7 @@ test("--accent-fg (white) vs --accent: six real/current themes pass; Dark+/Light
         `Dark moved to ${ratio.toFixed(2)}:1 (was ${hcDarkPin}:1) — this ` +
         "control has NO High-Contrast-Dark override, unlike the retired " +
         ".scaleBtn control it replaced (which reached >=4.5:1 there); do " +
-        "not assume parity with what shipped in the original audit, and " +
+        "not assume parity with what shipped originally, and " +
         "re-justify any drift rather than silently absorbing it",
     );
   }
@@ -536,8 +534,8 @@ test("--accent-fg (white) vs --accent: six real/current themes pass; Dark+/Light
   }
 
   // Dark Modern / Light Modern / 2026 Light: real, current VS Code theme
-  // JSON defaults, not registerColor() defaults — resolved directly here,
-  // same as the original audit. `button.foreground` (--accent-fg) is a
+  // JSON defaults, not registerColor() defaults — resolved directly here, the
+  // same way as elsewhere in this file. `button.foreground` (--accent-fg) is a
   // SINGLE, non-per-kind VS Code default (Color.white), always opaque white
   // in every one of these.
   assert.equal(
@@ -572,7 +570,7 @@ test("--accent-fg (white) vs --accent: six real/current themes pass; Dark+/Light
 // (`builtGutterClass`, above), not to "any hashed class at all" — an
 // unscoped `\._[\w-]+\[data-tier=...\]` is satisfied independently by
 // `AuthoritySwatch.module.css`'s `.swatch[data-tier="…"]` rules, which share
-// the identical attribute vocabulary: a round-2 fix review deleted every
+// the identical attribute vocabulary: a later check deleted every
 // `.gutter[data-tier]` rule from source, rebuilt, and the unscoped version
 // of this test still passed 19/19.
 test("the gutter's three [data-tier] rules survive the build (verified against the built artifact, not just source)", () => {
@@ -715,7 +713,7 @@ test("an unsafe pairing is still caught (the gate is not vacuously true)", () =>
   );
 });
 
-test("round 1's actual chart-3/chart-5 collision is still caught by the hue-delta arm", () => {
+test("the superseded chart-3 value still collides with chart-5 under the hue-delta arm", () => {
   const oldChart3 = { dark: "#E2C08D", light: "#895503" };
   for (const theme of ["dark", "light"]) {
     const oldC3 = parseColor(oldChart3[theme]).slice(0, 3);
@@ -723,7 +721,7 @@ test("round 1's actual chart-3/chart-5 collision is still caught by the hue-delt
     const delta = hueDelta(hueDegrees(oldC3), hueDegrees(c5));
     assert.ok(
       delta < 19,
-      `round 1's chart-3 vs chart-5 hue delta in ${theme} is ${delta.toFixed(1)}° ` +
+      `the superseded chart-3 vs chart-5 hue delta in ${theme} is ${delta.toFixed(1)}° ` +
         "— if this stopped being < 19°, the hue-delta arm's threshold is " +
         "not actually calibrated against the real regression it exists to catch",
     );

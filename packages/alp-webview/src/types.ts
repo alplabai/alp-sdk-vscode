@@ -415,7 +415,7 @@ export interface DependencyCommandStep {
 
 /**
  * A `command`-kind `DependencyAction` — a NAMED interface, not an inline
- * union member (#603, third review, major 4): `test/webview.payloadMirror
+ * union member (#603): `test/webview.payloadMirror
  * .test.js`'s field-diff walk only reaches `export interface` declarations,
  * and `DependencyAction` is an `export type` union, invisible to it either
  * way. `omittedTools` was added to the inline literal on both sides with no
@@ -1242,10 +1242,10 @@ export interface FlashSliceMessage {
   coreId: string;
 }
 
-/** Open the project's board.yaml, resolved by the HOST (#484 Task 7 fix
- *  round 1) — carries no path: the webview does not know (and must not
- *  guess) where board.yaml actually is under a custom/absolute
- *  `alpSdk.boardYamlPath` or a multi-root workspace. */
+/** Open the project's board.yaml, resolved by the HOST (#484) — carries no
+ *  path: the webview does not know (and must not guess) where board.yaml
+ *  actually is under a custom/absolute `alpSdk.boardYamlPath` or a multi-root
+ *  workspace. */
 export interface OpenBoardYamlMessage {
   type: "openBoardYaml";
 }

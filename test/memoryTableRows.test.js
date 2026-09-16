@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Unit tests for the unified memory map's pure row-building logic (#484
-// phase 3), the same way authorityTier.test.js and railScale.test.js cover
-// their own modules. Round 1 review found the tier derivation and sort
-// order component-local in MemoryTable.tsx — a harness assertion reading a
-// row's rendered `data-tier` against the very field that placed it in its
-// group could never disagree with itself. These tests assert group
+// phase 3), the same way authorityTier.test.js and railScale.test.js
+// cover their own modules. The tier derivation and sort order were
+// component-local in MemoryTable.tsx — a harness assertion reading a
+// row's rendered `data-tier` against the very field that placed it in
+// its group could never disagree with itself. These tests assert group
 // MEMBERSHIP by name, off the pure function directly, so a misfiled row
 // fails regardless of how faithfully the swatch renders whatever tier it
 // was given.

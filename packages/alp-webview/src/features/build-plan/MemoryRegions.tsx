@@ -213,9 +213,9 @@ function blockedFindingText(f: MemoryUnresolved): string {
  * for what is selected or the primary action, and neither applies to a
  * row-level utility action.
  *
- * The button reads "Open board config", never a specific filename (#484
- * Task 7 fix round 2, item 5 — see `BOARD_CONFIG_LABEL`'s own doc for why):
- * the host, not this component, decides which file that resolves to.
+ * The button reads "Open board config", never a specific filename (#484 —
+ * see `BOARD_CONFIG_LABEL`'s own doc for why): the host, not this
+ * component, decides which file that resolves to.
  */
 function BlockedFindings({ findings }: { findings: MemoryUnresolved[] }) {
   return (
