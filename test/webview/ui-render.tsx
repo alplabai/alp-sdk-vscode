@@ -666,6 +666,35 @@ const VIEWS: Array<[string, React.FC]> = [
   ["models", ModelsView],
 ];
 
+// The memory tab's own content, over the `feedState()` manifest — shared by
+// the wide-width "build-plan" pass below and the narrow-width pass further
+// down (Task 8, #484 phase 4), so both check the SAME set of strings. A
+// narrow-width pass that invented its own shorter list could pass by
+// checking less, not by proving nothing was actually dropped.
+const MEMORY_TAB_NEEDLES = [
+  "alp_shmem0", // a sized carve-out, drawn as a band
+  "0x80540000 – 0x80580000", // its extent, both ends
+  "mram_main", // the region it came from
+  "+0 b in storage", // the partition: an offset, never an address
+  "64.0 kib", // its size
+  // m55_hp's slot extent, named as tan's measurement rather than
+  // folded into the address beside it.
+  "5.50 mib · tan size",
+  "peer slice skipped", // a degraded link's reason, verbatim
+  // #484 phase 4: the single piecewise rail's own caption — never
+  // "true scale"/"equalized" (both retired with the second rail) and
+  // never a "22×" magnification factor (retired with DETAIL_FACTOR).
+  "piecewise scale",
+  // D4: the conflict the allocator never checks, stated before the
+  // picture — a carve-out pinned onto the HP image slot.
+  "covers an image load address",
+  "0x802b0000",
+  // #484 phase 4 (Task 6): the one-sentence legend that now sits
+  // ABOVE the chart, after `AuthorityLegend` — the scale-mode prose
+  // it replaced is gone along with the modes themselves.
+  "the rail is a schematic",
+];
+
 // Text a broken/degraded UI shows — flagged so we SEE the problem, not skip it.
 const ERROR_MARKERS = [
   "cli unavailable",
@@ -792,29 +821,7 @@ async function main() {
         (memoryTab as HTMLButtonElement).click();
         await settle();
         const memText = (container.textContent || "").toLowerCase();
-        for (const needle of [
-          "alp_shmem0", // a sized carve-out, drawn as a band
-          "0x80540000 – 0x80580000", // its extent, both ends
-          "mram_main", // the region it came from
-          "+0 b in storage", // the partition: an offset, never an address
-          "64.0 kib", // its size
-          // m55_hp's slot extent, named as tan's measurement rather than
-          // folded into the address beside it.
-          "5.50 mib · tan size",
-          "peer slice skipped", // a degraded link's reason, verbatim
-          // #484 phase 4: the single piecewise rail's own caption — never
-          // "true scale"/"equalized" (both retired with the second rail) and
-          // never a "22×" magnification factor (retired with DETAIL_FACTOR).
-          "piecewise scale",
-          // D4: the conflict the allocator never checks, stated before the
-          // picture — a carve-out pinned onto the HP image slot.
-          "covers an image load address",
-          "0x802b0000",
-          // #484 phase 4 (Task 6): the one-sentence legend that now sits
-          // ABOVE the chart, after `AuthorityLegend` — the scale-mode prose
-          // it replaced is gone along with the modes themselves.
-          "the rail is a schematic",
-        ]) {
+        for (const needle of MEMORY_TAB_NEEDLES) {
           if (!memText.includes(needle)) {
             problems.push(`build-plan: memory tab missing "${needle}"`);
           }
@@ -2789,6 +2796,155 @@ async function main() {
       `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-gap-fixture: all three occupied sources are individually load-bearing, and every declared interior address is a rendered boundary`,
     );
   }
+
+  // ── #484 Task 8: the rail draws at a genuinely MEASURED, narrower width ──
+  // Two things this pass can and cannot prove, stated up front because the
+  // task's own brief claimed more than jsdom can check: jsdom computes no
+  // text metrics, so a glyph overlapping its neighbour at a narrow width is
+  // invisible to it — "no clipped caption or truncated identifier" is NOT
+  // verified here. What IS verified: the rendered <svg> actually carries the
+  // MEASURED number (proving the measured code path ran, not the fallback),
+  // and every string the wide-width "build-plan" pass above expects is
+  // STILL present in the DOM at this narrower width — nothing was
+  // conditionally dropped, which is the one kind of "truncation" a DOM-level
+  // check like this one CAN see.
+  {
+    const NARROW_WIDTH = 340;
+    const problemsBefore = problems.length;
+    g.__ALP_TEST_CHART_WIDTH__ = NARROW_WIDTH;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    root.render(
+      React.createElement(
+        AppProvider,
+        null,
+        React.createElement(BuildPlanView),
+      ),
+    );
+    await settle();
+    feedState();
+    await settle();
+    feedState();
+    await settle();
+
+    const tabs = Array.from(container.querySelectorAll('button[role="tab"]'));
+    const memoryTab = tabs.find((b) =>
+      (b.textContent || "").toLowerCase().includes("memory"),
+    );
+    if (!memoryTab) {
+      problems.push("memory-narrow-width: no Memory tab found");
+    } else {
+      (memoryTab as HTMLButtonElement).click();
+      await settle();
+
+      const svg = container.querySelector('svg[role="img"]');
+      const svgWidth = svg?.getAttribute("width");
+      if (svgWidth !== String(NARROW_WIDTH)) {
+        problems.push(
+          `memory-narrow-width: svg width="${svgWidth}", want "${NARROW_WIDTH}" — the measured column width did not reach the rail`,
+        );
+      }
+      const viewBox = svg?.getAttribute("viewBox") || "";
+      if (!viewBox.startsWith(`0 0 ${NARROW_WIDTH} `)) {
+        problems.push(
+          `memory-narrow-width: viewBox="${viewBox}", want it to start "0 0 ${NARROW_WIDTH} "`,
+        );
+      }
+
+      const memText = (container.textContent || "").toLowerCase();
+      for (const needle of MEMORY_TAB_NEEDLES) {
+        if (!memText.includes(needle)) {
+          problems.push(
+            `memory-narrow-width: memory tab missing "${needle}" at a ${NARROW_WIDTH}-unit measured width — present at the wide width, so the narrow width itself dropped it`,
+          );
+        }
+      }
+      // Same fractional-address regression guard as the wide-width pass, per
+      // LEAF element — a narrower rail is a different `layoutRail` input,
+      // worth checking again rather than assumed to inherit the wide-width
+      // pass's own result.
+      for (const el of Array.from(container.querySelectorAll("*"))) {
+        if (el.children.length > 0) continue;
+        const frac = (el.textContent || "").match(
+          /0x[0-9a-fA-F]+\.[0-9a-fA-F]+/,
+        );
+        if (frac) {
+          problems.push(
+            `memory-narrow-width: memory tab rendered a fractional address "${frac[0]}"`,
+          );
+        }
+      }
+    }
+    for (const err of drainErrors()) {
+      problems.push(
+        `memory-narrow-width: error reported during render — ${err}`,
+      );
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-narrow-width: the rail is drawn at a genuinely measured, narrower width, with nothing dropped`,
+    );
+  }
+
+  // ── #484 Task 8: a measured width of 0 must still draw a real rail ──
+  // The corrections to this task's own brief are explicit: a rail that
+  // renders at width 0 must be a visible failure, not a quiet pass. 0 is
+  // also the real, unremarkable first-paint case (no ResizeObserver
+  // callback has fired yet) — not a contrived harness value, and the SAME
+  // default every other memory-tab pass in this file already runs under
+  // (jsdom-setup.js's own default). This pass turns that into an assertion
+  // instead of an unstated assumption.
+  {
+    const FALLBACK_WIDTH = "578"; // MemoryChart.tsx's own constant, mirrored
+    // here by hand — nothing ties the two spellings together automatically,
+    // the same caveat HATCH_PATTERN_ID's own comment states for itself.
+    const problemsBefore = problems.length;
+    g.__ALP_TEST_CHART_WIDTH__ = 0;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    root.render(
+      React.createElement(
+        AppProvider,
+        null,
+        React.createElement(BuildPlanView),
+      ),
+    );
+    await settle();
+    feedState();
+    await settle();
+    feedState();
+    await settle();
+
+    const tabs = Array.from(container.querySelectorAll('button[role="tab"]'));
+    const memoryTab = tabs.find((b) =>
+      (b.textContent || "").toLowerCase().includes("memory"),
+    );
+    if (!memoryTab) {
+      problems.push("memory-zero-width-fallback: no Memory tab found");
+    } else {
+      (memoryTab as HTMLButtonElement).click();
+      await settle();
+
+      const svg = container.querySelector('svg[role="img"]');
+      const svgWidth = svg?.getAttribute("width");
+      if (svgWidth !== FALLBACK_WIDTH) {
+        problems.push(
+          `memory-zero-width-fallback: svg width="${svgWidth}" for a measured width of 0, want "${FALLBACK_WIDTH}" — a measured 0 must fall back to a real drawing, never render a rail 0 units wide`,
+        );
+      }
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-zero-width-fallback: a measured 0 falls back to FALLBACK_WIDTH, never a 0-unit rail`,
+    );
+  }
+  // Reset for any pass that might run after this one — 0 is already the
+  // module default (jsdom-setup.js), but this global is shared harness
+  // state, and leaving it on whatever THIS block last set would make a
+  // later pass's chart width depend on file order rather than its own
+  // setup, exactly the kind of cross-pass leak this harness's other
+  // `g.__ALP_*__` globals are already careful to avoid.
+  g.__ALP_TEST_CHART_WIDTH__ = 0;
 
   console.log(
     `\nwebview-ui: ${rendered}/${VIEWS.length} views rendered, ` +
