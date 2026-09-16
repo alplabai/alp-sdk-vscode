@@ -187,9 +187,6 @@ export class BuildPlanPanel {
       case "flashSlice":
         this.handleSliceCommand(msg.coreId);
         break;
-      case "openWorkspaceFile":
-        void this.openWorkspaceFile(msg.path);
-        break;
       case "openBoardYaml":
         void this.openBoardYaml();
         break;
@@ -626,86 +623,11 @@ export class BuildPlanPanel {
   }
 
   /**
-   * Open a WEBVIEW-SUPPLIED, workspace-relative path in the editor (#484
-   * Task 7). A raw `vscode://file` href is not reliable under the webview
-   * CSP, so this goes through `vscode.window.showTextDocument` instead.
-   *
-   * Kept general-purpose and unused by the Memory tab's own "Open
-   * board.yaml" action as of fix round 1 (see `openBoardYaml` below, and
-   * this method's own containment check is proven and future webview
-   * controls may still need exactly this shape for a path the WEBVIEW
-   * names) — but the security boundary below is unchanged and still
-   * exercised by `test/ideHub.buildPlanPanel.test.js`.
-   *
-   * REFUSES ANYTHING OUTSIDE THE WORKSPACE ROOT — this is the only place on
-   * this branch where a string the webview supplies reaches the filesystem,
-   * so the containment check has to survive more than the obvious `../..`
-   * case:
-   *
-   *  - An ABSOLUTE path escapes with no `..` at all. `path.resolve(root,
-   *    "/etc/passwd")` returns `/etc/passwd` outright — `path.resolve`
-   *    discards its first argument whenever the second is itself absolute —
-   *    so a check that only looks for `".."` in the raw input never fires.
-   *  - A bare `resolved.startsWith(root)` accepts a SIBLING directory: it is
-   *    true for `/tmp/ws-evil/x` when `root` is `/tmp/ws`, because that is a
-   *    real (if accidental) string prefix. This is the classic hole and the
-   *    easy one to write by accident.
-   *
-   * So containment is decided from `path.relative(root, resolved)` instead:
-   * inside means a non-empty relative path that is not `..`, does not start
-   * with `../`, and is not itself absolute (a relative path can still resolve
-   * to something `path.isAbsolute` on some inputs `path.relative` produces).
-   *
-   * NO WORKSPACE FOLDER OPEN is refused the same way, with no fallback root
-   * — `collectProjectContext().workspaceRoot` reads
-   * `vscode.workspace.workspaceFolders` through the same resolver
-   * `requireWorkspace` uses, so an empty/undefined `workspaceFolders` already
-   * comes back as `undefined` here rather than throwing.
-   *
-   * Every refusal is logged (`[buildPlan] openWorkspaceFile refused …`) so it
-   * is observable from the outside, not merely silent. A file that IS inside
-   * the workspace but cannot actually be opened (missing, a directory, a
-   * binary VS Code refuses) is a SEPARATE failure — `showTextDocument`
-   * rejects, and that rejection is caught and logged too, not left as an
-   * unhandled promise rejection with a dead button and nothing on screen.
-   */
-  private async openWorkspaceFile(relativePath: string): Promise<void> {
-    const root = collectProjectContext().workspaceRoot;
-    if (!root) {
-      log(
-        `[buildPlan] openWorkspaceFile refused "${relativePath}": no workspace folder is open`,
-      );
-      return;
-    }
-    const resolved = path.resolve(root, relativePath);
-    const rel = path.relative(root, resolved);
-    const inside =
-      rel !== "" &&
-      rel !== ".." &&
-      !rel.startsWith(".." + path.sep) &&
-      !path.isAbsolute(rel);
-    if (!inside) {
-      log(
-        `[buildPlan] openWorkspaceFile refused "${relativePath}": resolves outside the workspace root`,
-      );
-      return;
-    }
-    try {
-      await vscode.window.showTextDocument(vscode.Uri.file(resolved));
-    } catch (err) {
-      log(
-        `[buildPlan] openWorkspaceFile could not open "${resolved}": ${String(err)}`,
-        "warn",
-      );
-    }
-  }
-
-  /**
    * Open the project's board.yaml — the Memory tab's promoted
    * blocked-findings alert asks for this so the customer can jump straight
-   * to the one file every declared carve-out, partition and slot image
-   * comes from (`MemoryUnresolved` itself carries no per-finding path — see
-   * its own doc). #484 Task 7 fix round 1, finding 1.
+   * to the one file every declared carve-out and partition comes from
+   * (`MemoryUnresolved` itself carries no per-finding path — see its own
+   * doc). #484 Task 7 fix round 1, finding 1.
    *
    * THE PATH IS `collectProjectContext().boardYamlPath`, NEVER a webview
    * string and NEVER `path.join(workspaceRoot, "board.yaml")` — the latter
@@ -731,30 +653,67 @@ export class BuildPlanPanel {
    * `src/loader.ts`), so reading its `.boardYamlPath` field directly is the
    * fix — not re-deriving a path this extension has already resolved once.
    *
-   * NOT RUN THROUGH `openWorkspaceFile`'s CONTAINMENT CHECK, DELIBERATELY.
-   * That check exists for a path the WEBVIEW supplies; `boardYamlPath` is a
-   * path the HOST already resolved, and a legitimately configured absolute
+   * NOT RUN THROUGH A WEBVIEW-STRING CONTAINMENT CHECK, DELIBERATELY.
+   * `boardYamlPath` is a path the HOST already resolved, never a string the
+   * webview supplied, and a legitimately configured absolute
    * `alpSdk.boardYamlPath` can sit outside the workspace root by design —
    * validating a host-resolved value as though it were an untrusted webview
-   * string would refuse the customer's own valid configuration. The two
-   * paths through this class of string are kept separate for exactly that
-   * reason: `openWorkspaceFile` above still validates what it is given,
-   * this method trusts what the host itself already computed.
+   * string would refuse the customer's own valid configuration. (#484 Task 7
+   * fix round 2, item 7: the sibling `openWorkspaceFile` handler that DID
+   * validate a webview-supplied path was deleted outright — it had no
+   * product caller and existed only to keep its own tests green. See the
+   * commit message for the two containment traps its removal costs.)
+   *
+   * BOTH FAILURE PATHS ARE USER-VISIBLE, not log-only (#484 Task 7 fix
+   * round 2, item 4). A raw `log()` call reaches only the "Alp SDK" output
+   * channel, which nothing surfaces on its own — a customer whose project
+   * has no board.yaml yet, or whose editor refuses to open the resolved
+   * file (missing, a directory, a binary), saw a button that did nothing
+   * and no way to learn why. Both paths now go through `notifyAsync`, the
+   * same mechanism every other user-facing failure in this file uses
+   * (`requireWorkspace`, `handleMaterialiseBuildPlan`'s failure branches):
+   *
+   *  - No `boardYamlPath` resolved is `planPrecondition("noBoardYaml")` —
+   *    the exact "No board.yaml in this folder yet." toast (with its
+   *    existing "New Project" / "Setup" actions) every other no-board.yaml
+   *    surface in this extension already shows; reusing it rather than
+   *    inventing new copy. Always severity "warning" (`planPrecondition`'s
+   *    own contract) — a project with no board.yaml yet is a first-run
+   *    state, not a fault.
+   *  - A `showTextDocument` rejection is `planFailure(...)`, default
+   *    severity "error" — an unexpected failure to complete a real action,
+   *    not a precondition. `planFailure`'s own backstop keeps the raw
+   *    `String(err)` (which can carry the file's own absolute path, e.g. a
+   *    Node `ENOENT` message) out of the customer-facing toast, demoting it
+   *    to the log-only `detail` when it looks like exactly that.
+   *
+   * The two `log()` calls this replaced are gone, not duplicated: `present()`
+   * (`src/notify/vscodeAdapter.ts`) already writes every notification's
+   * message to the SAME output channel at a severity-derived level as part
+   * of showing it, so a second manual `log()` here would double-log the
+   * identical line — this file's OWN other failure branches (e.g.
+   * `handleMaterialiseBuildPlan`'s `shapeError` case) already rely on
+   * exactly that and call `notifyAsync` alone. The previous round's two
+   * different ad hoc log levels ("info" for the refusal, "warn" for the
+   * failed open) are what "consistent" replaces: both are now derived from
+   * the SAME two purpose-built planners, chosen for what each state
+   * actually is, not left as two unrelated defaults nobody had reasoned
+   * about.
    */
   private async openBoardYaml(): Promise<void> {
     const boardYamlPath = collectProjectContext().boardYamlPath;
     if (!boardYamlPath) {
-      log(
-        "[buildPlan] openBoardYaml: no board.yaml resolved for this workspace",
-      );
+      notifyAsync(planPrecondition("noBoardYaml"));
       return;
     }
     try {
       await vscode.window.showTextDocument(vscode.Uri.file(boardYamlPath));
     } catch (err) {
-      log(
-        `[buildPlan] openBoardYaml could not open "${boardYamlPath}": ${String(err)}`,
-        "warn",
+      notifyAsync(
+        planFailure({
+          operation: "Opening board.yaml",
+          cause: String(err),
+        }),
       );
     }
   }

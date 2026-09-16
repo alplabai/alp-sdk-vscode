@@ -2067,15 +2067,22 @@ async function main() {
       const findingButtons = blockedAlert
         ? Array.from(blockedAlert.querySelectorAll("button"))
         : [];
+      // #484 Task 7 fix round 2, item 5: the button text is "Open board
+      // config", never a specific filename — the host, not this button,
+      // decides which file `collectProjectContext().boardYamlPath` resolves
+      // to, and a literal "Open board.yaml" would lie under a custom or
+      // absolute `alpSdk.boardYamlPath`. Checked here as the testable half
+      // of that choice: this exact text is what "the label stops naming a
+      // specific file" means in the rendered DOM.
       const openFileBtn = findingButtons.find(
-        (b) => (b.textContent || "").trim() === "Open board.yaml",
+        (b) => (b.textContent || "").trim() === "Open board config",
       );
       const copyBtn = findingButtons.find(
         (b) => (b.textContent || "").trim() === "Copy",
       );
       if (!openFileBtn) {
         problems.push(
-          'memory-regions-aen: no "Open board.yaml" action on the blocked finding',
+          'memory-regions-aen: no "Open board config" action on the blocked finding',
         );
       } else {
         const postedBefore = g.__ALP_POSTED__.length;
@@ -2089,7 +2096,7 @@ async function main() {
           .find((m: { type: string }) => m.type === "openBoardYaml");
         if (!openMsg) {
           problems.push(
-            `memory-regions-aen: "Open board.yaml" posted ${JSON.stringify(g.__ALP_POSTED__.slice(postedBefore))}, want a {type:"openBoardYaml"} message`,
+            `memory-regions-aen: "Open board config" posted ${JSON.stringify(g.__ALP_POSTED__.slice(postedBefore))}, want a {type:"openBoardYaml"} message`,
           );
         }
       }

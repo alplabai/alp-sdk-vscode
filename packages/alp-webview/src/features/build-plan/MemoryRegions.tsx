@@ -39,7 +39,7 @@ import type {
 import { Button } from "../../shared/ui";
 import { AuthorityLegend } from "./AuthoritySwatch";
 import {
-  DECLARING_FILE,
+  BOARD_CONFIG_LABEL,
   copyFindingText,
   openDeclaringFile,
 } from "./blockedFindingActions";
@@ -187,10 +187,15 @@ function blockedFindingText(f: MemoryUnresolved): string {
  * below: not yet placed is not the same claim as refused.
  *
  * Two actions per finding (#484 Task 7): open the file that declares it
- * (always `board.yaml` — see `blockedFindingActions.ts`'s own doc) and copy
- * its text. Both `ghost`-appearance — DESIGN.md's Selected-Not-Suggested
- * rule reserves `{colors.accent}`/`{colors.button-bg}` for what is selected
- * or the primary action, and neither applies to a row-level utility action.
+ * (always board.yaml, resolved by the host — see `blockedFindingActions
+ * .ts`'s own doc) and copy its text. Both `ghost`-appearance — DESIGN.md's
+ * Selected-Not-Suggested rule reserves `{colors.accent}`/`{colors.button-bg}`
+ * for what is selected or the primary action, and neither applies to a
+ * row-level utility action.
+ *
+ * The button reads "Open board config", never a specific filename (#484
+ * Task 7 fix round 2, item 5 — see `BOARD_CONFIG_LABEL`'s own doc for why):
+ * the host, not this component, decides which file that resolves to.
  */
 function BlockedFindings({ findings }: { findings: MemoryUnresolved[] }) {
   return (
@@ -215,7 +220,7 @@ function BlockedFindings({ findings }: { findings: MemoryUnresolved[] }) {
           </span>
           <span className={styles.findingActions}>
             <Button appearance="ghost" onClick={openDeclaringFile}>
-              Open {DECLARING_FILE}
+              Open {BOARD_CONFIG_LABEL}
             </Button>
             <Button
               appearance="ghost"

@@ -34,20 +34,32 @@
 import { postMessage } from "../../vscode";
 
 /**
- * The label this feature always shows for the "Open" action.
+ * The label this feature always shows for the "Open" action — deliberately
+ * NOT a filename (#484 Task 7 fix round 2, item 5).
  *
  * IPC carve-outs (`ipc:`) and storage partitions (`storage:`) — the only two
  * kinds `MemoryUnresolved` ever carries (`slotSpans()` in
  * `@alp-sdk/core/systemManifest/memoryView` returns spans only; a slot image
  * can never be a blocked finding) — are both board.yaml root keys
- * (`@alp-sdk/core`'s `BoardConfig`). There is exactly one file to open,
- * never a field this module would otherwise have to invent — but it is a
- * DISPLAY label only. The actual file opened is resolved by the host
- * (`OpenBoardYamlMessage`, `BuildPlanPanel.openBoardYaml`), which honours a
- * custom or absolute `alpSdk.boardYamlPath` and a multi-root workspace; this
- * constant never reaches the wire.
+ * (`@alp-sdk/core`'s `BoardConfig`). Through fix round 1 this constant WAS
+ * `"board.yaml"`, and the button read "Open board.yaml" — which is a claim
+ * about which FILE opens, and the button does not control that: the host
+ * resolves `collectProjectContext().boardYamlPath`, which a customer's own
+ * `alpSdk.boardYamlPath` setting can legitimately point at
+ * `config/custom-board.yml`, or an absolute shared file entirely. The label
+ * and the opened file were the same string only by coincidence — true for
+ * every project this button had been exercised against, false the moment a
+ * real customer configuration diverged.
+ *
+ * Resolved by NOT NAMING A FILE, rather than by having the host tell the
+ * webview what it resolved (the other option available here): this button
+ * needs no new host round-trip, no new state field mirrored across
+ * `messages.ts`/`types.ts`, and no new way for the label to drift from the
+ * file again later — the label simply never claims a fact it cannot verify.
+ * "board config" is accurate under every `alpSdk.boardYamlPath` value,
+ * including the default.
  */
-export const DECLARING_FILE = "board.yaml";
+export const BOARD_CONFIG_LABEL = "board config";
 
 /** Ask the host to open the project's board.yaml — wherever the host itself
  *  resolves it to be, never a path this module guesses. */
