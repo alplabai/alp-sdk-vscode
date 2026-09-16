@@ -17,7 +17,7 @@
 // hazard, and "we remembered not to add one" is exactly the class of guarantee
 // #484 exists to replace with something you cannot express.
 //
-// The third test is the tripwire: it fails the day the contract grows the
+// The last test is the tripwire: it fails the day the contract grows the
 // missing half, so the read-only decision is re-taken deliberately by whoever
 // lands it, rather than quietly outliving its reason.
 //
@@ -32,29 +32,48 @@
 // authority being unambiguous once it does. It still is not, so the map
 // stays read-only.
 //
-// #484 Task 7 FIX ROUND 2 rewrote how the scanned file set is decided. Round
-// 1 pinned `blockedFindingActions.ts` into a HAND-MAINTAINED `VIEW_FILES`
-// list after the reviewer found it sitting outside the gate entirely — but a
-// hand list only ever closes the ONE hole someone already found. The
-// reviewer's next pass proved the class is still open: a brand new file,
-// dropped into this same directory and wired into the view, posting a real
-// message plus an INVENTED `writeBoardYaml`, passed clean — because nothing
-// makes the list track what the view actually imports. `useBuildPlan.ts`,
-// which legitimately posts `requestBuildPlan`/`materialiseBuildPlan`/
-// `runBuild`/`flashSlice` from this SAME directory, is the standing proof
-// that a blanket "scan the whole folder" rule would be wrong in the other
-// direction.
+// ---------------------------------------------------------------------------
+// WHY THE SCANNED SCOPE IS A CLASSIFIED DIRECTORY LISTING, NOT AN IMPORT WALK
+// ---------------------------------------------------------------------------
 //
-// So the scanned set is now DERIVED: the transitive closure of every file
-// `MemoryRegions.tsx` reaches through a same-directory (`./…`) import,
-// stopping at the directory boundary (a `../../` import — `../../types`,
-// `../../shared/ui`, `../../vscode` — is a shared module, not part of this
-// view, and is never followed). A new file falls under the gate the moment
-// the view actually imports it, transitively or not; a file nothing in the
-// view reaches — `useBuildPlan.ts` included — never does. Checked: as of
-// this round, `MemoryRegions.tsx`'s closure does NOT reach `useBuildPlan.ts`
-// (grep confirms no file in this directory imports it), so that boundary is
-// real today, not merely asserted.
+// An earlier version of this file decided which files to scan by following
+// same-directory `import … from "./…"` specifiers out from `MemoryRegions
+// .tsx`, on the reasoning that a file nothing imports cannot run. That is
+// true, but it made the WRONG thing load-bearing: what is scanned depended on
+// recognizing an import, and an import can be spelled in more ways than a
+// regex can enumerate — a single-quoted specifier, a side-effect import, a
+// dynamic `import()`, a bare `.js` specifier, a two-hop re-export, an entry
+// point inside a brand-new subdirectory. Every one of those is ordinary,
+// working JavaScript that a bundler resolves and ships; a `from\s+"…"`
+// pattern matched against literal source text does not have to recognize all
+// of them, and an unresolved specifier was dropped with no error and no
+// record — the walk simply never grew to include it. A file the gate never
+// visited is a file this gate says nothing about, silently.
+//
+// So the scanned set is now a DIRECTORY LISTING, not a walk: every `.ts` /
+// `.tsx` / `.js` / `.jsx` file under this feature's directory, found by
+// reading the directory itself (recursively — a new subdirectory is not a
+// blind spot), with NO import ever parsed or followed. Each file is required
+// to appear in exactly one of two hand-written, reviewed lists —
+// `VIEW_FILES` (part of the read-only picture/table, or the one sanctioned
+// exception) or `NOT_VIEW_FILES` (deliberately outside it, each with the
+// one-line reason a reviewer can check). A file in neither list — a brand
+// new one included, whatever its name, its extension, or how (or whether)
+// anything imports it — fails the gate outright, with a message telling
+// whoever added it to classify it. There is no import syntax left to evade,
+// because none is read.
+//
+// The same reasoning applies one level down, inside the one file this gate
+// allows to reach the host at all: scanning that whole file's text for any
+// `type: "…"` looked structural but was really still a text search — it
+// could be satisfied by a `type` key that has nothing to do with a real
+// `postMessage(...)` call. The check below anchors to the call sites
+// themselves: every `postMessage(` in that file must be given a single,
+// inline object literal, with no spread, no computed key, and a `type`
+// field that is a single plain string literal in the sanctioned set — and
+// the `postMessage` binding itself may only ever be called directly, never
+// assigned to a variable, aliased, or passed anywhere else, so a rename at
+// the call site cannot make a dispatch invisible to this scan either.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -72,14 +91,7 @@ const BUILD_PLAN_DIR = path.join(
 );
 
 /** Drop comments so a forbidden substring, or a `type: "…"` literal, inside
- *  prose or a source comment cannot be read as real source. Copied from
- *  `test/webview.protocolMirror.test.js` (and `webview.payloadMirror
- *  .test.js`, which carries its own copy too) rather than shared — the same
- *  ~10-line function, duplicated per gate file, is this codebase's existing
- *  convention for these text-level scanners, and it is what caught this
- *  round's own near-miss: an earlier draft of this file's header described
- *  the ban using the literal word the ban forbids, which this file's own
- *  (then text-level, uncommented) scanner would have flagged in itself. */
+ *  prose or a source comment cannot be read as real source. */
 function stripComments(source) {
   return source
     .replace(/\/\*[\s\S]*?\*\//g, "")
@@ -94,152 +106,280 @@ function stripComments(source) {
 }
 
 const read = (p) => fs.readFileSync(p, "utf8");
+const rel = (p) => path.relative(REPO, p);
 
-/** The module specifier of every `from "…"` clause — covers `import {…}
- *  from "…"`, `import type {…} from "…"` and a bare default import; the
- *  clause is the same shape in all three, so nothing more specific is
- *  needed. */
-function importSpecifiers(source) {
-  return [...source.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]);
-}
-
-/**
- * Resolve a same-directory specifier to a file on disk, or `null` when it is
- * NOT same-directory (does not start with `./` — a `../../` import leaves
- * this directory and is deliberately never followed, per the header) or is a
- * stylesheet (`.module.css` carries no JS/TS to scan and no import of its
- * own to recurse into).
- */
-function resolveSameDirSpecifier(specifier) {
-  if (!specifier.startsWith("./")) return null;
-  if (specifier.endsWith(".css")) return null;
-  const base = path.join(BUILD_PLAN_DIR, specifier.slice(2));
-  for (const ext of [".tsx", ".ts"]) {
-    const candidate = base + ext;
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  return null;
-}
-
-/** Every file `roots` reach, transitively, through a same-directory import. */
-function transitiveClosure(roots) {
-  const visited = new Set();
-  const queue = [...roots];
-  while (queue.length > 0) {
-    const file = queue.shift();
-    if (visited.has(file)) continue;
-    visited.add(file);
-    for (const specifier of importSpecifiers(stripComments(read(file)))) {
-      const resolved = resolveSameDirSpecifier(specifier);
-      if (resolved && !visited.has(resolved)) queue.push(resolved);
+/** Every source file under `dir`, recursive — the directory listing itself
+ *  IS the scope; nothing here reads an import. */
+function listSourceFiles(dir) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...listSourceFiles(full));
+    } else if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(entry.name)) {
+      out.push(full);
     }
   }
-  return [...visited];
+  return out;
 }
 
-/** `MemoryRegions.tsx` is the view's real entry point — `BuildPlanView.tsx`
- *  imports it directly, and imports neither `MemoryChart.tsx` nor
- *  `MemoryTable.tsx` on its own (both are this file's own implementation
- *  detail, reached only through it). One root is therefore enough: the
- *  closure below is transitive, so anything `MemoryChart`/`MemoryTable`
- *  themselves import is still found, however many hops deep. */
-const VIEW_FILES = transitiveClosure([
-  path.join(BUILD_PLAN_DIR, "MemoryRegions.tsx"),
+// ---------------------------------------------------------------------------
+// The two classification lists — every file in the directory must be in
+// exactly one.
+// ---------------------------------------------------------------------------
+
+/** Part of the read-only memory view: the picture, the table, their shared
+ *  helpers, the Notes tab prose rendered beside them, and the one sanctioned
+ *  exception (`blockedFindingActions.ts`, see below). None of these may use
+ *  the host transport except that one file. */
+const VIEW_FILES = [
+  "MemoryRegions.tsx",
+  "MemoryChart.tsx",
+  "MemoryTable.tsx",
+  "memoryTableRows.ts",
+  "AuthoritySwatch.tsx",
+  "blockedFindingActions.ts",
+  "format.ts",
+  "regionWindow.ts",
+  "railScale.ts",
+  "authorityTier.ts",
+  // Renders beside MemoryRegions in the same tab (BuildPlanView.tsx's
+  // "Notes" tab) — Memory-tab UI, so it is classified the same way as the
+  // picture and the table: plain prose, no host transport of its own.
+  "MemoryNotes.tsx",
+].map((name) => path.join(BUILD_PLAN_DIR, name));
+
+/** Deliberately NOT part of the read-only memory view, each with the reason
+ *  a reviewer can check against the file itself. */
+const NOT_VIEW_FILES = new Map([
+  [
+    path.join(BUILD_PLAN_DIR, "useBuildPlan.ts"),
+    "the data/action hook for the whole build-plan tab (Slices/Memory/Notes), " +
+      "not the memory view alone — it legitimately posts requestBuildPlan, " +
+      "materialiseBuildPlan, runBuild and flashSlice, and must keep doing so.",
+  ],
+  [
+    path.join(BUILD_PLAN_DIR, "BuildPlanView.tsx"),
+    "the whole tab's container (the Slices/Memory/Notes tab strip, the " +
+      "Materialise/Build/Flash actions); it renders MemoryRegions and " +
+      "MemoryNotes as children but is not itself the memory view.",
+  ],
+  [
+    path.join(BUILD_PLAN_DIR, "index.ts"),
+    "a one-line barrel re-export of BuildPlanView, with no logic of its own.",
+  ],
 ]);
 
-/** The one file this gate lets use the host transport at all (#484 Task 7
- *  fix round 1, finding 3 — coordinator's ruling). The approved design is
- *  "open the declaring file, copy its text, both through host messages",
- *  which needs SOME transport; recording the exception here, scoped to this
- *  one file and the two message kinds below, is how that need is met
- *  without silently reopening "the memory view has no path back to the
- *  host" for the picture/table files this gate exists to keep passive. */
+test("every source file under the directory is classified exactly once", () => {
+  const onDisk = new Set(listSourceFiles(BUILD_PLAN_DIR));
+  assert.ok(
+    onDisk.size >= 10,
+    `the directory listing found only ${onDisk.size} file(s) under ` +
+      `${rel(BUILD_PLAN_DIR)} — the walk is broken, not the directory`,
+  );
+
+  const viewSet = new Set(VIEW_FILES);
+  const notViewSet = new Set(NOT_VIEW_FILES.keys());
+
+  for (const file of onDisk) {
+    const inView = viewSet.has(file);
+    const inNotView = notViewSet.has(file);
+    assert.ok(
+      inView || inNotView,
+      `${rel(file)} is not classified. Add it to VIEW_FILES (it is part of ` +
+        "the read-only memory view and must carry no host transport) or to " +
+        "NOT_VIEW_FILES with a one-line reason (it deliberately is not) — " +
+        "a file in neither list is exactly the hole a new, unclassified " +
+        "file must not be able to open.",
+    );
+    assert.ok(
+      !(inView && inNotView),
+      `${rel(file)} is listed in BOTH VIEW_FILES and NOT_VIEW_FILES`,
+    );
+  }
+  // The reverse direction: a list entry naming a file that no longer exists
+  // is a stale classification, not a live one.
+  for (const file of viewSet) {
+    assert.ok(
+      onDisk.has(file),
+      `VIEW_FILES names ${rel(file)}, which no longer exists on disk`,
+    );
+  }
+  for (const file of notViewSet) {
+    assert.ok(
+      onDisk.has(file),
+      `NOT_VIEW_FILES names ${rel(file)}, which no longer exists on disk`,
+    );
+  }
+});
+
+/** The one file this gate lets use the host transport at all. The approved
+ *  design is "open the declaring file, copy its text, both through host
+ *  messages", which needs SOME transport; recording the exception here,
+ *  scoped to this one file and the two message kinds below, is how that need
+ *  is met without reopening "the memory view has no path back to the host"
+ *  for the picture/table/Notes files this gate exists to keep passive. */
 const SANCTIONED_HOST_FILE = path.join(
   BUILD_PLAN_DIR,
   "blockedFindingActions.ts",
 );
 
-/**
- * The ONLY message `type` literals `SANCTIONED_HOST_FILE` may ever send.
- * Neither writes memory-map data: `openBoardYaml` opens a file for editing
- * elsewhere (never this view), `copyText` puts text on the clipboard. A
- * third type appearing here — a dispatched command, an edit message, an
- * unrelated one this list does not name — is exactly the unaudited hole
- * this exception must not become.
+/** The exact, and only, accepted way this file may reach `postMessage` at
+ *  all — a plain named import, never aliased and never a namespace import.
+ *  Pinning the import shape is what lets the call-site scan below trust that
+ *  every real dispatch is spelled `postMessage(`, literally; without this, a
+ *  local rename (`import { postMessage as pm } …`) would let a call site
+ *  spelled `pm(...)` carry any message past a scan anchored on the name
+ *  `postMessage`. */
+const SANCTIONED_IMPORT_LINE = 'import { postMessage } from "../../vscode";';
+
+/** The ONLY message `type` literals `SANCTIONED_HOST_FILE` may ever send.
+ *  Neither writes memory-map data: `openBoardYaml` opens a file for editing
+ *  elsewhere (never this view), `copyText` puts text on the clipboard.
  *
- * Appending a THIRD entry here is accepted (#484 Task 7 fix round 2, item
- * 3) — an allowlist someone deliberately widens, in a reviewed change, is
- * what an allowlist is for. It is not accepted silently: widen this array
- * only with the same review that approved the two entries already here,
- * and say in that review why the new message does not write memory-map
- * data, the same case made for these two.
- */
+ *  Appending a THIRD entry here is accepted — an allowlist someone
+ *  deliberately widens, in a reviewed change, is what an allowlist is for.
+ *  It is not accepted silently: widen this array only with the same review
+ *  that approved the two entries already here, and say in that review why
+ *  the new message does not write memory-map data, the same case made for
+ *  these two. */
 const SANCTIONED_MESSAGE_TYPES = ["openBoardYaml", "copyText"];
 
-test("the derivation actually reaches something, and reaches the right thing", () => {
-  // A closure walk that silently visits nothing (a broken specifier regex,
-  // a wrong root) would make every test below pass vacuously — the same
-  // failure mode `webview.protocolMirror.test.js`'s own parser-sanity test
-  // guards against, applied to this file's own scanner.
-  assert.ok(
-    VIEW_FILES.length >= 6,
-    `the derived closure found only ${VIEW_FILES.length} file(s) — the ` +
-      "import-specifier regex or the root is broken, not the view",
-  );
-  const names = VIEW_FILES.map((f) => path.basename(f)).sort();
-  for (const expected of [
-    "MemoryRegions.tsx",
-    "MemoryChart.tsx",
-    "MemoryTable.tsx",
-    "memoryTableRows.ts",
-    "AuthoritySwatch.tsx",
-    "blockedFindingActions.ts",
-  ]) {
-    assert.ok(
-      names.includes(expected),
-      `the derived closure does not reach ${expected} — either it was ` +
-        "un-imported (a real change) or the closure walk is broken",
-    );
-  }
-  // The boundary claimed in the header, checked rather than assumed: a
-  // file this closure must NOT reach, because nothing in the view imports
-  // it — the same file the coordinator named as the live proof that a
-  // blanket per-directory scan would be the wrong fix.
-  assert.ok(
-    !names.includes("useBuildPlan.ts"),
-    "the derived closure reached useBuildPlan.ts — either the view now " +
-      "genuinely imports it (re-read whether that import is safe) or a " +
-      "`../../`-style import is being followed when it must not be",
-  );
-});
-
-test("the sanctioned file is actually in the scanned scope", () => {
-  // #484 Task 7 fix round 2, item 3: an exception naming a file the gate
-  // does not scan protects nothing. This is independent of the derivation
-  // test above — even a closure that reaches all the RIGHT other files
-  // could still miss this one specific file for its own reason, and this
-  // is what would catch that.
+test("the sanctioned file is actually classified as part of the view", () => {
+  // An exception naming a file the classification above does not place in
+  // VIEW_FILES protects nothing — it would apply to a file the rest of this
+  // test never actually reads as sanctioned.
   assert.ok(
     VIEW_FILES.includes(SANCTIONED_HOST_FILE),
-    "SANCTIONED_HOST_FILE is not in the derived VIEW_FILES scope — the " +
-      "exception below would silently apply to a file this gate never " +
-      "actually reads",
+    `${rel(SANCTIONED_HOST_FILE)} is named as the sanctioned host-transport ` +
+      "file but is not in VIEW_FILES — the exception would silently apply " +
+      "to nothing",
   );
 });
 
+/**
+ * The brace/paren/bracket-balanced, string-aware text of the argument list
+ * immediately following `openParenIndex` (the index of the `(` itself), or
+ * `null` if the parens never balance.
+ */
+function balancedArgs(source, openParenIndex) {
+  let depth = 0;
+  let quote = null;
+  for (let i = openParenIndex; i < source.length; i += 1) {
+    const ch = source[i];
+    if (quote) {
+      if (ch === "\\") {
+        i += 1;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      quote = ch;
+      continue;
+    }
+    if (ch === "(" || ch === "{" || ch === "[") {
+      depth += 1;
+    } else if (ch === ")" || ch === "}" || ch === "]") {
+      depth -= 1;
+      if (depth === 0) return source.slice(openParenIndex + 1, i);
+    }
+  }
+  return null;
+}
+
+/**
+ * Every `postMessage(...)` call site in `source` (already comment-stripped),
+ * anchored — not a file-wide text search — and structurally validated:
+ *
+ *  - the argument must be a single, inline object literal (no variable, no
+ *    function call, no extra argument);
+ *  - it must contain no spread (`...`), which could inject or override a
+ *    field this scan cannot see;
+ *  - it must contain no computed property key (`[expr]:`), which could
+ *    define — or silently redefine — `type` outside what this scan reads as
+ *    the `type:` field;
+ *  - it must carry EXACTLY one `type:` field, written as a single plain
+ *    string literal (single- or double-quoted, matched in full — never a
+ *    `const`, a template literal, or a concatenation), whose value is one of
+ *    `SANCTIONED_MESSAGE_TYPES`.
+ *
+ * Returns the number of call sites found, so the caller can refuse a file
+ * that claims the exception but never actually calls `postMessage`.
+ */
+function checkPostMessageCallSites(source, file) {
+  const callSites = [...source.matchAll(/\bpostMessage\s*\(/g)];
+  for (const call of callSites) {
+    const openParen = call.index + call[0].length - 1;
+    const args = balancedArgs(source, openParen);
+    assert.ok(
+      args !== null,
+      `${path.basename(file)}: a postMessage( call's parentheses never ` +
+        "balance — malformed source",
+    );
+    const trimmed = args.trim();
+    assert.ok(
+      trimmed.startsWith("{") && trimmed.endsWith("}"),
+      `${path.basename(file)}: postMessage(${trimmed}) is not called with a ` +
+        "single inline object literal — a variable, a function call, or an " +
+        "extra argument cannot be audited by this gate and is refused " +
+        "outright",
+    );
+    assert.ok(
+      !trimmed.includes("..."),
+      `${path.basename(file)}: postMessage(${trimmed}) contains a spread — ` +
+        "a spread can inject or override a field this gate cannot see and " +
+        "is refused outright",
+    );
+    assert.ok(
+      !/\[[^[\]]*\]\s*:/.test(trimmed),
+      `${path.basename(file)}: postMessage(${trimmed}) uses a computed ` +
+        "property key — a message must be written with plain, literal " +
+        "keys so it can be audited",
+    );
+    const typeValues = [...trimmed.matchAll(/\btype\s*:\s*([^,}]+)/g)].map(
+      (m) => m[1].trim(),
+    );
+    assert.equal(
+      typeValues.length,
+      1,
+      `${path.basename(file)}: postMessage(${trimmed}) does not carry ` +
+        `exactly one plain \`type:\` field (found ${typeValues.length}) — ` +
+        "the message type must be written inline as a single, unambiguous " +
+        "field",
+    );
+    const raw = typeValues[0];
+    const literalMatch = /^"([^"\\]*)"$/.exec(raw) ?? /^'([^'\\]*)'$/.exec(raw);
+    assert.ok(
+      literalMatch,
+      `${path.basename(file)}: postMessage(${trimmed}) writes its type as ` +
+        `\`${raw}\`, which is not a single plain string literal — a const ` +
+        "reference, a template literal, or a concatenation cannot be " +
+        "audited by this gate and is refused outright, whatever it might " +
+        "evaluate to",
+    );
+    const type = literalMatch[1];
+    assert.ok(
+      SANCTIONED_MESSAGE_TYPES.includes(type),
+      `${path.basename(file)}: postMessage(${trimmed}) posts message type ` +
+        `"${type}", which is not one of the sanctioned ` +
+        `(${SANCTIONED_MESSAGE_TYPES.join(", ")}) — an unaudited additional ` +
+        "message type from this file is exactly the hole this exception " +
+        "must not open",
+    );
+  }
+  return callSites.length;
+}
+
 test("the memory view has no path back to the host, except the one sanctioned exception", () => {
-  // Act / Assert — every way this webview can ask the extension to do
-  // anything. `postMessage` is the transport; a dispatched command is the
-  // allow-listed command channel; importing the `vscode` shim is how a
-  // component reaches either one. NEITHER is sanctioned anywhere, for any
-  // file — the exception below is for `postMessage` alone, in one file, with
-  // exactly two message kinds, each written as a literal so it can be read
-  // off the source rather than evaluated.
   for (const file of VIEW_FILES) {
-    const rawSource = read(file);
-    const source = stripComments(rawSource);
+    const source = stripComments(read(file));
     const isSanctioned = file === SANCTIONED_HOST_FILE;
 
+    // A dispatched command is never sanctioned anywhere, in any file — the
+    // exception below is for `postMessage` alone, in one file, with exactly
+    // two message kinds, each written as a literal.
     assert.equal(
       source.includes("runCommand"),
       false,
@@ -259,71 +399,44 @@ test("the memory view has no path back to the host, except the one sanctioned ex
       continue;
     }
 
-    // The sanctioned file: `postMessage` and the `vscode` import ARE
-    // present — that is the whole point of this file existing — so this
-    // asserts they are actually USED (an unused exception is a stale one)
-    // and that every message it sends is one of the two approved kinds,
-    // written as a literal.
+    // The sanctioned file: `postMessage` reaches the host only through the
+    // ONE pinned import shape — never aliased, never a namespace import —
+    // so the call-site scan below can trust that every real dispatch is
+    // spelled `postMessage(`, literally.
     assert.ok(
-      source.includes("postMessage"),
+      source.includes(SANCTIONED_IMPORT_LINE),
       `${path.basename(file)} is the sanctioned host-transport file but ` +
-        "never calls postMessage — the exception is stale; narrow " +
-        "VIEW_FILES back to the original five",
-    );
-    assert.ok(
-      source.includes('from "../../vscode"'),
-      `${path.basename(file)} is the sanctioned host-transport file but ` +
-        'does not import from "../../vscode" — the exception is stale',
+        `does not import postMessage with exactly \`${SANCTIONED_IMPORT_LINE}\` ` +
+        "— an aliased or namespace import would let a call site spelled " +
+        "under a different name evade the scan below",
     );
 
-    // STRUCTURAL, not a bare substring search (#484 Task 7 fix round 2,
-    // item 2). The reviewer's own mutations proved the previous
-    // `/type:\s*"([^"]+)"/g` scan was a text search wearing a structure's
-    // clothes: it silently ignored a single-quoted literal entirely (never
-    // even entering the SANCTIONED_MESSAGE_TYPES check), and it accepted a
-    // concatenated `"focus" + "Section"` by matching only the FIRST
-    // quoted fragment — which happened to be unsanctioned and so failed
-    // for the wrong reason; had the first fragment been `"copyText"` it
-    // would have passed a message this file never actually sends as a
-    // single literal.
-    //
-    // The fix does not parse TypeScript. It captures everything between
-    // `type:` and the next `,`/`}` — the whole value expression, as text —
-    // and requires that ENTIRE captured text to be nothing but one quoted
-    // literal (single OR double quote, matched in full, not merely
-    // starting with a quote). A `const` reference, a template literal, or
-    // any concatenation fails this shape and is refused outright, with no
-    // attempt to evaluate what it might resolve to — exactly the
-    // "must be written as a literal, so it can be audited" rule the
-    // coordinator asked for.
-    const typeValues = [...source.matchAll(/\btype\s*:\s*([^,}]+)/g)].map((m) =>
-      m[1].trim(),
+    // The identifier `postMessage` may appear ONLY inside that one pinned
+    // import line and as a direct call (`postMessage(`) — never assigned to
+    // a variable, passed as a callback, or otherwise referenced, which
+    // would let a dispatch happen under a different name the call-site
+    // scan below never looks for.
+    const withoutImportLine = source.replace(SANCTIONED_IMPORT_LINE, "");
+    const bareReferences = [
+      ...withoutImportLine.matchAll(/\bpostMessage\b(?!\s*\()/g),
+    ];
+    assert.equal(
+      bareReferences.length,
+      0,
+      `${path.basename(file)} references postMessage without calling it ` +
+        `directly (found ${bareReferences.length} such use(s)) — it must ` +
+        "never be assigned, aliased, or passed anywhere except a direct " +
+        "postMessage(...) call, or a dispatch under the alias would be " +
+        "invisible to the call-site scan",
     );
+
+    const callSiteCount = checkPostMessageCallSites(source, file);
     assert.ok(
-      typeValues.length > 0,
-      `${path.basename(file)}: no \`type: …\` message value found — the ` +
-        "scan found nothing to check against SANCTIONED_MESSAGE_TYPES, " +
-        "which would let this test pass vacuously",
+      callSiteCount > 0,
+      `${path.basename(file)} is the sanctioned host-transport file but ` +
+        "never calls postMessage — the exception is stale; narrow " +
+        "VIEW_FILES back to the files that need no transport at all",
     );
-    for (const raw of typeValues) {
-      const literalMatch =
-        /^"([^"\\]*)"$/.exec(raw) ?? /^'([^'\\]*)'$/.exec(raw);
-      assert.ok(
-        literalMatch,
-        `${path.basename(file)} writes a message type as \`${raw}\`, which ` +
-          "is not a single plain string literal — a const reference, a " +
-          "template literal, or a concatenation cannot be audited by this " +
-          "gate and is refused outright, whatever it might evaluate to",
-      );
-      const type = literalMatch[1];
-      assert.ok(
-        SANCTIONED_MESSAGE_TYPES.includes(type),
-        `${path.basename(file)} posts message type "${type}", which is not ` +
-          `one of the sanctioned (${SANCTIONED_MESSAGE_TYPES.join(", ")}) — ` +
-          "an unaudited additional message type from this file is exactly " +
-          "the hole this exception must not open",
-      );
-    }
   }
 });
 
