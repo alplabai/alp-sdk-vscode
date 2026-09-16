@@ -152,12 +152,16 @@ function SystemManifestSection({
   // whichever one happened to be first.
   const uid = useId();
   const tabDomId = (id: ManifestTab) => `${uid}-tab-${id}`;
-  // ONE panel element, re-labelled as the selection moves, so every tab's
-  // `aria-controls` resolves. Rendering three panels and hiding two would
-  // make each tab's target its own element, but it also mounts the chart and
-  // the notes prose at the same time — and hidden text is still text to a
-  // reader that walks the tree. Selection follows focus here, so the panel a
-  // tab controls IS this element whenever that tab is the current one.
+  // ONE panel element, re-labelled as the selection moves. Rendering three
+  // panels and hiding two would give each tab a target of its own, but it
+  // also mounts the chart and the notes prose at once — two readings of the
+  // manifest built and kept alive so that one of them can be looked at.
+  //
+  // Only the SELECTED tab points at it. An `aria-controls` on the other two
+  // would claim each of them controls a panel that is labelled by a
+  // different tab, which is false of both at every moment. Selection follows
+  // focus here, so the tab that has `aria-controls` is always the tab whose
+  // panel this is.
   const panelDomId = `${uid}-panel`;
   const selectTabAt = (index: number) => {
     const next =
@@ -236,7 +240,7 @@ function SystemManifestSection({
             id={tabDomId(id)}
             className={styles.tab}
             aria-selected={tab === id}
-            aria-controls={panelDomId}
+            aria-controls={tab === id ? panelDomId : undefined}
             // The strip is ONE tab stop. The -1 is explicit on purpose: a
             // native <button> with no tabindex attribute is Tab-reachable,
             // so marking only the selected one as 0 leaves all three in the

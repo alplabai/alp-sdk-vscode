@@ -129,8 +129,17 @@
   color: var(--status-warn);
 }
 
-.detail {
+/* The row's own child group — the element its `aria-expanded` is true OF.
+   It takes the full-width wrap `.detail` used to take for itself, so the
+   detail still begins on its own line inside the row. */
+.detailGroup {
   flex-basis: 100%;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.detail {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
