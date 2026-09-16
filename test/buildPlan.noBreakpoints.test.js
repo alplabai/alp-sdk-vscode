@@ -64,12 +64,23 @@ test("the glob actually found the build-plan feature's stylesheets", () => {
   );
 });
 
+// CASE-INSENSITIVE ON BOTH SIDES, on purpose. CSS at-rule keywords and media
+// features are ASCII case-insensitive — a browser treats `@MEDIA` and
+// `PREFERS-REDUCED-MOTION` exactly like their lowercase spellings — so a
+// pattern match on `@media` alone lets `@MEDIA (max-width: 600px)` through
+// as a real, working breakpoint the gate never saw. The `i` flag below fixes
+// that miss, but it only reads half the rule right: apply `i` to the finder
+// and leave the allowance a plain `includes("prefers-reduced-motion")` and
+// `@MEDIA (PREFERS-REDUCED-MOTION: reduce)` — legitimate, sanctioned CSS —
+// becomes a FALSE positive, refused for a capitalization the finder itself
+// no longer cares about. Both sides read case-insensitively, or neither
+// should.
 test("the build-plan stylesheets declare no width-based media query", () => {
   for (const file of CSS_FILES) {
     const css = fs.readFileSync(file, "utf8");
-    for (const m of css.match(/@media[^{]+/g) ?? []) {
+    for (const m of css.match(/@media[^{]+/gi) ?? []) {
       assert.ok(
-        m.includes("prefers-reduced-motion"),
+        m.toLowerCase().includes("prefers-reduced-motion"),
         `${file} declares "${m.trim()}" — the No-Breakpoint Rule allows only prefers-reduced-motion`,
       );
     }
