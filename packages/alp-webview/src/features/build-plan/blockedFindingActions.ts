@@ -5,9 +5,10 @@
 // `MemoryTable.tsx`, `memoryTableRows.ts` and `AuthoritySwatch.tsx`. Those
 // five stay the picture and the table: they never ask the host to do
 // anything, because nothing in the emitted contract can yet tell a
-// customer-writable band from a Secure-Enclave-owned one (D5), and an edit
-// affordance over that ambiguity is a live hazard (see those files' own
-// headers).
+// customer-writable band from a Secure-Enclave-owned one — `write_authority`
+// is optional on both `som-preset-v1` and `system-manifest-v1`, and promotion
+// to required is alp-sdk#2024 — and an edit affordance over that ambiguity is
+// a live hazard (see those files' own headers).
 //
 // `test/memoryRegions.readOnly.test.js` is what enforces this split, and
 // THIS FILE IS IN ITS SCOPE TOO — the gate bans the host TRANSPORT itself,
