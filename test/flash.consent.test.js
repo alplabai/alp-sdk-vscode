@@ -4,11 +4,22 @@
 // about to program, read off the system manifest, plus the words the dialog
 // shows for it.
 //
-// Ground truth is the SAME fixture `systemManifest.service.test.js` uses — the
-// real `--emit system-manifest` output for the heterogeneous AEN801 example
-// (an `off` A-core, two Zephyr M-cores, one helper MCU whose `flash_args` is
-// the STRING "TBD"). Every awkward case this module has to answer for is
-// already in it, so none of them is invented here.
+// Ground truth is the SAME fixture `systemManifest.service.test.js` uses — a
+// BYTE-EXACT copy of alp-sdk's own governed golden
+// `tests/fixtures/emit-snapshots/rpmsg-aen.system-manifest.snap` at tag
+// `v0.16.0` (SKU E1M-AEN801: a Yocto A-core, two Zephyr M-cores, a `blocked`
+// rpmsg link, and one helper MCU carrying `flash_policy: recovery_only`).
+// Regenerate with:
+//   cd alp-sdk-upstream && PYTHONPATH=scripts python3 -m alp_orchestrate \
+//     --input examples/multicore/rpmsg-aen/board.yaml --emit system-manifest
+// which upstream's `check_emit_snapshots.py` keeps byte-identical to that
+// golden. Do NOT hand-patch it: the file it replaced was a v0.7.0 E1M-AEN701
+// emit with `sku`/`silicon` string-substituted, and it still carried
+// `machine: e1m-aen701-a32` while three tests called it "the real output".
+//
+// Two shapes the golden does NOT carry — a slice with no `flash_method`, and a
+// helper whose `flash_args` is the STRING "TBD" — are covered by `EDGE_CASES`
+// below rather than dropped. Both are live code paths in `consent.ts`.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -47,6 +58,32 @@ const MANIFEST = parseSystemManifest(
   ),
 );
 
+// The two shapes the governed golden does not carry, kept minimal and inline
+// so it is obvious they are constructed rather than measured: an `off` A-core
+// with no `flash_method` at all, and a helper whose recipe is not finalized so
+// `firmware_path`/`flash_args` are the literal STRING "TBD". `flash_policy` is
+// `customer` here purely so these cases exercise the flash_args/flash_method
+// paths rather than the authority path, which has its own tests.
+const EDGE_CASES = parseSystemManifest(
+  [
+    "schema_version: 1",
+    "hw_info:",
+    "  sku: E1M-AEN801",
+    "slices:",
+    "- core_id: a32_cluster",
+    "  os: 'off'",
+    "  status: pending",
+    "helper_mcus:",
+    "- name: cc3501e_otp",
+    "  chip: cc3501e",
+    "  firmware_path: TBD",
+    "  flash_method: TBD",
+    "  flash_args: TBD",
+    "  flash_policy: customer",
+    "",
+  ].join("\n"),
+);
+
 const CONTEXT = {
   projectDir: "/Users/dev/projects/aen801-demo",
   manifestPath: "/Users/dev/projects/aen801-demo/build/system-manifest.yaml",
@@ -70,17 +107,94 @@ test("an unscoped flash lists every slice AND every helper MCU", () => {
   assert.equal(plan.sku, "E1M-AEN801");
 });
 
+// Rule (b), and the reason it is not negotiable. An earlier version of this
+// module moved a non-`customer` helper into `skipped`, predicting that
+// `helper_flash_gate` would decline it. At the pinned tan an ABSENT policy
+// only skips when a method AND a channel are both declared — otherwise the
+// helper IS written. Every V2N/V2M manifest emitted by alp-sdk <= v0.15.0 is
+// that shape (`gd32_bridge`, `flash_method: swd_probe`, no policy, no
+// channel), so the screen printed "Skipped, NOT written" over a real SWD
+// write to 0x08000000. The policy is DISCLOSED; it never filters.
+test("flash_policy is disclosed as a note and never moves an entry", () => {
+  const plan = planFlashConsent(MANIFEST);
+  const helper = plan.targets.find((e) => e.kind === "helper");
+  assert.equal(helper.id, "cc3501e_otp");
+  assert.equal(helper.flashPolicy, "recovery_only");
+  assert.match(helper.notes.join("\n"), /flash_policy: recovery_only/);
+  assert.match(helper.notes.join("\n"), /only to recover a bricked device/i);
+  assert.deepEqual(plan.skipped, []);
+});
+
+// The shape the blocker was found on: a real v0.15.0 V2N golden. It must stay
+// a TARGET, because that is what the pinned tan actually does with it.
+test("an absent flash_policy stays a target, and the note says it is unstated", () => {
+  const legacy = parseSystemManifest(
+    [
+      "schema_version: 1",
+      "slices: []",
+      "helper_mcus:",
+      "- name: gd32_bridge",
+      "  chip: gd32g553",
+      "  flash_method: swd_probe",
+      "",
+    ].join("\n"),
+  );
+  const plan = planFlashConsent(legacy);
+  assert.deepEqual(idsOf(plan.targets), ["helper:gd32_bridge"]);
+  assert.deepEqual(plan.skipped, []);
+  assert.equal(plan.targets[0].flashPolicy, null);
+  assert.match(
+    plan.targets[0].notes.join("\n"),
+    /no flash_policy in the manifest/,
+  );
+  assert.match(plan.targets[0].notes.join("\n"), /is not stated/);
+});
+
+// An unrecognised value is its own case. Folding it into "the manifest has
+// none" would send a reader chasing a stale-SDK theory for a manifest that
+// declared something this build simply does not know.
+test("an unrecognised flash_policy is quoted verbatim, not called absent", () => {
+  const future = parseSystemManifest(
+    [
+      "schema_version: 1",
+      "slices: []",
+      "helper_mcus:",
+      "- name: cc3501e_otp",
+      "  chip: cc3501e",
+      "  flash_policy: field_service",
+      "",
+    ].join("\n"),
+  );
+  const plan = planFlashConsent(future);
+  const helper = plan.targets.find((e) => e.kind === "helper");
+  assert.equal(helper.flashPolicy, "field_service");
+  const notes = helper.notes.join("\n");
+  assert.match(notes, /flash_policy: field_service/);
+  assert.match(notes, /does not recognise that value/);
+  assert.match(notes, /customer, factory, recovery_only/);
+  assert.doesNotMatch(notes, /no flash_policy in the manifest/);
+});
+
+test("a customer flash_policy earns no note at all", () => {
+  const plan = planFlashConsent(EDGE_CASES);
+  const helper = plan.targets.find((e) => e.kind === "helper");
+  assert.ok(helper, "a customer-policy helper is written like any other");
+  assert.equal(helper.flashPolicy, "customer");
+  assert.doesNotMatch(helper.notes.join("\n"), /flash_policy/);
+});
+
 // Rule (a) in `consent.ts`: over-listing costs a line, under-listing is a
 // device programmed without consent. `a32_cluster` is `os: off` with NO
 // flash_method at all and it is still listed, because nothing in this repo
 // measures what tan does with it.
 test("a slice with no flash_method is listed with a note, never dropped", () => {
-  const plan = planFlashConsent(MANIFEST);
+  const plan = planFlashConsent(EDGE_CASES);
   const a32 = plan.targets.find((e) => e.id === "a32_cluster");
   assert.ok(a32, "the off A-core must appear — silence would be the defect");
   assert.equal(a32.flashMethod, null);
   assert.equal(a32.os, "off");
   assert.equal(a32.status, "pending");
+  assert.equal(a32.flashPolicy, null, "a slice declares no policy");
   assert.match(a32.notes.join("\n"), /no flash_method in the manifest/);
 });
 
@@ -96,7 +210,7 @@ test("status never filters — a `pending` slice is still a target", () => {
 });
 
 test("a helper MCU's string flash_args is carried verbatim and noted", () => {
-  const plan = planFlashConsent(MANIFEST);
+  const plan = planFlashConsent(EDGE_CASES);
   const helper = plan.targets.find((e) => e.kind === "helper");
   assert.equal(helper.id, "cc3501e_otp");
   assert.equal(helper.chip, "cc3501e");
@@ -109,7 +223,14 @@ test("a helper MCU's string flash_args is carried verbatim and noted", () => {
 test("a slice's object flash_args stays an object", () => {
   const plan = planFlashConsent(MANIFEST);
   const hp = plan.targets.find((e) => e.id === "m55_hp");
-  assert.deepEqual(hp.flashArgs, { runner: "openocd" });
+  // Verbatim off the golden — the load address in particular, which is the
+  // one field a rounded or reformatted copy would silently corrupt.
+  assert.deepEqual(hp.flashArgs, {
+    jlink_flash_device: "AE822FA0E5597LS0_M55_HE",
+    expect_dpidr: "0x4C013477",
+    jlink_device: "Cortex-M55",
+    slot0_load_address: "0x802b0000",
+  });
   assert.equal(hp.flashMethod, "zephyr_west_flash");
   // No "string, not a recipe" note when it IS a recipe.
   assert.deepEqual(hp.notes, []);
@@ -137,7 +258,10 @@ test("a --helper scope skips ALL slices and every other helper", () => {
     coreId: null,
     helperName: "cc3501e_otp",
   });
+  // Scope is the ONLY thing that moves an entry — the policy rides along as a
+  // note on the target it names, not as a reason to withhold it.
   assert.deepEqual(idsOf(plan.targets), ["helper:cc3501e_otp"]);
+  assert.match(plan.targets[0].notes.join("\n"), /flash_policy: recovery_only/);
   assert.equal(plan.skipped.length, 3);
   for (const skip of plan.skipped) {
     assert.equal(skip.entry.kind, "slice");
@@ -181,21 +305,28 @@ test("the dialog names the project, the manifest, every id and the consequence",
   // Every core_id, with its flash_method and its status.
   assert.match(
     text,
-    /slice a32_cluster — os off, status pending, flash_method \(not stated\)/,
+    /slice a32_cluster — os yocto, status pending, flash_method yocto_wic_to_sd_or_emmc/,
   );
   assert.match(
     text,
-    /slice m55_hp — os zephyr, status pending, flash_method zephyr_west_flash, flash_args \{"runner":"openocd"\}/,
+    /slice m55_hp — os zephyr, status pending, flash_method zephyr_west_flash, flash_args \{"jlink_flash_device":"AE822FA0E5597LS0_M55_HE"/,
   );
+  // The load address reaches the screen verbatim — a reformatted or rounded
+  // one would name a different place in MRAM.
+  assert.match(text, /"slot0_load_address":"0x802b0000"/);
+  assert.match(text, /"slot0_load_address":"0x80010000"/);
   assert.match(
     text,
     /slice m55_he — os zephyr, status pending, flash_method zephyr_west_flash/,
   );
-  // The helper MCU, with its name and its chip.
+  // The helper MCU, named in full, with the policy spelled out as a note
+  // rather than merely implied — and still under "will be programmed",
+  // because that is what the pinned tan does with it.
   assert.match(
     text,
-    /helper cc3501e_otp — chip cc3501e, flash_method TBD, firmware_path TBD, flash_args "TBD"/,
+    /helper cc3501e_otp — chip cc3501e, flash_method \(not stated\), firmware_path firmware\/cc3501e\/prebuilt\/cc3501e-v0\.3\.0\.bin/,
   );
+  assert.match(text, /flash_policy: recovery_only/);
   // And the irreversibility, in words, on the dialog.
   assert.match(text, /OVERWRITES the target's non-volatile memory/);
   assert.match(text, /cannot be undone/);

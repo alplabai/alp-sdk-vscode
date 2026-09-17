@@ -271,10 +271,10 @@ export function buildSchemaProvenance(
 /**
  * How the SDK side is named in status text.
  *
- * `VENDORED_SDK_TAG` is a git tag (`v0.15.0`) while `metadata/sdk_version.yaml`
- * carries a bare version (`version: 0.15.0`), so the two sides must be
- * normalised or the customer reads "byte-identical to the ones in 0.15.0" next
- * to "alp-sdk v0.15.0" and cannot tell they are the same release.
+ * `VENDORED_SDK_TAG` is a git tag (`v0.16.0`) while `metadata/sdk_version.yaml`
+ * carries a bare version (`version: 0.16.0`), so the two sides must be
+ * normalised or the customer reads "byte-identical to the ones in 0.16.0" next
+ * to "alp-sdk v0.16.0" and cannot tell they are the same release.
  */
 function sdkLabel(p: SchemaProvenance): string {
   if (p.sdkVersion === null) return "your resolved SDK";

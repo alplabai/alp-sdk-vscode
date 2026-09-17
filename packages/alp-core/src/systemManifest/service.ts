@@ -55,6 +55,7 @@ export function parseSystemManifest(text: string): SystemManifest {
     helper_mcus: arr(doc.helper_mcus) as SystemManifest["helper_mcus"],
     boot_order: arr(doc.boot_order),
     storage: Array.isArray(doc.storage) ? doc.storage : undefined,
+    memory: Array.isArray(doc.memory) ? doc.memory : undefined,
   };
 }
 

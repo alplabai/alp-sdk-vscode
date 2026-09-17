@@ -1,0 +1,306 @@
+/* SPDX-License-Identifier: Apache-2.0
+ *
+ * The memory map (#484). Every colour is a declared token: the ruler sits next
+ * to a slice list in the same panel, and a band that borrowed a raw hex would
+ * be the one element that stops agreeing with the editor theme. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* This paragraph REPLACES the picture — it is the whole answer when nothing
+   resolved, two sentences saying so and where the reasons are listed. It is
+   read the way the map it stands in for would have been, so it takes the
+   panel's reading size rather than a caption's. */
+.empty {
+  margin: 0;
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+}
+
+/* THE No-Breakpoint CONSTRUCTION (DESIGN.md; Task 8, #484 phase 4). Two
+   columns — `.mapSide` (the rail, narrow) and `.tableSide` (the unified
+   table, wide) — with NO width-based media query deciding between them;
+   `test/buildPlan.noBreakpoints.test.js` fails the build on one. Plain
+   `flex-wrap` does the collapsing instead: `.mapSide`'s own flex-basis
+   (400px) plus `.tableSide`'s (360px) plus this gap is the width AT WHICH
+   the second item stops fitting the first item's own line and wraps below
+   it — a continuous function of the container's own width, not a step at a
+   hand-picked viewport size. A 300px sidebar stacks them; a 2000px tab sits
+   them side by side with the table absorbing every extra unit — the same
+   two rules answer both, which is the whole point of the rule this gate
+   enforces. */
+.map {
+  display: flex;
+  gap: var(--space-5);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+/* NARROW AND FLUID, never wide: `flex: 0 1 400px` — no grow — holds this
+   column at its own 400px basis in a wide panel (`.tableSide` alone absorbs
+   growth there) and only ever shrinks it, continuously, as the panel
+   narrows. 400 is not arbitrary: RAIL_X + RAIL_W (MemoryChart.tsx, 96 + 148)
+   plus the 6-unit gap to the aperture strip plus three aperture bars at
+   `APERTURE_W + 14` pitch is ~313 units, so 400 leaves real margin before
+   anything in the rail would visually crowd this column's own edge.
+
+   `min-width: 0` is NOT legacy cruft left over from the old scroll container
+   — Task 8 still needs it, for a bootstrapping reason the old comment here
+   never had to state: on the FIRST paint, before `MemoryChart`'s own
+   `ResizeObserver` has fired once, the chart draws at `FALLBACK_WIDTH`
+   (MemoryChart.tsx, 578) — wider than this column's 400px basis. Without an
+   explicit `min-width: 0`, a flex item's AUTOMATIC minimum is its content's
+   min-content size, and a child with a `width` attribute of 578 contributes
+   that as its own min-content contribution — flooring this column at 578
+   forever, since the observer can then never report anything narrower than
+   the floor its own prior report created. `min-width: 0` breaks that loop
+   before it can start: an explicit value wins outright over the automatic
+   one, so this column is free to render narrower than its own first-paint
+   child, and the NEXT measurement is honest. */
+.mapSide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 0 1 400px;
+  min-width: 0;
+}
+
+/* THE WIDE COLUMN: `flex: 1 1 360px` grows to absorb every unit `.mapSide`
+   (above) does not claim, which is the "table on the right" half of the
+   approved design — a table's own columns benefit from room a rail's fixed
+   RAIL_W never will. `min-width: 0` for the same reason as `.mapSide`'s own:
+   this is a flex item, and its content (MemoryTable's row list) must be free
+   to shrink and wrap below its own min-content width rather than flooring
+   this column — and, through it, the whole panel — at whatever the widest
+   unwrapped row happens to need. */
+.tableSide {
+  flex: 1 1 360px;
+  min-width: 0;
+}
+
+.band[data-selected],
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 260px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.row[data-selected] {
+  border-color: var(--border-focus);
+  background: var(--surface-hover);
+}
+
+/* The extent's NAME — the identifier the whole row is about, and the label the
+   band beside it carries in the picture. It is not set below the values it
+   heads: a row whose name reads smaller than its own address inverts itself,
+   and the reader finds the row by scanning names. The mono family and weight
+   600 are what separate a name from the values next to it; size is not
+   available for that job. */
+.rowName {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+
+/* ONE BOX FOR BOTH PILLS, and it has to be stated. The two shells sit side by
+   side on a `.row` that centres its items, so a visible height difference
+   between them reads as a mistake rather than as a rank — and the type
+   difference below is deliberate, so the boxes must not also disagree.
+
+   WHAT MADE THEM DISAGREE IS AN INHERITED RATIO. `src/styles.css` sets
+   `body { line-height: 1.5 }` UNITLESS, and a unitless value inherits as the
+   ratio, not as a computed length — so each pill multiplied its OWN size:
+   xs 11 × 1.5 = 16.5px against base 13 × 1.5 = 19.5px, a 3px gap under equal
+   padding (both are flex items of `.row`, so that padding really is height).
+   Padding cannot close it, because padding only ADDS: `.status`'s bare line
+   box, 19.5px, already exceeds `.kind`'s padded one at 16.5 + 2 = 18.5px, so
+   no padding on `.status` reaches DOWN to `.kind`, and padding `.kind` up
+   instead means a hand-tuned 1.5px keyed to the 2px between the two tokens.
+
+   Both therefore take the same line box, given as a LENGTH — a unitless ratio
+   is the exact thing that opened the gap and is what would re-open it — and
+   derived from the base token so it still follows the workbench font. Their
+   vertical padding is equal below; keep it that way. */
+.kind,
+.status {
+  line-height: calc(var(--font-size-base) * 1.2);
+}
+
+/* Stays small on purpose, next to a `.status` that does not: the kind is the
+   category ("carve-out"), the status is the verdict. Reading the row as
+   category-then-verdict is the whole point of the size difference — which is a
+   difference in TYPE only, the boxes around them being evened above. */
+.kind {
+  font-size: var(--font-size-xs);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--text-secondary) 16%, transparent);
+  color: var(--text-secondary);
+}
+
+/* The map's hex bases, read digit by digit and compared against each other:
+   0x80000000 and 0x800b0000 differ in one place. Mono is a FAMILY decision —
+   it buys the column alignment that makes that comparison possible — and it is
+   not a licence to set the one value on the row nobody may misread smaller
+   than the prose around it. */
+.addr {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+}
+
+/* Cores and other row metadata: values from the manifest, read the same
+   way the address is. */
+.rowMeta {
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* `entry.status` verbatim from the emitter — "pending", "blocked",
+   "unresolved". The pill shell is chrome; the word inside it is the verdict on
+   whether the extent exists, so the TYPE takes the reading size while the shell
+   stays a pill. What keeps that from also making it a TALLER pill than `.kind`
+   is the shared line box above — the padding and radius here are `.kind`'s. */
+.status {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--status-warn) 18%, transparent);
+  color: var(--status-warn);
+}
+
+.status[data-status="ok"] {
+  background: color-mix(in srgb, var(--status-ok) 18%, transparent);
+  color: var(--status-ok);
+}
+
+.unresolved {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* md (14px): a sub-heading, one rung above the 13px rows it heads and one rung
+   below the panel's own `.title`, which is xl (20px) in
+   BuildPlanView.module.css. At base it was the exact size of the list beneath
+   it, which is a rung spent for nothing — weight and colour were left carrying
+   a rank that size is the only signal for. */
+.unresolvedTitle {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--text-section-header);
+}
+
+/* Full width on its own line, wrapping rather than truncating: the reason
+   names the file and the field to change, and a clipped one names neither.
+   THE TITLE REGISTER (md, weight 600 — the same size/weight `.title` takes
+   in MemoryTable.module.css, and `.outsideFlag` there for the same reason),
+   inside a bordered box: this is a flag, not a footnote, and a page skimmed
+   for headings alone still has to land on it. Mono stays, and pre-wrap
+   stays — this is still the manifest's own words, verbatim and in full. */
+.reasonCallout {
+  flex-basis: 100%;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+/* The two per-finding actions (#484 Task 7) — open the declaring file, copy
+   its text. `flex-basis: 100%` matches `.reasonCallout` just above: both are
+   full-width rows of THIS finding, never squeezed onto the name/kind/cores
+   line. */
+.findingActions {
+  flex-basis: 100%;
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* Overlapping extents, stated before the picture rather than under it — this
+   is the one thing this view knows that the manifest does not. */
+.conflicts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--status-err);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--status-err) 10%, transparent);
+}
+
+/* md, like `.unresolvedTitle` and for the same reason: a rung above the rows
+   it heads, a rung below the panel's xl title. The error colour and the tinted
+   bordered box carry the alarm; size is what says this line is the heading OF
+   the box rather than the first entry IN it. */
+.conflictsTitle {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--status-err);
+}
+
+.conflictList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.conflictRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+/* What went wrong with the pair named beside it ("share addresses", "covers an
+   image load address") — a diagnostic sentence, not a tag. */
+.conflictKind {
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+}
+
+/* One line ABOVE the chart, after `AuthorityLegend`, where four paragraphs
+   used to sit below it. The rest of that context lives in the Notes tab: the
+   map is a reading surface, not an essay with a picture in it. That one line
+   is still prose, and it is read BEFORE the picture rather than after it for
+   the same reason the legend moved: a reader has to know the rail is not to
+   scale before meeting the first compressed gap, not after wondering why one
+   run looks the same height as a run sixteen times its size. Set at reading
+   size like any other sentence; `max-width: 62ch` is what holds the measure. */
+.legend {
+  margin: 0;
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+  max-width: 62ch;
+}

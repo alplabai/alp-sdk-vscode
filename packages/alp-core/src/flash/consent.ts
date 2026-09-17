@@ -56,7 +56,10 @@
 // clicks a per-slice Flash button expecting a whole-board write and gets one
 // slice has a HALF-PROGRAMMED board, and nothing on screen said so.
 
-import type { SystemManifest } from "../systemManifest/models";
+import type {
+  HelperFlashPolicy,
+  SystemManifest,
+} from "../systemManifest/models";
 
 /** Which side of the manifest an entry came from. */
 export type FlashEntryKind = "slice" | "helper";
@@ -90,6 +93,19 @@ export interface FlashEntry {
    * what is configured.
    */
   flashArgs: Record<string, unknown> | string | null;
+  /**
+   * `helper_mcus[].flash_policy` — WHO may write this, VERBATIM off the
+   * manifest, including a value this build does not recognise. Typed as a raw
+   * string rather than `HelperFlashPolicy` on purpose: `parseSystemManifest`
+   * casts `helper_mcus` without validating it, so a narrowed union here would
+   * be a runtime lie the moment upstream adds a fourth member.
+   *
+   * Null for a slice (which declares none) AND for a helper whose manifest
+   * omits it; `kind` tells those apart, and an omission means the manifest
+   * predates alp-sdk v0.16.0, where the key became REQUIRED. Absent is NOT
+   * `customer`: the schema says there is no such default.
+   */
+  flashPolicy: string | null;
   /** Manifest-grounded caveats about this entry. Never a prediction. */
   notes: readonly string[];
 }
@@ -97,7 +113,12 @@ export interface FlashEntry {
 /** An entry the argv's scope removes, with the CLI's own reason. */
 export interface FlashSkip {
   entry: FlashEntry;
-  /** Why it is skipped, sourced from the scoping flag's own help text. */
+  /**
+   * Why it is skipped, sourced from the scoping flag's own help text. ONLY
+   * scope lands an entry here — `flash_policy` is disclosed as a note on the
+   * entry instead, because filtering on it would predict tan's decision
+   * (rule (b)) and, for an absent policy, predict it WRONGLY (rule (a)).
+   */
   reason: string;
 }
 
@@ -153,14 +174,79 @@ function sliceEntry(slice: SystemManifest["slices"][number]): FlashEntry {
     status: slice.status ?? null,
     flashMethod: slice.flash_method ?? null,
     firmwarePath: null,
+    // A slice is the customer's own image by construction; `flash_policy` is a
+    // helper-MCU key and the manifest declares none here.
+    flashPolicy: null,
     flashArgs: slice.flash_args ?? null,
     notes,
   };
 }
 
+/** The `flash_policy` values alp-sdk v0.16.0's schema enumerates. */
+const RECOGNISED_POLICIES: readonly HelperFlashPolicy[] = [
+  "customer",
+  "factory",
+  "recovery_only",
+];
+
+/**
+ * What a helper's `flash_policy` says about WHO may write it, as a note.
+ *
+ * A NOTE, NOT A FILTER — and that distinction is rule (b), learned the hard
+ * way. An earlier version of this function moved a non-`customer` helper out
+ * of `targets` and into `skipped`, reasoning that a screen listing a target
+ * tan will decline describes a write that never happens. That reasoning is a
+ * PREDICTION of `helper_flash_gate`'s outcome, and it was wrong in the
+ * direction rule (a) forbids: at the pinned tan (`SUPPORTED_CLI_VERSION`), an
+ * ABSENT policy only skips when a method AND a channel are both declared —
+ * otherwise dispatch continues and the helper IS written. Every V2N/V2M
+ * project emitted by alp-sdk <= v0.15.0 is exactly that shape (`gd32_bridge`,
+ * `flash_method: swd_probe`, no policy, no channel), so the screen would have
+ * printed "Skipped, NOT written" over a real SWD write to `0x08000000`.
+ *
+ * So: the policy is DISCLOSED and nothing is filtered on it. The reader learns
+ * who may write the helper; tan decides whether it writes. Over-listing costs
+ * a line, which rule (a) says is the safe direction.
+ *
+ * The value is carried VERBATIM. An unrecognised value is reported as the
+ * unrecognised value it is — never folded into the absent case, which would
+ * send a reader chasing a stale-SDK theory for a manifest that declared
+ * something this build simply does not know.
+ */
+function helperPolicyNote(policy: string | null): string | null {
+  if (policy === null) {
+    return (
+      "no flash_policy in the manifest — REQUIRED since alp-sdk v0.16.0, so " +
+      "this manifest predates it and who may write this helper is not stated"
+    );
+  }
+  if (policy === "customer") return null;
+  if (policy === "factory") {
+    return (
+      "flash_policy: factory — Alp Lab programs this helper in production; " +
+      "it is never a customer flash target"
+    );
+  }
+  if (policy === "recovery_only") {
+    return (
+      "flash_policy: recovery_only — Alp Lab programs this helper in " +
+      "production, and a customer flash is permitted ONLY to recover a " +
+      "bricked device, using Alp Lab-supplied binaries"
+    );
+  }
+  return (
+    `flash_policy: ${policy} — this build does not recognise that value ` +
+    `(known: ${RECOGNISED_POLICIES.join(", ")}), so who may write this ` +
+    "helper cannot be stated from it"
+  );
+}
+
 function helperEntry(
   helper: SystemManifest["helper_mcus"][number],
 ): FlashEntry {
+  const policy =
+    typeof helper.flash_policy === "string" ? helper.flash_policy : null;
+  const policyNote = helperPolicyNote(policy);
   const notes = [
     ...(helper.flash_method === undefined
       ? [
@@ -168,6 +254,7 @@ function helperEntry(
             "flash wiring, and tan decides what that means for the run",
         ]
       : []),
+    ...(policyNote === null ? [] : [policyNote]),
     ...flashArgsNote(helper.flash_args ?? null),
   ];
   return {
@@ -178,6 +265,7 @@ function helperEntry(
     status: null,
     flashMethod: helper.flash_method ?? null,
     firmwarePath: helper.firmware_path ?? null,
+    flashPolicy: policy,
     flashArgs: helper.flash_args ?? null,
     notes,
   };
@@ -236,6 +324,9 @@ export function planFlashConsent(
       });
       continue;
     }
+    // `flash_policy` is DISCLOSED on the entry, never filtered on: see
+    // `helperPolicyNote`. Only the argv's own scope moves a helper to
+    // `skipped`, which keeps rules (a) and (b) above true.
     targets.push(entry);
   }
 

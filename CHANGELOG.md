@@ -1,5 +1,202 @@
 # Changelog
 
+## Unreleased
+
+- **The Build Plan panel's Memory tab is now one address-ordered table and
+  one piecewise rail (#484).** The placed-extents list and the separate SoM
+  region table — two of the tab's three old surfaces — are replaced by a
+  single table carrying region rows and placed-span rows together, ordered by
+  write authority and then by address. The third surface survives: "Declared,
+  not placed" still renders below the map under its own `h3`, now holding
+  only the declarations the allocator has not refused outright, since a
+  blocked one is promoted above the picture instead (below). Four columns at rest: an achromatic
+  authority swatch, the region name with the producer that emitted it, the
+  address range, and the size. A row expands in place into a detail node
+  carrying its kind, its exact authority class, the cores that reach it, its
+  note, and — for a declaration the allocator refused to place — the reason.
+  The producer column is not optional: a row whose origin is not stated is a
+  row a customer cannot act on.
+
+  Authority is drawn in three achromatic tiers — `yours`, `locked`,
+  `unproven` — all derived from `--text-primary` and separated by fill
+  density and a hatch, never by hue. That is `DESIGN.md`'s new
+  **Authority-Swatch Rule**, which replaces the Region-Frame Rule the frames
+  belonged to. The six exact `MemoryAuthorityClass` names still reach the
+  reader through the row's accessible name, which carries the class name
+  itself; the expanded detail carries the prose `authorityLabel()` derives
+  from it — "no writer · reserved" against "authority not declared" — so a
+  declared `reserved` and a fail-closed `unstated` never claim to be the same
+  thing. The class name reaches the detail node too, but as the `data-class`
+  attribute the stylesheet keys its `locked` and `customer_image` treatments
+  off: a styling hook, not rendered text, and no rule anywhere in the panel
+  writes one back out with `content: attr(…)`. A three-item legend sits
+  permanently — not on hover, not collapsed — above the chart, and a second
+  copy of it at the head of the table.
+
+  The fixed 22× detail rail is gone, and with it the `Equalized` mode and
+  its two toggle buttons. One rail now carries the whole map on a piecewise
+  scale: an 8px floor per drawn extent plus a proportional share of what is
+  left over, every compressed gap marked and stating how much it compressed,
+  axis ticks only at real boundaries with computed power-of-two marks one
+  register down, and an SVG authority gutter beside the rail in place of
+  tinted frames behind the bands. Selecting a span on the rail opens its
+  row. The rail was also unreachable by any real pointer: an invisible
+  `fill: transparent` overlay, emitted last, hit-tested above every band
+  beneath it and swallowed every click meant for one, while those bands
+  advertised `cursor: pointer`. It now sits below them and declares
+  `pointer-events` explicitly rather than inheriting `visiblePainted` — the
+  new **Pointer-Intent Rule** in `DESIGN.md`.
+
+  Blocking findings are promoted above the picture, as named regions with
+  `aria-labelledby` on their own headings rather than as ARIA alerts: the
+  content is present at first render, and an alert is for announcing a
+  change. The reason renders as a bordered callout at the Title register.
+  The panel also has a real heading outline for the first time — rooted at
+  `h1`, descending `h1` → `h2` → `h3`, with no skipped level on any of the
+  three tabs.
+
+  A blocked finding carries two working actions, both routed through host
+  messages because a raw `vscode://file` href is not reliable under the
+  webview CSP: open the declaring file, and copy the finding's own text. The
+  host resolves the file itself through `collectProjectContext()`'s
+  `boardYamlPath`, so a custom or absolute `alpSdk.boardYamlPath` and a
+  multi-root workspace all open the document the build actually read; the
+  button deliberately names no filename, because it does not control which
+  file opens. Every failure path on both buttons is surfaced to the user with
+  `notifyAsync` rather than only written to the "Alp SDK" output channel —
+  the two on the open (no board.yaml resolved, and an editor that refuses the
+  resolved file) and the one on the copy (a clipboard write the host rejects,
+  which used to be an unhandled rejection with nothing on screen at all).
+
+  Layout is measured, not pinned, and still breakpoint-free. The fixed
+  `W = 578` becomes a fallback for a first paint with nothing measured yet;
+  the rail measures its own column with a `ResizeObserver` and redraws, and
+  a narrow rail on the left beside a wider table collapses to one column
+  with zero width-based media queries.
+
+  Keyboard behaviour is real rather than incidental: the tab strip is a
+  roving `tabIndex` with `ArrowLeft`/`ArrowRight`/`Home`/`End` and a genuine
+  `role="tabpanel"` whose `aria-controls` resolves, and the table is a
+  `role="tree"` whose rows are parent nodes owning their own detail. One tab
+  stop for the whole table, arrows that cross tier-group boundaries, `Enter`
+  to select, and `ArrowRight`/`ArrowLeft` to expand and collapse without
+  touching the selection.
+
+  New gates, which are the lasting part: swatch and gutter contrast computed
+  from the tokens `AuthoritySwatch.module.css` and `MemoryChart.module.css`
+  declare themselves, resolved against Dark+, Light+, 2026 Dark and both
+  high-contrast themes, with the built `dist/main.css` read separately to
+  prove the hashed `[data-tier]` rules still reach a real selector; a
+  case-insensitive No-Breakpoint gate over a globbed stylesheet list; a
+  pointer-events gate that refuses an invisible overlay which does not state
+  what it does to the pointer; a read-only gate that derives the memory
+  view's module graph from the TypeScript compiler rather than from text; and
+  an id-uniqueness check over the tier groups and tabpanels — the elements
+  `aria-controls` resolves against here — rather than over the whole
+  document.
+
+- **The Build Plan panel's Memory tab now reads the SoM's own region table
+  from the manifest (#484).** `system-manifest-v1`'s
+  `memory[]` pane (alp-sdk#1365; not yet in a tagged release, alp-sdk#2047)
+  is read into a new `MemoryRegion[]` view, which is what supplies the
+  authority tier on every row of the table above and the authority gutter
+  beside the rail. Absent when the manifest predates that producer or
+  resolves no regions for the SoM — no region rows, and no gutter. Read-only,
+  same as the rest of this tab (#484 D5 re-taken against the landed
+  contract). No schema re-vendor, no `SUPPORTED_CLI_VERSION` bump.
+- **The Build Plan panel now reads at its own base size, not a rung below it
+  (#484).** Slice and manifest rows, env values, generated-file paths and
+  previews, warnings, notes, the memory map's own rows, and the chart's axis,
+  band, marker, hover and caption labels all now hold base — the constant
+  13px VS Code injects into every webview. Before, those rows sat at 12px or
+  11px and those chart labels at 10px; region names were 12px in the row list
+  and 10px as chart band labels. No sanctioned px literal remains: the
+  rotated 9px aperture label — the one size that was pinned to the width of
+  the bar it ran down, and the only literal the type-scale gate sanctioned —
+  is gone, its name now reachable as the bar's own `aria-label` instead of
+  drawn, and that gate's sanctioned-literal list is empty. Every reading
+  surface holds base; the chrome deliberately does not, and the gate requires
+  it not to. Six declarations stay below base on purpose, each named with its
+  reason on the gate's own allowlist: `.backend`, `.sectionTitle`,
+  `.manifestBadge`, `.manifestAge` and `.manifestSubTitle` in
+  `BuildPlanView.module.css`, and `.kind` in `MemoryRegions.module.css` —
+  badges, uppercase section labels and one category pill, at 11px or 12px
+  against base's 13px. The panel title moved from
+  `md` (14px) to `xl` (20px), the
+  size `ModelsView`'s own title already takes; four other full-tab panels
+  (Dependencies, SetupFlow, NewProjectFlow, ExistingProjectFlow) still
+  hardcode an untokenised 18px title of their own. In a narrow column the
+  drawing still renders at 1:1, and nothing scrolls horizontally any more:
+  `.chartScroll`, whose `overflow-x: auto` used to make the chart its own
+  scroll container, is gone, and no stylesheet in the Memory tab declares
+  `overflow` at all any more except `.svg`'s own `visible` — so ink past the
+  viewBox overlaps whatever sits beside it rather than being clipped
+  somewhere no scroll position reaches, and nothing drawn today gets that
+  far. Before, the whole
+  panel scrolled sideways as one ~572px-wide strip inside a 420px column; the
+  rail measures its own column instead. None of this fixes a regression in a
+  released version — the memory map itself landed after `0.6.0` with no
+  CHANGELOG entry of its own; this is its first.
+
+- **The Build Plan panel's Memory chart fixes three WCAG contrast failures,
+  and pins a fourth measurement as a disclosed shortfall rather than a fix
+  (see below).**
+  Every chart-series band/marker label used to fill with its own series
+  colour on top of that series' own 30%-opacity band fill — a self-defeating
+  pairing that failed 4.5:1 for all six series, both themes, without
+  exception. Labels now share one `--chart-label-fg` token
+  (`tab.activeForeground`) that clears 4.5:1 against every series' band fill
+  in every default theme; the series colour still carries the band's own
+  fill and stroke. `--chart-3` pointed at `charts.orange`, whose own
+  registered default is never opaque (~33% alpha, VS Code's own design); it
+  now points at `terminal.ansiCyan`, a core-registered, always-opaque token
+  distinct in hue from `--chart-5`. The memory chart's rail frame, axis ticks
+  and inter-rail bracket used `--border-default` (`panel.border`, ~35% alpha
+  in Dark+/Light+) — 1.45-1.59:1 against their backdrop, under the 3:1
+  non-text floor for a stroke that carries meaning; a new `--border-chart`
+  token (`descriptionForeground`) clears 3:1 in every default theme. The
+  inter-rail bracket that also took it went with the second rail, and
+  `.regionFrame` went with the frames; every decorative `--border-default`
+  use is untouched.
+
+  `--accent` still marks only what is currently selected (DESIGN.md's
+  Selected-Not-Suggested Rule), and `--accent-fg` (white) still carries the
+  text on it. The pressed scale-toggle button the pair was first measured on
+  is gone with the `Equalized` mode; the pair now ships on
+  `.btn[data-appearance="accent"]` in the shared `Button` component, and the
+  gate was re-measured against that. An
+  interim build on this branch tried `terminal.ansiBlack` instead — an
+  opaque core token that reaches 4.99:1 Dark+, 6.26:1 Light+ and 8.18:1 High
+  Contrast Dark, all unaided — but it was evaluated and declined once its
+  cost was measured against the themes VS Code actually ships by default:
+  it regresses 2026 Dark from 5.52:1 (white) to 3.80:1, and VS Code exposes
+  no CSS class fine enough to scope a fix around that one theme without
+  also affecting Dark+ or Dark Modern. Weighed against every current
+  default (Dark Modern 4.53:1, Light Modern 6.31:1, 2026 Dark 5.52:1, 2026
+  Light 5.39:1, High Contrast Light 5.47:1, all passing with white), keeping
+  `--accent-fg` covers more real themes; Dark+ (4.21:1) and Light+ (3.35:1),
+  retired as VS Code's own default since 1.74, are an accepted, declined
+  shortfall, not an unfixable one.
+
+  **Known shortfall, not fixed here.** High Contrast Dark — a CURRENT theme —
+  measures 2.57:1 for `--accent-fg` on `--accent` at the shared `Button`,
+  below even the 3:1 non-text floor. The retired scale toggle carried a
+  scoped
+  `body:global(.vscode-high-contrast):not(:global(.vscode-high-contrast-light))`
+  override that reached >=4.5:1 there, verified against the built
+  `dist/main.css`; that override went with the button it scoped, and this
+  branch does not add one to the shared `Button`, which is outside the
+  Memory tab's scope — `vscode-high-contrast` now has zero occurrences under
+  `packages/` and `src/`, so no theme-scoped override survives anywhere in
+  the product. `test/buildPlan.chartContrast.test.js` pins hcDark at
+  its exact measured value, so a further regression — or a silent "fix" that
+  assumes parity with what the toggle shipped — cannot pass unnoticed. The
+  override's exclusion clause mattered because High Contrast Light also
+  carries the plain `vscode-high-contrast` class for backwards
+  compatibility, and CSS Modules hashes an unwrapped class name while the
+  host writes `vscode-high-contrast` onto `<body>` literally — so whoever
+  reinstates it on the shared `Button` needs both halves.
+
 ## 0.6.0
 
 **Stable.** First even-minor cut since `0.4.0`, so `release-vsix.yml` publishes

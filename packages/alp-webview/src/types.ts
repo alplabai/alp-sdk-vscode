@@ -415,7 +415,7 @@ export interface DependencyCommandStep {
 
 /**
  * A `command`-kind `DependencyAction` — a NAMED interface, not an inline
- * union member (#603, third review, major 4): `test/webview.payloadMirror
+ * union member (#603): `test/webview.payloadMirror
  * .test.js`'s field-diff walk only reaches `export interface` declarations,
  * and `DependencyAction` is an `export type` union, invisible to it either
  * way. `omittedTools` was added to the inline literal on both sides with no
@@ -812,12 +812,18 @@ export interface ManifestIpcLink {
   reason?: string;
   [key: string]: unknown;
 }
+/** Mirrors `@alp-sdk/core/systemManifest/models`'s `HelperFlashPolicy`. */
+export type HelperFlashPolicy = "customer" | "factory" | "recovery_only";
 export interface ManifestHelperMcu {
   name: string;
   chip: string;
   firmware_path?: string;
   flash_method?: string;
   flash_args?: Record<string, unknown> | string;
+  /** Absent is NOT `customer`: no policy declared, so authority is unknown. */
+  flash_policy?: HelperFlashPolicy | (string & {});
+  /** Field-update channel. Independent of `flash_policy`/`flash_method`. */
+  update_channel?: string;
   [key: string]: unknown;
 }
 export interface SystemManifest {
@@ -849,12 +855,134 @@ export interface ManifestProvenance {
   reason: string | null;
 }
 
+// --- Memory regions (#484): mirrors
+// @alp-sdk/core/systemManifest/memoryView. The address-space view of a
+// manifest — what it pins, and what the customer declared that it could not
+// place. Host-computed; read-only here. ---
+
+/** `slot_image` a slice's primary image slot · `carve_out` a resolved IPC
+ *  carve-out · `partition` a resolved storage partition. */
+export type MemorySpanKind = "slot_image" | "carve_out" | "partition";
+
+export interface MemorySpan {
+  id: string;
+  kind: MemorySpanKind;
+  label: string;
+  /** Absolute base, or null. A partition is ALWAYS null: its `offset_kib`
+   *  is device-relative, and the device's own base is a SEPARATE mirrored
+   *  type (`MemoryRegion`, below) that this field never joins in — a
+   *  reader wanting it joins `MemorySpan.device` to a `MemoryRegion.name`
+   *  by hand, the way `MemoryTable` does. */
+  base: number | null;
+  deviceOffset: number | null;
+  /** Null when a base is pinned but no size is — the normal state of a
+   *  slot image: this SPAN itself never carries one. A same-named
+   *  `MemoryRegion` row may separately resolve that slot's own extent as a
+   *  region, listed in the region table and never joined to this span. */
+  sizeBytes: number | null;
+  /** `carve_out_region`: the SoM region the resolver allocated from. */
+  region: string | null;
+  /** `flash_device`: the device this partition lives in. */
+  device: string | null;
+  cores: string[];
+  fs: string | null;
+}
+
+export interface MemoryUnresolved {
+  id: string;
+  kind: MemorySpanKind;
+  label: string;
+  cores: string[];
+  /** The emitter's own word, or `unresolved` when it stated none. */
+  status: string;
+  /** Verbatim and in full — it is the only actionable half. */
+  reason: string | null;
+}
+
+/** A region or device the manifest NAMES but does not describe: the hull is
+ *  what landed inside it, never the aperture's own extent. */
+export interface MemoryAperture {
+  id: string;
+  name: string;
+  kind: "region" | "device";
+  members: string[];
+  hullBase: number | null;
+  hullEnd: number | null;
+}
+
+/** Mirrors `@alp-sdk/core/systemManifest/memoryView`'s open unions. */
+export type MemoryRegionSource = "som_preset" | "soc_derived" | (string & {});
+export type MemoryRegionKind =
+  | "flash"
+  | "ram"
+  | "unclassified"
+  | "unresolved"
+  | (string & {});
+export type MemoryRegionStatus = "ok" | "unresolved" | (string & {});
+
+/** Derived host-side by `authorityClassOf`; a CLOSED union the UI's
+ *  authority tint and grouping must exhaust. */
+export type MemoryAuthorityClass =
+  | "customer_runtime"
+  | "customer_image"
+  | "locked"
+  | "reserved"
+  | "composite"
+  | "unstated";
+
+/** One row of the SoM's own region table (#484 phase 2), present only from
+ *  a producer new enough to resolve one. */
+export interface MemoryRegion {
+  id: string;
+  name: string;
+  source: MemoryRegionSource;
+  kind: MemoryRegionKind;
+  status: MemoryRegionStatus;
+  base: number | null;
+  sizeBytes: number | null;
+  writeAuthority: string | null;
+  authorityClass: MemoryAuthorityClass;
+  cores: string[];
+  reason: string | null;
+}
+
+export type MemoryConflictKind =
+  | "overlap"
+  | "covers_load_address"
+  | "device_overlap"
+  | "outside_region";
+
+export interface MemoryConflict {
+  id: string;
+  kind: MemoryConflictKind;
+  first: string;
+  second: string;
+  from: number;
+  to: number;
+  device: string | null;
+}
+
+export interface MemoryView {
+  sku: string;
+  spans: MemorySpan[];
+  unresolved: MemoryUnresolved[];
+  apertures: MemoryAperture[];
+  /** Omitted — never an empty array — when the manifest carries no
+   *  memory[] pane, or it resolves no regions for this SoM. */
+  regions?: MemoryRegion[];
+  /** Computed here, not read: the allocator compares carve-outs only against
+   *  carve-outs in the same region, so nothing upstream looks at these pairs. */
+  conflicts: MemoryConflict[];
+}
+
 export interface SystemManifestDataMessage {
   type: "systemManifestData";
   manifest: SystemManifest | null;
   postBuild: boolean;
-  /** Null on the projection path, which has no file to be stale. */
+  /** Null when there is no file, which has no date to report. */
   provenance: ManifestProvenance | null;
+  /** Null exactly when `manifest` is null. */
+  memory: MemoryView | null;
   error?: string;
 }
 
@@ -1114,6 +1242,20 @@ export interface FlashSliceMessage {
   coreId: string;
 }
 
+/** Open the project's board.yaml, resolved by the HOST (#484) — carries no
+ *  path: the webview does not know (and must not guess) where board.yaml
+ *  actually is under a custom/absolute `alpSdk.boardYamlPath` or a multi-root
+ *  workspace. */
+export interface OpenBoardYamlMessage {
+  type: "openBoardYaml";
+}
+
+/** Copy plain text to the system clipboard, through the host (#484 Task 7). */
+export interface CopyTextMessage {
+  type: "copyText";
+  text: string;
+}
+
 export type WebviewToExtMessage =
   | ReadyMessage
   | RunCommandMessage
@@ -1142,6 +1284,8 @@ export type WebviewToExtMessage =
   | MaterialiseBuildPlanMessage
   | RunBuildMessage
   | FlashSliceMessage
+  | OpenBoardYamlMessage
+  | CopyTextMessage
   | RequestModelsMessage
   | BuildModelMessage
   | CheckModelFitMessage

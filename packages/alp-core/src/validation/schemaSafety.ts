@@ -31,8 +31,9 @@
 /**
  * Largest SDK schema this will serve, in UTF-16 code units.
  *
- * The two real schemas are far smaller (board.schema.json is ~60 KB at
- * v0.15.0), so the cap only ever fires on something that is not a schema.
+ * The two real schemas are far smaller (board.schema.json is ~45 KB at
+ * v0.16.0, up from ~43 KB at v0.15.0), so the cap only ever fires on
+ * something that is not a schema.
  * Measured in code units rather than bytes because the caller has already
  * decoded the file; the difference cannot matter three orders of magnitude
  * below the limit.
@@ -52,7 +53,7 @@ export type SchemaAcceptance =
  * `"$id": "https://github.com/alplabai/alp-sdk/metadata/schemas/<name>.json"`,
  * so a RELATIVE ref like `"other.json"` resolves against that base and is
  * fetched -- and a `file://` ref would read an arbitrary local path into the
- * customer's diagnostics. Measured at v0.15.0: every `$ref` in
+ * customer's diagnostics. Measured at v0.16.0: every `$ref` in
  * `board.schema.json` and `system-manifest-v1.schema.json` is `#/$defs/...`,
  * so nothing legitimate is refused by requiring the leading `#`.
  */

@@ -339,8 +339,8 @@ test("no-sdk text says the bundled schema is in force and why that is fine", () 
 });
 
 test("match text names the SDK as a v-prefixed release, not a bare number", () => {
-  // Arrange -- VENDORED_SDK_TAG is a git tag ("v0.15.0") while
-  // metadata/sdk_version.yaml carries "version: 0.15.0". Rendered raw, the two
+  // Arrange -- VENDORED_SDK_TAG is a git tag ("v0.16.0") while
+  // metadata/sdk_version.yaml carries "version: 0.16.0". Rendered raw, the two
   // sides of the same release read as different things.
   const p = buildSchemaProvenance({
     sdkRoot: "/opt/alp-sdk",

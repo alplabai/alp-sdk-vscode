@@ -366,12 +366,64 @@ export function classifyDescriptionInert(description) {
 
 /** Run tan read-only. Throws on a spawn failure; returns the raw result so
  *  callers can decide what a non-zero exit means. */
+/** SGR escape sequences — `\x1b[…m`, the only kind rich emits into help text.
+ *  Deliberately not a general ANSI matcher: a cursor-movement or clear-screen
+ *  sequence in a help page would be a real change worth failing on, and this
+ *  should not quietly absorb one. */
+const SGR_SEQUENCE = /\x1b\[[0-9;]*m/g;
+
+/** Remove terminal styling from a captured page.
+ *
+ *  WHY, measured rather than assumed: the runner's captured `tan --help` and a
+ *  developer's are the same page. Strip its 384 SGR sequences and the two are
+ *  BYTE-IDENTICAL — same macOS (26.5.2), same binary (sha256
+ *  6035d67ac4f11204ccbd7701a20fdda80b95ae4946a32a7f0b7b0d0070a3c17e). Only the
+ *  styling differs, and every box header arrives as
+ *
+ *    \x1b[2m╭─\x1b[0m\x1b[2m Options \x1b[0m…
+ *
+ *  so no line starts with `╭`, `parseBoxes` returns nothing, and the whole CLI
+ *  reads as empty.
+ *
+ *  `NO_COLOR=1` does not prevent it: rich reads it as "drop the COLOURS", not
+ *  "emit no ANSI", and bold (`\x1b[1m`) and dim (`\x1b[2m`) survive. Neither
+ *  does `TERM=dumb`, which the runner already sets.
+ *
+ *  WHICH env var puts rich into terminal mode there is still NOT identified.
+ *  `FORCE_COLOR`, `PY_COLORS` and `TTY_COMPATIBLE` each reproduce it locally —
+ *  but only with a TTY-ish `TERM`; under the runner's own `TERM=dumb` none of
+ *  them do, and the runner's capture shows `FORCE_COLOR: <unset>`,
+ *  `CLICOLOR_FORCE: <unset>`. An earlier fix here named `FORCE_COLOR` as the
+ *  cause and was wrong. This one does not need the answer: it is
+ *  cause-independent, which is why it replaced the env-scrubbing attempt
+ *  rather than joining it.
+ *
+ *  AND IT DOES NOT MOVE THE RECORD. Stripping was rejected once on the
+ *  grounds that `sourceDigest` hashes the raw pages, so hashing stripped text
+ *  would redefine the digest and force a re-capture. That reasoning was wrong
+ *  for this input: a clean capture contains ZERO SGR sequences, so the strip
+ *  is the identity function on it and `sourceDigest` is unchanged
+ *  (`28112bfd9d9a`, still the value in `surface.json`). What it changes is
+ *  that a STYLED capture now hashes to that same value instead of a different
+ *  one — which is the whole point. */
+export function stripAnsi(text) {
+  return text.replace(SGR_SEQUENCE, "");
+}
+
 function runTan(binary, args) {
   const result = spawnSync(binary, args, {
     encoding: "utf8",
     env: { ...process.env, COLUMNS: HELP_COLUMNS, NO_COLOR: "1" },
     maxBuffer: 32 * 1024 * 1024,
   });
+  // Stripped at the boundary, so NOTHING downstream — parser, digest, or the
+  // `--check` diff — can see a styled page and a clean one as different.
+  if (typeof result.stdout === "string") {
+    result.stdout = stripAnsi(result.stdout);
+  }
+  if (typeof result.stderr === "string") {
+    result.stderr = stripAnsi(result.stderr);
+  }
   if (result.error) {
     throw new Error(
       `could not run "${binary} ${args.join(" ")}": ${result.error.message}`,
@@ -733,7 +785,9 @@ function describeCommand(helpText, label) {
  *  The Options box is skipped: its rows are flags, not commands. */
 export function parseCommandNames(rootHelp) {
   const names = new Set();
+  const titles = [];
   for (const box of parseBoxes(rootHelp)) {
+    titles.push(box.title);
     if (box.title === "Options") continue;
     for (const entry of parseBoxEntries(
       box.rows,
@@ -741,6 +795,41 @@ export function parseCommandNames(rootHelp) {
     )) {
       if (/^[a-z][a-z0-9-]*$/.test(entry.name)) names.add(entry.name);
     }
+  }
+  // ZERO COMMANDS IS A HARD FAILURE, the same way `global_flags is empty` is.
+  //
+  // This is the gap the other guards in this file left open, and it is the
+  // one that cost four consecutive red `tan surface drift` runs reading
+  // `0 commands, 0 options (0 inert), 0 refusing subcommand(s), 12 global
+  // options` against a binary that parses to 31 commands elsewhere.
+  //
+  // Returning `[]` is worse than any misparse, because every downstream check
+  // is written to iterate what this produced:
+  //
+  //   * `buildSnapshot`'s #602 guard ("zero captured options is a parser
+  //     failure") loops over `Object.keys(commands)`. Empty object, zero
+  //     iterations, nothing to catch.
+  //   * `globalOptions` is read from `tan completion --shell bash`, not from
+  //     this page, so it stays right and the summary line reads like a
+  //     healthy probe that found an empty CLI.
+  //   * `--check` then reports every real command as "the record has it, the
+  //     binary does not" and tells the reader to re-capture — which would
+  //     write `commands: {}` over a correct record that
+  //     `src/alpCli/pinnedSurface.ts` drives real behaviour from.
+  //
+  // The box titles go in the message on purpose: they are the whole
+  // diagnosis. `Options` alone means the command-group boxes were not on the
+  // page; `Options, Setup, Build & run, …` means they WERE and every row in
+  // them was misread, which is a parser fix, not a tan change.
+  if (names.size === 0) {
+    throw new Error(
+      `tan --help yielded no command names. Boxes read: ` +
+        `${titles.length ? titles.join(", ") : "(none)"}. Every real tan ` +
+        `lists its commands here, so this is a help-layout or capture ` +
+        `failure, not a CLI with no commands — refusing to report an empty ` +
+        `surface as a finding, because a re-capture would then overwrite the ` +
+        `record every other gate trusts.`,
+    );
   }
   return [...names].sort();
 }

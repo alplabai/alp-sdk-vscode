@@ -171,7 +171,7 @@
         "sim_console": {
           "type": "boolean",
           "default": false,
-          "description": "Opt-in (issue #686): when true, emit CONFIG_RAM_CONSOLE=y for every HEADLESS core (a core the SoM topology marks `hw_console: false`, e.g. the RZ/V2N M33 system-manager) so the studio hardware simulator's `uart_socket` streams that core's boot/console output.  Cores that already have a UART console are unchanged, and absent/false emits nothing (no RAM cost on production images).  Studio sets this when producing a bundle destined for `RENODE_MODE=real` (alp-studio#74)."
+          "description": "Opt-in (issue #686): when true, emit CONFIG_RAM_CONSOLE=y for every HEADLESS core (a core the SoM topology marks `hw_console: false`, e.g. the RZ/V2N M33 system-manager) so the studio hardware simulator's `uart_socket` streams that core's boot/console output.  Cores that already have a UART console are unchanged, and absent/false emits nothing (no RAM cost on production images).  Studio sets this when producing a bundle destined for that simulator (alp-studio#74)."
         },
         "modules": {
           "type": "object",
@@ -179,7 +179,7 @@
             "type": "string",
             "enum": ["error", "warn", "info", "debug", "trace", "off"]
           },
-          "description": "Per-module log-level overrides.  Keys match Alp SDK module names (e.g. `alp_iot`, `alp_inference`, `alp_audio`, `alp_security`, `alp_gpio`, ...).  Each value is the same log-level enum as the top-level `log_level`, plus `off` to silence the module entirely.  The loader emits CONFIG_<MODULE>_LOG_LEVEL_<LEVEL>=y per entry into the generated alp.conf."
+          "description": "Per-module log-level overrides.  Keys are either Alp SDK module names (e.g. `alp_iot`, `alp_inference`, `alp_audio`, `alp_security`, `alp_gpio`, ...) or Zephyr log modules the SDK wires (`i2c`, `spi`, `gpio`, `adc`, `net_tcp`, ...).  Each value is the same log-level enum as the top-level `log_level`, plus `off` to silence the module entirely.  The loader emits CONFIG_<MODULE>_LOG_LEVEL_<LEVEL>=y per entry into the generated alp.conf -- live only where that choice symbol exists (the module and CONFIG_LOG are both enabled on that core), and downgraded to a hint comment otherwise so the fragment always configures."
         }
       }
     },
@@ -196,7 +196,7 @@
           "size_kib":     { "type": "integer", "minimum": 4 },
           "fs":           { "type": "string", "enum": ["littlefs", "fat", "ext4", "raw"], "default": "raw", "description": "Filesystem to format the partition with.  `raw` leaves it unformatted (e.g. for image slots managed by MCUboot)." },
           "mount":        { "type": "string", "description": "Mount point at boot.  Optional; when omitted the partition isn't auto-mounted." },
-          "flash_device": { "type": "string", "description": "Region this partition lives in.  References the SoM preset's `memory_map:` name (`mram_main`, `ocram_low`, ...) or an `on_module.ospi_memories:` entry (`ospi0`, ...)." },
+          "flash_device": { "type": "string", "description": "Region this partition lives in.  References the SoM preset's `memory_map:` name (`mram_main`, `ocram_low`, ...) or an `on_module.ospi_memories:` entry (`ospi0`, ...).  A `memory_map:` region marked `carveout: false` is a partition INSIDE a flash-class node, not a flash device of its own, and is refused as a target (#1484).  No target resolves to a genuinely working Devicetree label today: a `memory_map:` region's label DEFAULTS to the region name when the SoM preset sets no explicit `dt_label:` override (neither `mram_main` nor `ocram_low` has that override), and as of alp-sdk#1556 the resolver refuses `status: ok` for that case -- it blocks with a reason instead of decorating the fabricated label.  An `on_module.ospi_memories:` key like `ospi0` is unverified against the generated board tree too, and is NOT yet gated the same way (separate follow-up) -- see `docs/board-config-features.md`'s \"Storage partitions (`storage:`)\" section." },
           "offset_kib":   { "type": "integer", "minimum": 0, "description": "Optional explicit offset (in KiB) within the flash device.  When omitted, the orchestrator allocates bottom-up from offset 0 in name-sorted order.  When supplied, must be page-aligned (4 KiB); the allocator surfaces overlaps via `status: blocked` on the resolved partition." }
         }
       }
@@ -272,8 +272,7 @@
         "swap_algorithm": {
           "type": "string",
           "enum": ["scratch", "move", "overwrite"],
-          "default": "scratch",
-          "description": "MCUboot swap strategy.  `scratch` (crash-safe, needs scratch partition), `move` (more erases, no scratch), `overwrite` (no rollback)."
+          "description": "MCUboot swap strategy.  `scratch` (crash-safe, needs scratch partition), `move` (more erases, no scratch), `overwrite` (no rollback).  There is no fixed schema default: when omitted, the SDK derives the default from the target's real slot layout -- `scratch` on a stock two-slot AEN target, but a single-slot target (e.g. E1M-AEN801, whose disjoint-slot0 `memory_map:` has no slot1/scratch region, #1069/#1413) defaults to the SDK's stock single-app boot instead. Setting any of the three values explicitly on a single-slot target is a build-time OrchestratorError -- that target has no slot1/scratch partition for any of them to swap into."
         },
         "build_type": {
           "type": "string",
@@ -326,7 +325,7 @@
           "type": "integer",
           "minimum": 60,
           "default": 1800,
-          "description": "How often the device polls the deployment server for updates.  Mender default is 60 s; SDK default is 1800 s (30 min) for battery-friendly nodes."
+          "description": "How often the device polls the deployment server for updates, in SECONDS.  Mender default is 60 s; SDK default is 1800 s (30 min) for battery-friendly nodes.  `provider: hawkbit` converts to CONFIG_HAWKBIT_POLL_INTERVAL, which Zephyr declares in MINUTES with `range 1 43200`, so a hawkbit project's value must be a whole number of minutes between 60 s and 2592000 s -- anything else is refused at emit rather than written out of range."
         },
         "storage": {
           "type": "object",
@@ -435,7 +434,7 @@
         "required": ["name", "source"],
         "properties": {
           "name":   { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$" },
-          "source": { "type": "string", "description": "Path (relative to board.yaml) to the source model. `.tflite` compiles for CPU (TFLM) + Ethos-U (Vela) out of the box; `.onnx` requires a vendor toolchain (DRP-AI / DEEPX) on the build host and is otherwise recorded as a coverage skip." },
+          "source": { "type": "string", "description": "Path (relative to board.yaml) to the source model. `.tflite` compiles for CPU (TFLM) + Ethos-U (Vela) out of the box; `.onnx` requires a vendor toolchain (DRP-AI / DEEPX) on the build host and is otherwise recorded as a coverage skip; `.pte` (an ExecuTorch `torch.export` program) passes through for CPU via scripts/alp_model/adapters/executorch.py -- no on-device ExecuTorch runtime backend exists yet, so the resulting blob is producible but not yet invocable (#1260)." },
           "spec":   { "type": "string", "description": "Optional $ref to an external model spec for large/shared models." },
           "inputs": { "type": "array", "description": "Optional app-side input hints (e.g. layout)." },
           "compile": {

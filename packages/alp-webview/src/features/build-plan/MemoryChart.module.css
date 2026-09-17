@@ -1,0 +1,353 @@
+/* SPDX-License-Identifier: Apache-2.0
+ *
+ * The memory map's paint. Geometry lives in the SVG's viewBox, not here — this
+ * file sets colour, stroke and type, plus the one box rule that keeps the
+ * drawing from being SCALED, which is a type decision wearing a layout rule's
+ * clothes (`.svg`, below). No layout rule can collapse the drawing the way a
+ * flex-basis once collapsed its predecessor. Every colour is a declared token:
+ * the chart sits beside a slice list in the same panel, and a band that
+ * borrowed a raw hex would be the one element that stops agreeing with the
+ * editor theme. */
+
+/* SVG font-size is in viewBox USER UNITS, so a drawing scaled to fit its
+   column scales its type by the same factor. Since Task 8 the `width` and
+   `height` attributes ARE the caller's own measured chart-column width
+   (MemoryRegions.tsx's `ResizeObserver`) plus the fixed `H` — in the STEADY
+   STATE, after that observer's first callback, the box's intrinsic size
+   already equals its rendered size, so an external `max-width` cap would be
+   inert there. It is not inert on the FIRST paint: before that callback
+   fires the drawing renders at `FALLBACK_WIDTH` (MemoryChart.tsx, 578),
+   which can be wider than a narrow column, and a `max-width: 100%` cap
+   during that one frame would scale a 13px address down with the box,
+   below base and invisible to the type-scale gate (the stylesheet would
+   still say `base`). So `max-width: none` stays stated rather than
+   deleted — the box always keeps the width and height the <svg>'s own
+   attributes give it, transient frame included.
+
+   `.svg` is now a direct child of `.mapSide` (MemoryRegions.module.css) — a
+   flex column — and carries no `flex` property of its own; a `flex` value
+   stated here would be inert, since only a flex item reads one. `.mapSide`
+   itself is the flex item that matters: see its own comment for why it
+   still needs `min-width: 0` even though nothing here scrolls any more.
+
+   `overflow: visible` stops the SVG VIEWPORT from clipping content that
+   spills past the viewBox — a band label past the rail's own edge, say.
+   Task 8 removed the ONE thing that used to clip beyond that
+   (`.chartScroll`'s `overflow-x: auto`, MemoryRegions.module.css); nothing
+   wraps this element in a scroll container any more, so ink that spills
+   past the box's own edges now simply overlaps whatever sits beside it in
+   the page, rather than being unreachable. Nothing drawn today reaches
+   either edge — the width docblock in MemoryChart.tsx carries the address
+   width that would. */
+.svg {
+  display: block;
+  max-width: none;
+  overflow: visible;
+  font-family: var(--font-family-mono);
+}
+
+/* Load-bearing, not decorative: this frame IS the rail's boundary, so it
+   takes --border-chart (4.27-5.44:1 against surface-bg/surface-input, both
+   themes), not --border-default (1.45-1.59:1 there — a divider ratio, not a
+   shape ratio). */
+.railFrame {
+  fill: var(--surface-input);
+  stroke: var(--border-chart);
+  stroke-width: 1;
+}
+
+/* Solid, and coloured by what the extent belongs to — its region, its flash
+   device, or its own core. Neighbouring extents in one region share a colour;
+   that is the fact worth seeing at a glance. Provenance (manifest base vs
+   tan-size budget) is carried by the legend and the row list, not by a dash
+   pattern: a chart where every edge is dashed reads as unfinished. */
+.band,
+.budget {
+  stroke-width: 1;
+}
+
+.band[data-selected],
+.budget[data-selected] {
+  stroke-width: 2.5;
+}
+
+/* A base with no size is a line, not a block. */
+.marker {
+  stroke-width: 2;
+}
+
+.band[data-series="1"],
+.budget[data-series="1"] {
+  fill: color-mix(in srgb, var(--chart-1) 30%, transparent);
+  stroke: var(--chart-1);
+}
+
+.marker[data-series="1"] {
+  stroke: var(--chart-1);
+}
+
+.band[data-series="2"],
+.budget[data-series="2"] {
+  fill: color-mix(in srgb, var(--chart-2) 30%, transparent);
+  stroke: var(--chart-2);
+}
+
+.marker[data-series="2"] {
+  stroke: var(--chart-2);
+}
+
+.band[data-series="3"],
+.budget[data-series="3"] {
+  fill: color-mix(in srgb, var(--chart-3) 30%, transparent);
+  stroke: var(--chart-3);
+}
+
+.marker[data-series="3"] {
+  stroke: var(--chart-3);
+}
+
+.band[data-series="4"],
+.budget[data-series="4"] {
+  fill: color-mix(in srgb, var(--chart-4) 30%, transparent);
+  stroke: var(--chart-4);
+}
+
+.marker[data-series="4"] {
+  stroke: var(--chart-4);
+}
+
+.band[data-series="5"],
+.budget[data-series="5"] {
+  fill: color-mix(in srgb, var(--chart-5) 30%, transparent);
+  stroke: var(--chart-5);
+}
+
+.marker[data-series="5"] {
+  stroke: var(--chart-5);
+}
+
+.band[data-series="6"],
+.budget[data-series="6"] {
+  fill: color-mix(in srgb, var(--chart-6) 30%, transparent);
+  stroke: var(--chart-6);
+}
+
+.marker[data-series="6"] {
+  stroke: var(--chart-6);
+}
+
+/* The extent's own name, read straight off the picture — so it takes the
+   panel's reading size, like every other name in this view. THE RAIL IS 148
+   UNITS WIDE (RAIL_W, MemoryChart.tsx). A band label starting at `x + 5` holds
+   ~18 glyphs at base in the 143 units it has to run in, and every name this
+   manifest actually produces is shorter than that. A longer one spills into
+   white space and then overprints its neighbour rather than being cut — that
+   ink is still inside the viewBox and, since Task 8, nothing around this
+   drawing clips it either (`.svg`'s own comment above). The arithmetic and
+   the goldens it was checked against live with the constants the numbers
+   come from: the width docblock in MemoryChart.tsx.
+
+   FILL IS NOT THE SERIES COLOUR, on purpose: it used to be (one rule per
+   `data-series`, matching `.band`/`.marker` below), and every one of the six
+   series colours failed 4.5:1 against its own 30%-opacity band fill in both
+   themes without exception — the label sat in the same hue as the tint
+   behind it, which is close to itself by construction. `--chart-label-fg`
+   (tokens.css) is one token for all six, chosen because it clears 4.5:1
+   against every one of the six composited fills in both themes (6.00:1 the
+   worst case in Dark+, 7.40:1 the worst case in Light+) — the series colour
+   still carries the band's own fill and stroke below, so the chart's colour
+   grouping survives; only the label's own fill moved. */
+.markerLabel,
+.bandLabel {
+  fill: var(--chart-label-fg);
+  font-size: var(--font-size-base);
+}
+
+/* Load-bearing, not decorative: an axis mark IS the information, so a
+   DECLARED boundary (a real span, budget or region edge) takes --text-primary
+   — the strongest ink this panel has — never --border-chart, which now
+   marks only the computed, secondary ticks below. */
+.tick {
+  stroke: var(--text-primary);
+  stroke-width: 1;
+}
+
+/* An address, compared digit by digit against a linker map — reading matter,
+   not chrome, so it is base and the drawing was widened to hold it. The
+   arithmetic, so the widening is not folklore: `formatAddress` pads to eight
+   hex digits, so a label is at least 10 glyphs, and a mono glyph advances
+   ~0.6em, so the run is ~6x the font size. The left labels are anchored `end`
+   at RAIL_X - 8, which is 88 units from the edge of the viewBox: the 88-unit
+   gutter holds a 10-glyph address up to ~14.6px, clearing base (13px). AT LEAST
+   10 is doing work in that sentence: the pad is a floor, not a width, so an
+   address past 2^32 is wider — and past 2^36 it outruns the gutter and bleeds
+   past the panel's own left edge, unclipped (`overflow: visible` on `.svg`
+   above, and nothing wraps it that clips any more). The width docblock in
+   MemoryChart.tsx carries that case and why it does not arise today.
+
+   PRIMARY INK, same reasoning as `.tick`: this labels a DECLARED boundary,
+   never a computed one — see `.tickMinor`/`.tickLabelMinor` below for the
+   secondary-ink pair a power-of-two mark takes instead, so the two can never
+   be mistaken for each other. */
+.tickLabel {
+  fill: var(--text-primary);
+  font-size: var(--font-size-base);
+}
+
+/* A computed, power-of-two mark between declared boundaries — orientation
+   only, never a fact about where anything begins or ends. Secondary ink
+   (the SAME token `.tick`/`.tickLabel` used before this task promoted them)
+   is what keeps a reader from mistaking arithmetic convenience for a
+   declared edge; see MemoryChart.tsx's `interiorTicks` filter for how the
+   two sets are kept from landing close enough to collide. */
+.tickMinor {
+  stroke: var(--border-chart);
+  stroke-width: 1;
+}
+
+.tickLabelMinor {
+  fill: var(--text-secondary);
+  font-size: var(--font-size-base);
+}
+
+/* Which ruler this is: a piecewise one, never a proportional one throughout —
+   see railScale.ts's own header for the trade this makes. Centred on a
+   148-unit rail: "piecewise scale" (15 glyphs) runs ~117 units at base and
+   lands inside its own rail with ~15 to spare each side. */
+.caption {
+  fill: var(--text-secondary);
+  font-size: var(--font-size-base);
+}
+
+.apertureBar {
+  fill: color-mix(in srgb, var(--accent) 16%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+
+.apertureBar[data-selected] {
+  stroke-width: 2.5;
+}
+
+/* The SoM's own region table (#484 phase 2 -> phase 4), as a thin
+ * authority-tier gutter immediately left of the rail — never a frame drawn
+ * BEHIND the bands, which is what this replaced. Decorative, like
+ * `AuthoritySwatch`: the region's exact name and authority class are read
+ * from the table, one interaction away; this strip carries only the
+ * three-tier vocabulary — solid / half-tone / hatch — so tiers can be
+ * scanned at a glance without reading names. The three fills below are held
+ * to the SAME contrast bar `AuthoritySwatch.module.css`'s own swatch meets;
+ * see test/buildPlan.swatchContrast.test.js's gutter arm. */
+.gutter {
+  pointer-events: none;
+}
+
+.gutter[data-tier="yours"] {
+  fill: var(--text-primary);
+}
+
+/* 71%, not a rounder number: the same percentage AuthoritySwatch.module.css's
+   `locked` tier uses, for the same reason — see that file's own comment for
+   the per-theme numbers this clears. Reusing the exact value, not a close
+   copy, is what lets the gutter and the swatch be held to identical numbers
+   rather than two that could drift apart. */
+.gutter[data-tier="locked"] {
+  fill: color-mix(in srgb, var(--text-primary) 71%, transparent);
+}
+
+/* A hatch, via the <pattern> MemoryChart.tsx defines once in <defs> — SVG
+   `fill` takes a paint reference, never a CSS `repeating-linear-gradient()`,
+   so the pattern itself lives in TSX and only its stroke's colour lives
+   here, in `.hatchStroke` below. The id is a literal the two files must
+   agree on by hand; see MemoryChart.tsx's HATCH_PATTERN_ID comment. */
+.gutter[data-tier="unproven"] {
+  fill: url(#memory-authority-hatch);
+}
+
+/* GROUND-COLOURED, not accent. `--border-focus` (== --accent) measured
+   1.85:1 (Light+) to 3.00:1 (2026 Dark) against the "yours" fill it sits on
+   — under the 3:1 floor this task holds the gutter's own three fills to,
+   in four of five covered themes. `--surface-bg` clears it in every one: it
+   is the SAME comparison the gutter-vs-ground test already makes for every
+   tier (contrast is symmetric — ground-vs-fill and fill-vs-ground are one
+   number), just read from the other side. See
+   test/buildPlan.swatchContrast.test.js's "selection ring vs every tier's
+   own fill" arm, which asserts this directly rather than trusting the
+   inference. */
+.gutter[data-selected] {
+  outline: 1.5px solid var(--surface-bg);
+  outline-offset: -1px;
+}
+
+/* The hatch pattern's own stroke, full-strength `--text-primary` — the same
+   ink `AuthoritySwatch.module.css`'s `unproven` tier strokes at, so the two
+   hatches read as the same tier rather than two different ones. */
+.hatchStroke {
+  fill: var(--text-primary);
+}
+
+/* A run neither a span nor a region occupies, compressed to a fixed height
+   rather than drawn to scale (railScale.ts). Secondary ink: a compressed run
+   is orientation, not a fact about where anything begins or ends, the same
+   distinction `.tickMinor` draws for a computed axis mark. */
+.gapZigzag {
+  fill: none;
+  stroke: var(--border-chart);
+  stroke-width: 1.5;
+}
+
+.gapLabel {
+  fill: var(--text-secondary);
+  font-size: var(--font-size-base);
+}
+
+.hit {
+  cursor: pointer;
+}
+
+/* The pointer catcher for the live address readout — an INVISIBLE HIT AREA,
+   stated as one.
+
+   It used to be `fill: transparent` and nothing else. `transparent` is
+   `rgba(0, 0, 0, 0)`, which under the SVG default `pointer-events:
+   visiblePainted` is still PAINTED — so this rect, emitted last and covering
+   the whole rail, hit-tested above every `.hit` band and swallowed every
+   click meant for one. The chart's only interactive affordance was
+   unreachable by any input, in a browser, while advertising `cursor:
+   pointer`.
+
+   `fill: none` paints nothing at all and `pointer-events: all` says outright
+   that this element is here to be hit regardless — the canonical invisible
+   hit area, and an explicit claim rather than a side effect of an alpha
+   value. The rect also moved BELOW the bands in document order
+   (MemoryChart.tsx), which is what actually lets a band win the click; this
+   declaration is what keeps the intent readable and auditable.
+
+   An invisible paint with NO `pointer-events` declaration at all is the
+   shape that caused this, and test/buildPlan.pointerEvents.test.js refuses
+   it. */
+.hover {
+  fill: none;
+  pointer-events: all;
+}
+
+.hoverLine {
+  stroke: var(--text-secondary);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+
+/* The live address readout: the number the reader came for. It is anchored
+   `end` at `x + width - 5` with 148 units of rail behind it, and a 10-glyph
+   address at base runs ~78 of them, so base fits with room to spare. */
+.hoverLabel {
+  fill: var(--text-primary);
+  font-size: var(--font-size-base);
+  paint-order: stroke;
+  stroke: var(--surface-bg);
+  /* The halo has to grow with the glyphs it lifts off the bands behind them,
+     so it is stated in em, not px: 0.3em scales the stroke with the text at
+     whatever size register it is read in, rather than binding it to one
+     fixed px value. */
+  stroke-width: 0.3em;
+}
