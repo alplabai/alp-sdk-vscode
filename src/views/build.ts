@@ -46,6 +46,14 @@ const BUILD_ACTIONS: Array<{
     command: "alp.westAlpFlash",
   },
   {
+    // The observe step (#552). Sits after Flash because that is the order of
+    // the loop: a console is what you open once something is on the board.
+    label: "Serial monitor",
+    description: "open a serial console to the board",
+    icon: "terminal",
+    command: "alp.openSerialMonitor",
+  },
+  {
     label: "Run (native_sim)",
     description: "simulate under native_sim",
     icon: "debug-start",
