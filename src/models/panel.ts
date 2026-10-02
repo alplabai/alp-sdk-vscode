@@ -45,6 +45,8 @@
 // eight verb strings below stay hardcoded because the verb IS the call site's
 // identity; what is no longer hardcoded is the verdict about it.
 
+import * as cp from "node:child_process";
+import * as path from "node:path";
 import * as vscode from "vscode";
 import { unsupportedModelSubcommand } from "../alpCli/pinnedSurface";
 import { SUPPORTED_CLI_VERSION } from "../alpCli/service";
@@ -59,8 +61,14 @@ import { notifyAsync, reportError } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { log as logChannel } from "../util";
 import {
+  buildPowerMeasureArgs,
+  checkPowerSettings,
   cliFailureMessage,
+  powerTimeoutMs,
   toModelAbResult,
+  toPowerResult,
+  type PowerOutcome,
+  type RawPowerSettings,
   toModelFitData,
   toModelPrepResult,
   toModelRunResult,
@@ -76,6 +84,69 @@ const PANEL_TITLE = "Alp Models";
 // envelope timeout (spawnAlpAsync's ALP_SPAWN_TIMEOUT_MS) — killing it there
 // would falsely report "Build failed" and orphan the in-progress compile.
 const MODEL_BUILD_TIMEOUT_MS = 30 * 60 * 1000;
+
+// Replaying a saved capture is pure analysis, no probe: a minute is plenty.
+const POWER_REPLAY_TIMEOUT_MS = 60 * 1000;
+// A long capture's JSON envelope is small, but be generous about stdout.
+const POWER_MAX_BUFFER = 16 * 1024 * 1024;
+
+/** Raw `alpSdk.power.*` values, validated by `checkPowerSettings`. */
+function readRawPowerSettings(): RawPowerSettings {
+  const c = vscode.workspace.getConfiguration("alpSdk.power");
+  return {
+    monitors: c.get<unknown>("monitors", []),
+    marker: c.get<unknown>("marker", ""),
+    seconds: c.get<unknown>("seconds", 10),
+    idleSeconds: c.get<unknown>("idleSeconds", 3),
+    periodUs: c.get<unknown>("periodUs", 500),
+  };
+}
+
+/** Spawn the SDK's `alp_power.py` and hand back the raw stdout. A non-zero
+ *  exit is NOT an error here: the CLI reports failures as a JSON envelope
+ *  with exit 1, which `toPowerResult` classifies. */
+function runAlpPower(
+  python: string,
+  args: string[],
+  cwd: string,
+  timeoutMs: number,
+  onChild: (child: cp.ChildProcess) => void,
+): Promise<PowerOutcome> {
+  return new Promise((resolve) => {
+    const child = cp.execFile(
+      python,
+      args,
+      { cwd, timeout: timeoutMs, maxBuffer: POWER_MAX_BUFFER },
+      (err, stdout, stderr) => {
+        const e = err as
+          | (NodeJS.ErrnoException & { killed?: boolean; code?: unknown })
+          | null;
+        if (e && e.killed) {
+          resolve({
+            exitCode: -1,
+            stdout: String(stdout ?? ""),
+            stderr: String(stderr ?? ""),
+            message: `Timed out after ${Math.round(timeoutMs / 1000)} s.`,
+          });
+        } else if (e && typeof e.code !== "number") {
+          resolve({
+            exitCode: -1,
+            stdout: String(stdout ?? ""),
+            stderr: String(stderr ?? ""),
+            message: `Could not run ${python}: ${e.message}`,
+          });
+        } else {
+          resolve({
+            exitCode: typeof e?.code === "number" ? e.code : 0,
+            stdout: String(stdout ?? ""),
+            stderr: String(stderr ?? ""),
+          });
+        }
+      },
+    );
+    onChild(child);
+  });
+}
 
 // Pure envelope shaping (`toModelsData`) lives in ./service.ts — no `vscode`
 // there, so it's unit-testable directly (test/models.service.test.js) without
@@ -133,7 +204,11 @@ class ModelsPanel {
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
   }
 
+  private powerProc: cp.ChildProcess | undefined;
+  private disposed = false;
+
   private post(msg: ExtToWebviewMessage): void {
+    if (this.disposed) return;
     void this.panel.webview.postMessage(msg);
   }
 
@@ -207,6 +282,107 @@ class ModelsPanel {
     this.post(toModelAbResult(unsupportedModelSubcommand("ab")));
   }
 
+  /** Resolve interpreter + `alp_power.py`, or post an actionable refusal and
+   *  return undefined. Nothing is spawned and no "started" ack goes out. */
+  private resolvePower():
+    | { python: string; script: string; cwd: string }
+    | undefined {
+    const ctx = collectProjectContext();
+    if (!ctx.sdkRoot) {
+      this.post({
+        type: "modelPowerResult",
+        ok: false,
+        issues: [
+          {
+            code: "power.no-sdk",
+            severity: "error",
+            message:
+              "alp-sdk not found. Set `alpSdk.path` to your alp-sdk checkout.",
+          },
+        ],
+      });
+      return undefined;
+    }
+    return {
+      python: ctx.pythonBinary,
+      script: path.join(ctx.sdkRoot, "scripts", "alp_power.py"),
+      cwd: ctx.sdkRoot,
+    };
+  }
+
+  /** Per-model power over the debug probe (`alp_power.py measure`). The
+   *  analysis lives in the SDK CLI; this shells it and reshapes the envelope. */
+  private powerRefusal(code: string, message: string): void {
+    this.post({
+      type: "modelPowerResult",
+      ok: false,
+      issues: [{ code, severity: "error", message }],
+    });
+  }
+
+  /** Run one power process under the in-flight guard. The guard lives here,
+   *  not in the webview, so it survives a webview reload. */
+  private async runPower(
+    r: { python: string; cwd: string },
+    args: string[],
+    timeoutMs: number,
+    label: string,
+  ): Promise<void> {
+    this.post({ type: "modelPowerStarted" });
+    const outcome = await runAlpPower(r.python, args, r.cwd, timeoutMs, (c) => {
+      this.powerProc = c;
+    });
+    this.powerProc = undefined;
+    logChannel(`[model-power] ${label} exit=${outcome.exitCode}`);
+    this.post(toPowerResult(outcome));
+  }
+
+  private powerBusy(): boolean {
+    if (!this.powerProc) return false;
+    this.powerRefusal("power.busy", "Measurement already running.");
+    return true;
+  }
+
+  /** Per-model power over the debug probe (`alp_power.py measure`). The
+   *  analysis lives in the SDK CLI; this shells it and reshapes the envelope. */
+  private async measurePower(): Promise<void> {
+    if (this.powerBusy()) return;
+    const checked = checkPowerSettings(readRawPowerSettings());
+    if ("error" in checked) {
+      this.powerRefusal("power.bad-settings", checked.error);
+      return;
+    }
+    const settings = checked.settings;
+    const r = this.resolvePower();
+    if (!r) return;
+    await this.runPower(
+      r,
+      buildPowerMeasureArgs(r.script, settings),
+      powerTimeoutMs(settings),
+      "measure",
+    );
+  }
+
+  /** Re-analyse a saved capture (`alp_power.py replay`) — no probe needed. */
+  private async loadPowerCapture(): Promise<void> {
+    if (this.powerBusy()) return;
+    const picked = await vscode.window.showOpenDialog({
+      canSelectMany: false,
+      openLabel: "Load power capture",
+      filters: { "Power capture": ["jsonl"] },
+    });
+    if (!picked || picked.length === 0) return; // cancelled: post nothing
+    if (this.powerBusy()) return; // re-check: the dialog was awaited
+    const r = this.resolvePower();
+    if (!r) return;
+    await this.runPower(
+      r,
+      [r.script, "replay", picked[0].fsPath, "--format", "json"],
+      POWER_REPLAY_TIMEOUT_MS,
+      "replay",
+    );
+  }
+
   private onMessage(msg: WebviewToExtMessage): void {
     switch (msg.type) {
       case "ready":
@@ -227,6 +403,12 @@ class ModelsPanel {
         break;
       case "abModels":
         void this.abModels();
+        break;
+      case "measurePower":
+        void this.measurePower();
+        break;
+      case "loadPowerCapture":
+        void this.loadPowerCapture();
         break;
       case "requestZoo":
         void this.refreshZoo();
@@ -365,6 +547,9 @@ class ModelsPanel {
   }
 
   private dispose(): void {
+    this.disposed = true;
+    // SIGTERM: the SDK stops the probe stream on it.
+    this.powerProc?.kill("SIGTERM");
     ModelsPanel.current = undefined;
     this.panel.dispose();
     while (this.disposables.length) this.disposables.pop()?.dispose();

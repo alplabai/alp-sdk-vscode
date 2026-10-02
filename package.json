@@ -508,6 +508,43 @@
           "scope": "machine-overridable",
           "description": "Python interpreter to use for the loader + validator.  Defaults to `python3` (POSIX) / `python` (Windows)."
         },
+        "alpSdk.power.monitors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "machine-overridable",
+          "markdownDescription": "Power monitors for **Measure power (probe)** in the Models panel. One entry per rail, in the exact form the SDK's `alp_power.py --monitor` takes: `NAME=ina236@0x4A,shunt=0.02[,range=fine|wide]` (NAME is a label, `0x4A` the monitor's I2C address, `shunt` the shunt resistor in ohms). Empty means nothing can be measured."
+        },
+        "alpSdk.power.marker": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "Name of the probe GPIO pin (`--marker`) wired to a GPIO the firmware drives high for the duration of each inference. The probe uses it to split idle from active power and count inferences. Empty: no marker, so idle/active figures cannot be separated."
+        },
+        "alpSdk.power.seconds": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "scope": "machine-overridable",
+          "markdownDescription": "Length of the ACTIVE capture window in seconds (`--seconds`), during which the firmware runs inferences. An idle baseline (`#alpSdk.power.idleSeconds#`) is captured first, so the total capture is idle + active seconds; the extension waits that plus 30 s before giving up."
+        },
+        "alpSdk.power.idleSeconds": {
+          "type": "number",
+          "default": 3,
+          "minimum": 0,
+          "scope": "machine-overridable",
+          "markdownDescription": "Extra idle baseline captured BEFORE the active window, in seconds (`--idle-seconds`), with no inference running. Total capture time is this plus `#alpSdk.power.seconds#`."
+        },
+        "alpSdk.power.periodUs": {
+          "type": "integer",
+          "default": 500,
+          "minimum": 200,
+          "maximum": 10000000,
+          "scope": "machine-overridable",
+          "markdownDescription": "Sampling period in whole microseconds, 200 to 10000000 (`--period-us`). Smaller is finer-grained but may drop samples (reported as `dropped`) on a slow I2C bus."
+        },
         "alpSdk.boardYamlPath": {
           "type": "string",
           "default": "board.yaml",

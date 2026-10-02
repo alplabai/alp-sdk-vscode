@@ -10,6 +10,8 @@ import type {
   ModelAbResultMessage,
   ModelEnergyMeasurement,
   ModelFitDataMessage,
+  ModelPowerData,
+  ModelPowerResultMessage,
   ModelPrepResultMessage,
   ModelRunResultMessage,
   ModelsDataMessage,
@@ -327,5 +329,268 @@ export function toZooAddResult(outcome: CliOutcome): ZooAddResultMessage {
     ok: true,
     added: data.added,
     issues: env.issues,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Power measurement (`scripts/alp_power.py measure|replay --format json`)
+// ---------------------------------------------------------------------------
+
+/** Raw result of spawning `alp_power.py`: what the adapter saw, unparsed.
+ *  `message` carries a spawn-level cause (ENOENT, timeout) when there is no
+ *  usable stdout. */
+export interface PowerOutcome {
+  exitCode: number;
+  stdout: string;
+  stderr?: string;
+  message?: string;
+}
+
+/** Last `n` non-empty lines of a process's stderr (tracebacks, argparse). */
+export function stderrTail(stderr: string | undefined, n = 20): string {
+  return (stderr ?? "")
+    .split(/\r?\n/)
+    .filter((l) => l.trim() !== "")
+    .slice(-n)
+    .join("\n");
+}
+
+export interface PowerSettings {
+  monitors: string[];
+  marker: string;
+  seconds: number;
+  idleSeconds: number;
+  periodUs: number;
+}
+
+/** Raw `alpSdk.power.*` values as read from configuration (untrusted). */
+export interface RawPowerSettings {
+  monitors: unknown;
+  marker: unknown;
+  seconds: unknown;
+  idleSeconds: unknown;
+  periodUs: unknown;
+}
+
+export const POWER_PERIOD_US_MIN = 200;
+export const POWER_PERIOD_US_MAX = 10_000_000;
+
+/** Validate the settings before anything is spawned. Returns the first
+ *  problem as a message instead of silently substituting a default. */
+export function checkPowerSettings(
+  raw: RawPowerSettings,
+): { settings: PowerSettings } | { error: string } {
+  const monitors = (Array.isArray(raw.monitors) ? raw.monitors : [])
+    .map((m) => String(m).trim())
+    .filter((m) => m !== "");
+  if (monitors.length === 0) {
+    return {
+      error:
+        "No power monitors configured. Set `alpSdk.power.monitors` " +
+        "(e.g. NAME=ina236@0x4A,shunt=0.02) in Settings, then retry.",
+    };
+  }
+  const { seconds, idleSeconds, periodUs } = raw;
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 1) {
+    return { error: "`alpSdk.power.seconds` must be a number >= 1." };
+  }
+  if (
+    typeof idleSeconds !== "number" ||
+    !Number.isFinite(idleSeconds) ||
+    idleSeconds < 0
+  ) {
+    return { error: "`alpSdk.power.idleSeconds` must be a number >= 0." };
+  }
+  if (
+    typeof periodUs !== "number" ||
+    !Number.isInteger(periodUs) ||
+    periodUs < POWER_PERIOD_US_MIN ||
+    periodUs > POWER_PERIOD_US_MAX
+  ) {
+    return {
+      error:
+        "`alpSdk.power.periodUs` must be an integer between " +
+        `${POWER_PERIOD_US_MIN} and ${POWER_PERIOD_US_MAX}.`,
+    };
+  }
+  return {
+    settings: {
+      monitors,
+      marker: typeof raw.marker === "string" ? raw.marker.trim() : "",
+      seconds,
+      idleSeconds,
+      periodUs,
+    },
+  };
+}
+
+/** Margin on top of the capture window for probe handshake + analysis. */
+const POWER_TIMEOUT_MARGIN_MS = 30_000;
+
+export function powerTimeoutMs(s: PowerSettings): number {
+  return (s.seconds + s.idleSeconds) * 1000 + POWER_TIMEOUT_MARGIN_MS;
+}
+
+/** Argv (after the interpreter) for `alp_power.py measure`. */
+export function buildPowerMeasureArgs(
+  script: string,
+  s: PowerSettings,
+): string[] {
+  const args = [script, "measure"];
+  for (const m of s.monitors) args.push("--monitor", m);
+  if (s.marker) args.push("--marker", s.marker);
+  args.push(
+    "--seconds",
+    String(s.seconds),
+    "--idle-seconds",
+    String(s.idleSeconds),
+    "--period-us",
+    String(s.periodUs),
+    "--format",
+    "json",
+  );
+  return args;
+}
+
+function powerFailure(
+  code: string,
+  message: string,
+  extra: AlpIssue[] = [],
+): ModelPowerResultMessage {
+  return {
+    type: "modelPowerResult",
+    ok: false,
+    issues: [...extra, { code, severity: "error", message }],
+  };
+}
+
+function shapeIssues(raw: unknown): AlpIssue[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((i): AlpIssue[] => {
+    if (i === null || typeof i !== "object") return [];
+    const r = i as Record<string, unknown>;
+    if (typeof r.message !== "string") return [];
+    const sev = r.severity;
+    return [
+      {
+        code: typeof r.code === "string" ? r.code : "power.issue",
+        severity:
+          sev === "error" || sev === "warning" || sev === "info"
+            ? sev
+            : "warning",
+        message: r.message,
+      },
+    ];
+  });
+}
+
+const numOrNull = (v: unknown): boolean =>
+  v === null || (typeof v === "number" && Number.isFinite(v));
+const isNum = (v: unknown): boolean =>
+  typeof v === "number" && Number.isFinite(v);
+
+/** First structural problem in an envelope's `data`, or undefined if the
+ *  webview can render it. Null-or-number fields stay null (never coerced). */
+function powerDataShapeError(data: unknown): string | undefined {
+  const d = data as Record<string, unknown>;
+  if (d.source !== "probe" && d.source !== "replay") return "bad source";
+  for (const k of ["period_us", "duration_s", "inferences", "dropped"]) {
+    if (!isNum(d[k])) return `${k} is not a number`;
+  }
+  const lat = d.latency_us as Record<string, unknown> | null;
+  if (lat === null || typeof lat !== "object" || Array.isArray(lat)) {
+    return "latency_us is not an object";
+  }
+  if (!numOrNull(lat.median) || !numOrNull(lat.p90)) {
+    return "latency_us values must be numbers or null";
+  }
+  if (!Array.isArray(d.rails)) return "rails is not an array";
+  for (const r of d.rails as unknown[]) {
+    const rr = r as Record<string, unknown> | null;
+    if (rr === null || typeof rr !== "object") return "a rail is not an object";
+    for (const k of ["name", "part", "addr"]) {
+      if (typeof rr[k] !== "string") return `rail ${k} is not a string`;
+    }
+    for (const k of [
+      "avg_idle_mw",
+      "avg_active_mw",
+      "energy_per_inference_mj",
+      "gross_energy_per_inference_mj",
+    ]) {
+      if (!numOrNull(rr[k])) return `rail ${k} must be a number or null`;
+    }
+    if (!isNum(rr.samples)) return "rail samples is not a number";
+  }
+  if (d.note !== undefined && typeof d.note !== "string") {
+    return "note is not a string";
+  }
+  if (
+    d.probe !== null &&
+    d.probe !== undefined &&
+    typeof d.probe !== "object"
+  ) {
+    return "probe is not an object";
+  }
+  return undefined;
+}
+
+/**
+ * Shape an `alp_power.py` run into the webview's power-result message. Null
+ * figures in `data` are passed through untouched (the view renders "n/a");
+ * nothing is coerced to 0. A missing outcome, unparsable stdout, or an
+ * envelope without a boolean `ok` all become an error issue — never silence.
+ */
+export function toPowerResult(
+  outcome: PowerOutcome | null,
+): ModelPowerResultMessage {
+  if (outcome === null) {
+    return powerFailure("power.cli-error", "Power measurement did not run.");
+  }
+  const tail = stderrTail(outcome.stderr);
+  const cause =
+    (outcome.message ?? `alp_power.py exited with code ${outcome.exitCode}.`) +
+    (tail ? `\nstderr (last lines):\n${tail}` : "");
+  let env: unknown;
+  try {
+    env = JSON.parse(outcome.stdout);
+  } catch {
+    return powerFailure(
+      "power.malformed-output",
+      `alp_power.py produced no JSON envelope. ${cause}`,
+    );
+  }
+  const e = env as { ok?: unknown; data?: unknown; issues?: unknown } | null;
+  if (e === null || typeof e !== "object" || typeof e.ok !== "boolean") {
+    return powerFailure(
+      "power.malformed-output",
+      `alp_power.py output is not a valid envelope. ${cause}`,
+    );
+  }
+  const issues = shapeIssues(e.issues);
+  if (!e.ok) {
+    return issues.length > 0
+      ? { type: "modelPowerResult", ok: false, issues }
+      : powerFailure("power.failed", `Power measurement failed. ${cause}`);
+  }
+  if (e.data === null || typeof e.data !== "object") {
+    return powerFailure(
+      "power.malformed-output",
+      "alp_power.py reported success without data.",
+      issues,
+    );
+  }
+  const shapeError = powerDataShapeError(e.data);
+  if (shapeError) {
+    return powerFailure(
+      "power.malformed-output",
+      `alp_power.py data is malformed: ${shapeError}`,
+      issues,
+    );
+  }
+  return {
+    type: "modelPowerResult",
+    ok: true,
+    power: e.data as ModelPowerData,
+    issues,
   };
 }

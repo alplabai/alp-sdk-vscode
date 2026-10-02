@@ -650,6 +650,47 @@ export interface ModelEnergyMeasurement {
   spread_mj: number | null;
 }
 
+/** One monitored rail in a power measurement (`alp_power.py` envelope). Every
+ *  figure is `null` when the CLI could not derive it — never coerced to 0. */
+export interface ModelPowerRail {
+  name: string;
+  part: string;
+  addr: string;
+  avg_idle_mw: number | null;
+  avg_active_mw: number | null;
+  energy_per_inference_mj: number | null;
+  gross_energy_per_inference_mj: number | null;
+  samples: number;
+}
+
+/** `data` of an `alp_power.py measure|replay --format json` envelope. */
+export interface ModelPowerData {
+  source: "probe" | "replay";
+  probe: { protocol: number } | null;
+  period_us: number;
+  duration_s: number;
+  inferences: number;
+  latency_us: { median: number | null; p90: number | null };
+  dropped: number;
+  rails: ModelPowerRail[];
+  note: string;
+}
+
+/** Ack that a power measurement/replay actually started (settings validated,
+ *  capture file confirmed) — posted only then, so a cancelled dialog or a
+ *  refusal never sticks the button. */
+export interface ModelPowerStartedMessage {
+  type: "modelPowerStarted";
+}
+
+/** Result of `alp_power.py measure` (probe) or `replay` (capture file). */
+export interface ModelPowerResultMessage {
+  type: "modelPowerResult";
+  ok: boolean;
+  power?: ModelPowerData;
+  issues: { code: string; severity: string; message: string }[];
+}
+
 /** Result of `tan model run` — a host reference (CPU) inference measurement. */
 export interface ModelRunResultMessage {
   type: "modelRunResult";
@@ -1077,6 +1118,8 @@ export type ExtToWebviewMessage =
   | ModelPrepStartedMessage
   | ModelPrepResultMessage
   | ModelMeasureStartedMessage
+  | ModelPowerStartedMessage
+  | ModelPowerResultMessage
   | ModelRunResultMessage
   | ModelAbResultMessage
   | ZooDataMessage
@@ -1118,6 +1161,18 @@ export interface RunModelMessage {
 export interface AbModelsMessage {
   type: "abModels";
 }
+/** Ask the extension to measure per-model power with the debug probe
+ *  (settings `alpSdk.power.*`). */
+export interface MeasurePowerMessage {
+  type: "measurePower";
+}
+
+/** Ask the extension to replay a saved power capture (.jsonl; prompts for the
+ *  file). */
+export interface LoadPowerCaptureMessage {
+  type: "loadPowerCapture";
+}
+
 export interface RequestZooMessage {
   type: "requestZoo";
 }
@@ -1292,5 +1347,7 @@ export type WebviewToExtMessage =
   | PrepModelMessage
   | RunModelMessage
   | AbModelsMessage
+  | MeasurePowerMessage
+  | LoadPowerCaptureMessage
   | RequestZooMessage
   | AddFromZooMessage;

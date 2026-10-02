@@ -286,6 +286,33 @@ pin, which is why no `tan model` recipe is printed with it.
 > the EVK power-topology and the Yocto NPU runtimes. The static fit check is a
 > conservative estimate, confirmed on silicon later.
 
+### Per-model power measurement (probe)
+
+The panel's **Measure power (probe)** and **Load power capture…** buttons shell
+the SDK's `scripts/alp_power.py` (found under `alpSdk.path`, run with
+`alpSdk.pythonPath`) and render its JSON envelope: a per-rail table (idle and
+active mW, mJ per inference, gross mJ per inference), the inference count,
+latency median/p90, dropped samples and the CLI's own warnings. A figure the
+CLI could not derive shows as `n/a`, never 0. These two actions do not use
+`tan`, so they are not gated by the `tan model` capability gap above.
+
+- **Hardware.** Measuring needs the RP2040 on-board debug probe (present on the
+  next EVK revision) connected over USB. **Load power capture…** replays a saved
+  `.jsonl` capture and needs no probe.
+- **Marker wiring.** Wire a GPIO that your firmware drives high for the duration
+  of each inference to the probe's marker input, and set `alpSdk.power.marker` to
+  that pin's name. The probe uses it to split idle from active power and to count
+  inferences; without it only the idle baseline is meaningful.
+- **Settings.** `alpSdk.power.monitors` (required; one
+  `NAME=ina236@0x4A,shunt=0.02[,range=fine|wide]` string per rail),
+  `alpSdk.power.marker`, `alpSdk.power.seconds` (10), `alpSdk.power.idleSeconds` (3),
+  `alpSdk.power.periodUs` (500, integer 200 to 10000000). `seconds` is the ACTIVE
+  window; `idleSeconds` is an extra idle baseline captured first, so the total
+  capture is idle + active. With no monitors configured the button shows an
+  error naming the setting and starts nothing.
+- **Status.** Hardware validation of this flow is pending; treat results as
+  unverified until it completes.
+
 ## 8. Troubleshooting Quick Checks
 
 1. Confirm SDK path resolves to a folder containing scripts/alp_project.py.

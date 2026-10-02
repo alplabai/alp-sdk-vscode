@@ -4,6 +4,7 @@ import { Button, EmptyState, Icon, Spinner } from "../../shared/ui";
 import type { ModelsDataMessage } from "../../types";
 import { postMessage } from "../../vscode";
 import styles from "./ModelsView.module.css";
+import { PowerReport } from "./PowerReport";
 import type { BackendCoverage, ModelCoverage } from "./coverage";
 import {
   STATIC_SCREEN_CAVEAT,
@@ -491,6 +492,12 @@ export function ModelsView() {
     abIssues,
     runModel,
     abModels,
+    powerMeasuring,
+    powerOk,
+    power,
+    powerIssues,
+    measurePower,
+    loadPowerCapture,
     zoo,
     zooOk,
     zooIssues,
@@ -539,6 +546,18 @@ export function ModelsView() {
             <Button onClick={abModels} disabled={measuring || cliUnsupported}>
               A/B compare
             </Button>
+            {/* Power runs a SDK Python script, not tan, so the tan capability
+                gap (cliUnsupported) does not disable these. */}
+            <Button onClick={measurePower} disabled={powerMeasuring}>
+              {powerMeasuring ? "Measuring…" : "Measure power (probe)"}
+            </Button>
+            <Button
+              appearance="secondary"
+              onClick={loadPowerCapture}
+              disabled={powerMeasuring}
+            >
+              Load power capture…
+            </Button>
             <Button appearance="secondary" onClick={refresh}>
               Refresh
             </Button>
@@ -567,6 +586,14 @@ export function ModelsView() {
       )}
       {(abResult || !abOk) && !cliUnsupported && (
         <AbReport ok={abOk} ab={abResult} issues={abIssues} />
+      )}
+      {powerMeasuring && (
+        <p className={styles.hint} role="status">
+          <Spinner /> Measuring power… keep the board running the model.
+        </p>
+      )}
+      {!powerMeasuring && (power || !powerOk) && (
+        <PowerReport ok={powerOk} power={power} issues={powerIssues} />
       )}
 
       <section className={styles.section} aria-labelledby="models-title">
