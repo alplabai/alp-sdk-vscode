@@ -300,13 +300,13 @@ CLI could not derive shows as `n/a`, never 0. These two actions do not use
   next EVK revision) connected over USB. **Load power capture…** replays a saved
   `.jsonl` capture and needs no probe.
 - **Marker wiring.** Wire a GPIO that your firmware drives high for the duration
-  of each inference to the probe's marker input, and set `alp.power.marker` to
+  of each inference to the probe's marker input, and set `alpSdk.power.marker` to
   that pin's name. The probe uses it to split idle from active power and to count
   inferences; without it only the idle baseline is meaningful.
-- **Settings.** `alp.power.monitors` (required; one
+- **Settings.** `alpSdk.power.monitors` (required; one
   `NAME=ina236@0x4A,shunt=0.02[,range=fine|wide]` string per rail),
-  `alp.power.marker`, `alp.power.seconds` (10), `alp.power.idleSeconds` (3),
-  `alp.power.periodUs` (500). With no monitors configured the button shows an
+  `alpSdk.power.marker`, `alpSdk.power.seconds` (10), `alpSdk.power.idleSeconds` (3),
+  `alpSdk.power.periodUs` (500). With no monitors configured the button shows an
   error naming the setting and starts nothing.
 - **Status.** Hardware validation of this flow is pending; treat results as
   unverified until it completes.

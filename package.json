@@ -508,7 +508,7 @@
           "scope": "machine-overridable",
           "description": "Python interpreter to use for the loader + validator.  Defaults to `python3` (POSIX) / `python` (Windows)."
         },
-        "alp.power.monitors": {
+        "alpSdk.power.monitors": {
           "type": "array",
           "items": {
             "type": "string"
@@ -517,27 +517,27 @@
           "scope": "machine-overridable",
           "markdownDescription": "Power monitors for **Measure power (probe)** in the Models panel. One entry per rail, in the exact form the SDK's `alp_power.py --monitor` takes: `NAME=ina236@0x4A,shunt=0.02[,range=fine|wide]` (NAME is a label, `0x4A` the monitor's I2C address, `shunt` the shunt resistor in ohms). Empty means nothing can be measured."
         },
-        "alp.power.marker": {
+        "alpSdk.power.marker": {
           "type": "string",
           "default": "",
           "scope": "machine-overridable",
           "markdownDescription": "Name of the probe GPIO pin (`--marker`) wired to a GPIO the firmware drives high for the duration of each inference. The probe uses it to split idle from active power and count inferences. Empty: no marker, so idle/active figures cannot be separated."
         },
-        "alp.power.seconds": {
+        "alpSdk.power.seconds": {
           "type": "number",
           "default": 10,
           "minimum": 1,
           "scope": "machine-overridable",
-          "markdownDescription": "Length of the active capture window in seconds (`--seconds`). The extension waits this plus `#alp.power.idleSeconds#` plus 30 s before giving up."
+          "markdownDescription": "Length of the active capture window in seconds (`--seconds`). The extension waits this plus `#alpSdk.power.idleSeconds#` plus 30 s before giving up."
         },
-        "alp.power.idleSeconds": {
+        "alpSdk.power.idleSeconds": {
           "type": "number",
           "default": 3,
           "minimum": 0,
           "scope": "machine-overridable",
           "markdownDescription": "Length of the idle baseline capture in seconds (`--idle-seconds`), taken with no inference running."
         },
-        "alp.power.periodUs": {
+        "alpSdk.power.periodUs": {
           "type": "number",
           "default": 500,
           "minimum": 1,

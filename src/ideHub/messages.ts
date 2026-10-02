@@ -767,7 +767,7 @@ export interface AbModelsMessage {
 }
 
 /** Ask the extension to measure per-model power with the debug probe
- *  (settings `alp.power.*`). */
+ *  (settings `alpSdk.power.*`). */
 export interface MeasurePowerMessage {
   type: "measurePower";
 }

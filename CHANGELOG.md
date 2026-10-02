@@ -7,8 +7,8 @@
   `scripts/alp_power.py` and render a per-rail table (idle/active mW, mJ per
   inference), inference count, latency median/p90, dropped samples and the
   CLI's issues, with `n/a` for any figure the CLI could not derive. Configured
-  by the new `alp.power.monitors`, `alp.power.marker`, `alp.power.seconds`,
-  `alp.power.idleSeconds` and `alp.power.periodUs` settings. Hardware validation
+  by the new `alpSdk.power.monitors`, `alpSdk.power.marker`, `alpSdk.power.seconds`,
+  `alpSdk.power.idleSeconds` and `alpSdk.power.periodUs` settings. Hardware validation
   is pending.
 
 - **The Build Plan panel's Memory tab is now one address-ordered table and

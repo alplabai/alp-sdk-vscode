@@ -89,10 +89,10 @@ const POWER_REPLAY_TIMEOUT_MS = 60 * 1000;
 // A long capture's JSON envelope is small, but be generous about stdout.
 const POWER_MAX_BUFFER = 16 * 1024 * 1024;
 
-/** `alp.power.*` settings, with out-of-range numbers falling back to the
+/** `alpSdk.power.*` settings, with out-of-range numbers falling back to the
  *  documented defaults rather than reaching the CLI as garbage. */
 function readPowerSettings(): PowerSettings {
-  const c = vscode.workspace.getConfiguration("alp.power");
+  const c = vscode.workspace.getConfiguration("alpSdk.power");
   const num = (key: string, dflt: number, min: number): number => {
     const v = c.get<number>(key, dflt);
     return Number.isFinite(v) && v >= min ? v : dflt;
@@ -321,7 +321,7 @@ class ModelsPanel {
             code: "power.no-monitors",
             severity: "error",
             message:
-              "No power monitors configured. Set `alp.power.monitors` " +
+              "No power monitors configured. Set `alpSdk.power.monitors` " +
               "(e.g. NAME=ina236@0x4A,shunt=0.02) in Settings, then retry.",
           },
         ],
