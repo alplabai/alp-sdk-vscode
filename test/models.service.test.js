@@ -850,3 +850,129 @@ test("toZooAddResult: !ok -> surfaces model.failed", () => {
   assert.equal(msg.ok, false);
   assert.ok(msg.issues.some((i) => i.code === "model.failed"));
 });
+
+// ---- power (alp_power.py) ----
+const {
+  toPowerResult,
+  buildPowerMeasureArgs,
+  powerTimeoutMs,
+} = require("../out/models/service.js");
+
+const POWER_DATA = {
+  source: "probe",
+  probe: { protocol: 1 },
+  period_us: 500,
+  duration_s: 10,
+  inferences: 12,
+  latency_us: { median: 1500, p90: null },
+  dropped: 0,
+  rails: [
+    {
+      name: "core",
+      part: "ina236",
+      addr: "0x4A",
+      avg_idle_mw: 10.5,
+      avg_active_mw: null,
+      energy_per_inference_mj: null,
+      gross_energy_per_inference_mj: 0,
+      samples: 100,
+    },
+  ],
+  note: "n",
+};
+
+test("toPowerResult: ok passes data and nulls through untouched", () => {
+  const msg = toPowerResult({
+    exitCode: 0,
+    stdout: JSON.stringify({
+      ok: true,
+      data: POWER_DATA,
+      issues: [{ code: "w", severity: "warning", message: "drift" }],
+    }),
+  });
+  assert.equal(msg.type, "modelPowerResult");
+  assert.equal(msg.ok, true);
+  assert.deepEqual(msg.power, POWER_DATA);
+  assert.equal(msg.power.rails[0].avg_active_mw, null);
+  assert.equal(msg.power.latency_us.p90, null);
+  assert.equal(msg.issues[0].severity, "warning");
+});
+
+test("toPowerResult: ok=false keeps the CLI issues", () => {
+  const msg = toPowerResult({
+    exitCode: 1,
+    stdout: JSON.stringify({
+      ok: false,
+      data: null,
+      issues: [
+        { code: "probe.missing", severity: "error", message: "no probe" },
+      ],
+    }),
+  });
+  assert.equal(msg.ok, false);
+  assert.equal(msg.power, undefined);
+  assert.deepEqual(
+    msg.issues.map((i) => i.code),
+    ["probe.missing"],
+  );
+});
+
+test("toPowerResult: ok=false without issues still reports an error", () => {
+  const msg = toPowerResult({
+    exitCode: 1,
+    stdout: JSON.stringify({ ok: false, data: null, issues: [] }),
+  });
+  assert.equal(msg.ok, false);
+  assert.equal(msg.issues[0].severity, "error");
+});
+
+test("toPowerResult: malformed JSON, bad envelope and null -> error issue", () => {
+  for (const o of [
+    { exitCode: 1, stdout: "Traceback (most recent call last)" },
+    { exitCode: 0, stdout: "{}" },
+    {
+      exitCode: 0,
+      stdout: JSON.stringify({ ok: true, data: null, issues: [] }),
+    },
+    { exitCode: -1, stdout: "", message: "Timed out after 43 s." },
+    null,
+  ]) {
+    const msg = toPowerResult(o);
+    assert.equal(msg.ok, false);
+    assert.equal(msg.issues.at(-1).severity, "error");
+  }
+  assert.match(
+    toPowerResult({
+      exitCode: -1,
+      stdout: "",
+      message: "Timed out after 43 s.",
+    }).issues[0].message,
+    /Timed out/,
+  );
+});
+
+test("buildPowerMeasureArgs + powerTimeoutMs", () => {
+  const s = {
+    monitors: ["a=ina236@0x4A,shunt=0.02", "b=ina236@0x40,shunt=0.1"],
+    marker: "GPIO7",
+    seconds: 10,
+    idleSeconds: 3,
+    periodUs: 500,
+  };
+  const args = buildPowerMeasureArgs("alp_power.py", s);
+  assert.deepEqual(args.slice(0, 6), [
+    "alp_power.py",
+    "measure",
+    "--monitor",
+    s.monitors[0],
+    "--monitor",
+    s.monitors[1],
+  ]);
+  assert.ok(args.includes("--marker") && args.includes("GPIO7"));
+  assert.deepEqual(args.slice(-2), ["--format", "json"]);
+  assert.equal(
+    buildPowerMeasureArgs("x", { ...s, marker: "" }).includes("--marker"),
+    false,
+  );
+  assert.equal(powerTimeoutMs(s), 43000);
+});

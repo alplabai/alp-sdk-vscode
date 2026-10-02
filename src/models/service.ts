@@ -10,6 +10,8 @@ import type {
   ModelAbResultMessage,
   ModelEnergyMeasurement,
   ModelFitDataMessage,
+  ModelPowerData,
+  ModelPowerResultMessage,
   ModelPrepResultMessage,
   ModelRunResultMessage,
   ModelsDataMessage,
@@ -327,5 +329,137 @@ export function toZooAddResult(outcome: CliOutcome): ZooAddResultMessage {
     ok: true,
     added: data.added,
     issues: env.issues,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Power measurement (`scripts/alp_power.py measure|replay --format json`)
+// ---------------------------------------------------------------------------
+
+/** Raw result of spawning `alp_power.py`: what the adapter saw, unparsed.
+ *  `message` carries a spawn-level cause (ENOENT, timeout) when there is no
+ *  usable stdout. */
+export interface PowerOutcome {
+  exitCode: number;
+  stdout: string;
+  message?: string;
+}
+
+export interface PowerSettings {
+  monitors: string[];
+  marker: string;
+  seconds: number;
+  idleSeconds: number;
+  periodUs: number;
+}
+
+/** Margin on top of the capture window for probe handshake + analysis. */
+const POWER_TIMEOUT_MARGIN_MS = 30_000;
+
+export function powerTimeoutMs(s: PowerSettings): number {
+  return (s.seconds + s.idleSeconds) * 1000 + POWER_TIMEOUT_MARGIN_MS;
+}
+
+/** Argv (after the interpreter) for `alp_power.py measure`. */
+export function buildPowerMeasureArgs(
+  script: string,
+  s: PowerSettings,
+): string[] {
+  const args = [script, "measure"];
+  for (const m of s.monitors) args.push("--monitor", m);
+  if (s.marker) args.push("--marker", s.marker);
+  args.push(
+    "--seconds",
+    String(s.seconds),
+    "--idle-seconds",
+    String(s.idleSeconds),
+    "--period-us",
+    String(s.periodUs),
+    "--format",
+    "json",
+  );
+  return args;
+}
+
+function powerFailure(
+  code: string,
+  message: string,
+  extra: AlpIssue[] = [],
+): ModelPowerResultMessage {
+  return {
+    type: "modelPowerResult",
+    ok: false,
+    issues: [...extra, { code, severity: "error", message }],
+  };
+}
+
+function shapeIssues(raw: unknown): AlpIssue[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((i): AlpIssue[] => {
+    if (i === null || typeof i !== "object") return [];
+    const r = i as Record<string, unknown>;
+    if (typeof r.message !== "string") return [];
+    const sev = r.severity;
+    return [
+      {
+        code: typeof r.code === "string" ? r.code : "power.issue",
+        severity:
+          sev === "error" || sev === "warning" || sev === "info"
+            ? sev
+            : "warning",
+        message: r.message,
+      },
+    ];
+  });
+}
+
+/**
+ * Shape an `alp_power.py` run into the webview's power-result message. Null
+ * figures in `data` are passed through untouched (the view renders "n/a");
+ * nothing is coerced to 0. A missing outcome, unparsable stdout, or an
+ * envelope without a boolean `ok` all become an error issue — never silence.
+ */
+export function toPowerResult(
+  outcome: PowerOutcome | null,
+): ModelPowerResultMessage {
+  if (outcome === null) {
+    return powerFailure("power.cli-error", "Power measurement did not run.");
+  }
+  const cause =
+    outcome.message ?? `alp_power.py exited with code ${outcome.exitCode}.`;
+  let env: unknown;
+  try {
+    env = JSON.parse(outcome.stdout);
+  } catch {
+    return powerFailure(
+      "power.malformed-output",
+      `alp_power.py produced no JSON envelope. ${cause}`,
+    );
+  }
+  const e = env as { ok?: unknown; data?: unknown; issues?: unknown } | null;
+  if (e === null || typeof e !== "object" || typeof e.ok !== "boolean") {
+    return powerFailure(
+      "power.malformed-output",
+      `alp_power.py output is not a valid envelope. ${cause}`,
+    );
+  }
+  const issues = shapeIssues(e.issues);
+  if (!e.ok) {
+    return issues.length > 0
+      ? { type: "modelPowerResult", ok: false, issues }
+      : powerFailure("power.failed", `Power measurement failed. ${cause}`);
+  }
+  if (e.data === null || typeof e.data !== "object") {
+    return powerFailure(
+      "power.malformed-output",
+      "alp_power.py reported success without data.",
+      issues,
+    );
+  }
+  return {
+    type: "modelPowerResult",
+    ok: true,
+    power: e.data as ModelPowerData,
+    issues,
   };
 }

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Models panel: per-model power measurement over the debug probe.** New
+  **Measure power (probe)** and **Load power capture…** actions shell the SDK's
+  `scripts/alp_power.py` and render a per-rail table (idle/active mW, mJ per
+  inference), inference count, latency median/p90, dropped samples and the
+  CLI's issues, with `n/a` for any figure the CLI could not derive. Configured
+  by the new `alp.power.monitors`, `alp.power.marker`, `alp.power.seconds`,
+  `alp.power.idleSeconds` and `alp.power.periodUs` settings. Hardware validation
+  is pending.
+
 - **The Build Plan panel's Memory tab is now one address-ordered table and
   one piecewise rail (#484).** The placed-extents list and the separate SoM
   region table — two of the tab's three old surfaces — are replaced by a

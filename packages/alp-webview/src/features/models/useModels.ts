@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useReducer } from "react";
-import type { ModelsDataMessage } from "../../types";
+import type { ModelPowerData, ModelsDataMessage } from "../../types";
 import { postMessage } from "../../vscode";
 import type { ModelCoverage } from "./coverage";
 import { narrowModelCoverage } from "./coverage";
@@ -159,6 +159,10 @@ interface State {
   abOk: boolean;
   abResult: AbResultView | null;
   abIssues: ModelsDataMessage["issues"];
+  powerMeasuring: boolean;
+  powerOk: boolean;
+  power: ModelPowerData | null;
+  powerIssues: ModelsDataMessage["issues"];
   zoo: ZooEntryView[];
   zooOk: boolean;
   zooIssues: ModelsDataMessage["issues"];
@@ -188,6 +192,13 @@ type Action =
   | { type: "prepStart" }
   | { type: "prepResult"; result: PrepResult }
   | { type: "measureStart" }
+  | { type: "powerStart" }
+  | {
+      type: "powerResult";
+      ok: boolean;
+      power: ModelPowerData | null;
+      issues: ModelsDataMessage["issues"];
+    }
   | {
       type: "runResult";
       ok: boolean;
@@ -248,6 +259,16 @@ function reduce(state: State, action: Action): State {
       return { ...state, prepping: false, prep: action.result };
     case "measureStart":
       return { ...state, measuring: true };
+    case "powerStart":
+      return { ...state, powerMeasuring: true };
+    case "powerResult":
+      return {
+        ...state,
+        powerMeasuring: false,
+        powerOk: action.ok,
+        power: action.power,
+        powerIssues: action.issues,
+      };
     case "runResult":
       return {
         ...state,
@@ -304,6 +325,10 @@ const init: State = {
   abOk: true,
   abResult: null,
   abIssues: [],
+  powerMeasuring: false,
+  powerOk: true,
+  power: null,
+  powerIssues: [],
   zoo: [],
   zooOk: true,
   zooIssues: [],
@@ -367,6 +392,15 @@ export function useModels() {
         });
       } else if (msg?.type === "modelMeasureStarted") {
         dispatch({ type: "measureStart" });
+      } else if (msg?.type === "modelPowerStarted") {
+        dispatch({ type: "powerStart" });
+      } else if (msg?.type === "modelPowerResult") {
+        dispatch({
+          type: "powerResult",
+          ok: msg.ok,
+          power: (msg.power as ModelPowerData | undefined) ?? null,
+          issues: msg.issues,
+        });
       } else if (msg?.type === "modelRunResult") {
         dispatch({
           type: "runResult",
@@ -428,6 +462,16 @@ export function useModels() {
     postMessage({ type: "runModel" });
   }
 
+  // Same started-ack rule: `powerMeasuring` flips on `modelPowerStarted`, which
+  // the extension posts only after settings/dialog are confirmed.
+  function measurePower() {
+    postMessage({ type: "measurePower" });
+  }
+
+  function loadPowerCapture() {
+    postMessage({ type: "loadPowerCapture" });
+  }
+
   function abModels() {
     postMessage({ type: "abModels" });
   }
@@ -487,6 +531,8 @@ export function useModels() {
     prepModel,
     runModel,
     abModels,
+    measurePower,
+    loadPowerCapture,
     requestZoo,
     addFromZoo,
   };
