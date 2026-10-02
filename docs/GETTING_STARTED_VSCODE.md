@@ -306,7 +306,9 @@ CLI could not derive shows as `n/a`, never 0. These two actions do not use
 - **Settings.** `alpSdk.power.monitors` (required; one
   `NAME=ina236@0x4A,shunt=0.02[,range=fine|wide]` string per rail),
   `alpSdk.power.marker`, `alpSdk.power.seconds` (10), `alpSdk.power.idleSeconds` (3),
-  `alpSdk.power.periodUs` (500). With no monitors configured the button shows an
+  `alpSdk.power.periodUs` (500, integer 200 to 10000000). `seconds` is the ACTIVE
+  window; `idleSeconds` is an extra idle baseline captured first, so the total
+  capture is idle + active. With no monitors configured the button shows an
   error naming the setting and starts nothing.
 - **Status.** Hardware validation of this flow is pending; treat results as
   unverified until it completes.

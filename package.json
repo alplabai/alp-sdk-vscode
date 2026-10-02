@@ -528,21 +528,22 @@
           "default": 10,
           "minimum": 1,
           "scope": "machine-overridable",
-          "markdownDescription": "Length of the active capture window in seconds (`--seconds`). The extension waits this plus `#alpSdk.power.idleSeconds#` plus 30 s before giving up."
+          "markdownDescription": "Length of the ACTIVE capture window in seconds (`--seconds`), during which the firmware runs inferences. An idle baseline (`#alpSdk.power.idleSeconds#`) is captured first, so the total capture is idle + active seconds; the extension waits that plus 30 s before giving up."
         },
         "alpSdk.power.idleSeconds": {
           "type": "number",
           "default": 3,
           "minimum": 0,
           "scope": "machine-overridable",
-          "markdownDescription": "Length of the idle baseline capture in seconds (`--idle-seconds`), taken with no inference running."
+          "markdownDescription": "Extra idle baseline captured BEFORE the active window, in seconds (`--idle-seconds`), with no inference running. Total capture time is this plus `#alpSdk.power.seconds#`."
         },
         "alpSdk.power.periodUs": {
-          "type": "number",
+          "type": "integer",
           "default": 500,
-          "minimum": 1,
+          "minimum": 200,
+          "maximum": 10000000,
           "scope": "machine-overridable",
-          "markdownDescription": "Sampling period in microseconds (`--period-us`). Smaller is finer-grained but may drop samples (reported as `dropped`) on a slow I2C bus."
+          "markdownDescription": "Sampling period in whole microseconds, 200 to 10000000 (`--period-us`). Smaller is finer-grained but may drop samples (reported as `dropped`) on a slow I2C bus."
         },
         "alpSdk.boardYamlPath": {
           "type": "string",

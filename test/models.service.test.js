@@ -976,3 +976,63 @@ test("buildPowerMeasureArgs + powerTimeoutMs", () => {
   );
   assert.equal(powerTimeoutMs(s), 43000);
 });
+
+const { checkPowerSettings, stderrTail } = require("../out/models/service.js");
+
+test("toPowerResult: stderr tail (last 20 lines) lands in the issue message", () => {
+  const stderr = Array.from({ length: 30 }, (_, i) => `line${i}`).join("\n");
+  const msg = toPowerResult({ exitCode: 2, stdout: "", stderr });
+  assert.equal(msg.ok, false);
+  const m = msg.issues.at(-1).message;
+  assert.match(m, /line29/);
+  assert.match(m, /line10/);
+  assert.doesNotMatch(m, /line9\b/);
+  assert.equal(stderrTail(undefined), "");
+});
+
+test("checkPowerSettings: valid, and rejects bad periodUs / monitors", () => {
+  const ok = {
+    monitors: [" a=ina236@0x4A,shunt=0.02 "],
+    marker: "",
+    seconds: 10,
+    idleSeconds: 3,
+    periodUs: 500,
+  };
+  const r = checkPowerSettings(ok);
+  assert.deepEqual(r.settings.monitors, ["a=ina236@0x4A,shunt=0.02"]);
+  for (const periodUs of [500.5, 199, 10000001, "500", NaN]) {
+    assert.ok(
+      "error" in checkPowerSettings({ ...ok, periodUs }),
+      String(periodUs),
+    );
+  }
+  assert.ok(checkPowerSettings({ ...ok, periodUs: 200 }).settings);
+  assert.ok(checkPowerSettings({ ...ok, periodUs: 10000000 }).settings);
+  assert.match(checkPowerSettings({ ...ok, monitors: [] }).error, /monitors/);
+  assert.ok("error" in checkPowerSettings({ ...ok, seconds: 0 }));
+  assert.ok("error" in checkPowerSettings({ ...ok, idleSeconds: -1 }));
+});
+
+test("toPowerResult: malformed data shape -> error issue, not ok", () => {
+  const bad = [
+    { ...POWER_DATA, rails: "x" },
+    { ...POWER_DATA, rails: [null] },
+    { ...POWER_DATA, latency_us: null },
+    { ...POWER_DATA, latency_us: { median: "1", p90: null } },
+    { ...POWER_DATA, inferences: null },
+    { ...POWER_DATA, source: "other" },
+    {
+      ...POWER_DATA,
+      rails: [{ ...POWER_DATA.rails[0], avg_idle_mw: "10" }],
+    },
+  ];
+  for (const data of bad) {
+    const msg = toPowerResult({
+      exitCode: 0,
+      stdout: JSON.stringify({ ok: true, data, issues: [] }),
+    });
+    assert.equal(msg.ok, false);
+    assert.equal(msg.power, undefined);
+    assert.equal(msg.issues.at(-1).code, "power.malformed-output");
+  }
+});
