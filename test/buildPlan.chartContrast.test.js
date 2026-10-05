@@ -602,8 +602,12 @@ test("the gutter's three [data-tier] rules survive the build (verified against t
 // boundary tick, computed-mark tick).
 // ---------------------------------------------------------------------------
 
-test("the rail frame and both axis-tick registers use a stroke token that clears 3:1 in every default theme", () => {
-  for (const selector of [".railFrame", ".tick", ".tickMinor"]) {
+test("the rail frame, the edge ticks and the selected region ring use a stroke token that clears 3:1 in every default theme", () => {
+  for (const selector of [
+    ".railFrame",
+    ".tick",
+    ".regionBand[data-selected]",
+  ]) {
     const token = strokeTokenFor(selector);
     assert.notEqual(
       token,
@@ -632,26 +636,21 @@ test("the rail frame and both axis-tick registers use a stroke token that clears
   }
 });
 
-// A computed, power-of-two mark and a declared span/budget/region boundary
-// share every other visual property (position math, label anchor, dominant
-// baseline) — ink is the ONLY channel that tells them apart, which is the
-// whole reason the old single-register axis was a defect this task set out
-// to fix. Promoting `.tickLabelMinor` back to `--text-primary` (matching
-// `.tickLabel`) would make a computed mark typographically identical to an
-// authored address again, and nothing above would notice: the stroke-token
-// loop checks CONTRAST against a background, never one tick label against
-// the other.
-test(".tickLabel and .tickLabelMinor resolve to different fill tokens", () => {
-  const primary = fillTokenFor(".tickLabel");
-  const secondary = fillTokenFor(".tickLabelMinor");
-  assert.notEqual(
-    primary,
-    secondary,
-    "a DECLARED boundary's tick label and a COMPUTED power-of-two mark's " +
-      "must not share an ink token, or a computed mark becomes " +
-      "indistinguishable from a declared one — the exact defect this " +
-      "task's axis rewrite exists to fix",
-  );
+// Under log-of-size heights (railScale.ts) a computed power-of-two mark
+// between two declared edges sits at a height nothing can be measured
+// against, so the rail draws ticks ONLY at declared edges. The secondary
+// tick register is gone with it — and must stay gone: a computed mark that
+// came back would be typographically indistinguishable from a declared
+// address unless it also brought back its own, distinct ink.
+test("no computed (power-of-two) tick register survives beside the declared edges", () => {
+  for (const cls of ["tickMinor", "tickLabelMinor"]) {
+    assert.equal(
+      new RegExp(`\\.${cls}\\b`).test(CHART_CSS),
+      false,
+      `.${cls} is back in MemoryChart.module.css — the rail draws ticks only ` +
+        "at declared segment edges",
+    );
+  }
 });
 
 // ---------------------------------------------------------------------------

@@ -23,7 +23,12 @@ import {
   type ResolvedRegion,
   type Window,
 } from "./regionWindow";
-import { formatAddress, formatBytes } from "./format";
+import {
+  formatAddress,
+  formatBytes,
+  formatOffset,
+  formatRange,
+} from "./format";
 
 /** Spec table (#484 §2), verbatim. `write_authority` null is "absent" —
  *  its label depends on `source`, which the class itself does not (see
@@ -186,17 +191,22 @@ function regionRow(
     region.base !== null && region.sizeBytes !== null
       ? region.base + region.sizeBytes
       : null;
+  // Half-open `[base, end)`, printed with its INCLUSIVE last byte.
   const range =
     region.base !== null
       ? end !== null
-        ? `${formatAddress(region.base)} – ${formatAddress(end)}`
+        ? formatRange(region.base, end)
         : `${formatAddress(region.base)} – size unresolved`
       : "address unresolved";
   const size =
     region.sizeBytes !== null
       ? formatBytes(region.sizeBytes)
       : "size not pinned by this manifest";
-  // A region with a base but no resolved size is marked outside only when
+  // Every RESOLVED region (`status: "ok"`, a base, a positive size) is
+  // inside the window by construction — `chartWindowOf` is the union of all
+  // of them — so this flag can only fire for a region with a base that does
+  // NOT resolve: no size, a zero size, or a status other than `ok`. None of
+  // those draws on the rail. A sizeless one is marked outside only when
   // its base alone already clears `window.hi`. The LOWER half needs a real
   // extent to know the region fully clears `window.lo` rather than merely
   // starting before it, and a sizeless region has none: its true reach is
@@ -287,10 +297,10 @@ function spanRow(
   const range =
     span.base !== null
       ? end !== null
-        ? `${formatAddress(span.base)} – ${formatAddress(end)}`
+        ? formatRange(span.base, end)
         : formatAddress(span.base)
       : span.deviceOffset !== null
-        ? `+${formatBytes(span.deviceOffset)} in ${span.device ?? "?"}`
+        ? `${formatOffset(span.deviceOffset)} in ${span.device ?? "?"}`
         : "—";
   const size =
     span.sizeBytes !== null

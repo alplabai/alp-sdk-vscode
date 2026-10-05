@@ -14,6 +14,7 @@
 // `test/memoryRegions.readOnly.test.js`'s VIEW_FILES covers this file too.
 
 import type { MemorySpan, SliceSize } from "../../types";
+import { formatBytes } from "./format";
 import { budgetEnd, endOf, type ResolvedRegion } from "./regionWindow";
 
 /**
@@ -81,4 +82,77 @@ export function zigzagPath(x: number, yMid: number, width: number): string {
     points.push(`${i === 0 ? "M" : "L"}${px},${py}`);
   }
   return points.join(" ");
+}
+
+/** The most glyphs a centred label holds inside the rail at base size
+ *  (RAIL_W less a 5-unit pad each side, ~7.8 units per mono glyph). */
+const RAIL_LABEL_MAX_GLYPHS = 17;
+
+/**
+ * The visible text of a compressed gap's label: the size as `formatBytes`
+ * prints it when that fits inside the rail, else the exact hex size alone
+ * (`0x47f70000 empty`) — exact either way, never a rounded figure on its
+ * own. The full sentence stays in the gap's `<title>` and `aria-label`.
+ */
+export function gapText(bytes: number): string {
+  const friendly = `${formatBytes(bytes)} empty`;
+  if (friendly.length <= RAIL_LABEL_MAX_GLYPHS) return friendly;
+  return `0x${bytes.toString(16)} empty`;
+}
+
+/**
+ * Which edge labels to print. Every edge keeps its tick LINE; a LABEL is
+ * omitted when it would sit closer than `labelHeight` (MemoryChart.tsx's TICK_LABEL_H) to one
+ * already kept,
+ * so 0x80550000 / 0x80560000 / 0x80578000 / 0x80580000 never stack into one
+ * unreadable smear. The window's own two ends are kept first — they bound
+ * the drawing — then every other edge in address order.
+ */
+export function thinEdgeLabels(
+  addrs: readonly number[],
+  yOf: (address: number) => number,
+  labelHeight: number,
+): Set<number> {
+  if (addrs.length === 0) return new Set();
+  const ends = [addrs[0], addrs[addrs.length - 1]];
+  const keptYs: number[] = [];
+  const kept = new Set<number>();
+  for (const a of [...ends, ...addrs]) {
+    if (kept.has(a)) continue;
+    const y = yOf(a);
+    if (keptYs.every((k) => Math.abs(k - y) >= labelHeight)) {
+      kept.add(a);
+      keptYs.push(y);
+    }
+  }
+  return kept;
+}
+
+/** The names under an address: every placed span (or its `tan size` budget)
+ *  and every resolved region whose half-open extent contains it — spans
+ *  first, then regions, innermost (smallest) first within each. */
+export function namesAt(
+  address: number,
+  spans: MemorySpan[],
+  budgets: Map<string, SliceSize>,
+  regions: ResolvedRegion[],
+): string[] {
+  const hits: Array<{ name: string; size: number; order: number }> = [];
+  for (const s of spans) {
+    if (s.base === null) continue;
+    const reach = Math.max(
+      endOf(s) ?? s.base,
+      budgetEnd(s, budgets.get(s.label)) ?? s.base,
+    );
+    if (address >= s.base && address < reach) {
+      hits.push({ name: s.label, size: reach - s.base, order: 0 });
+    }
+  }
+  for (const r of regions) {
+    if (address >= r.lo && address < r.hi) {
+      hits.push({ name: r.region.name, size: r.hi - r.lo, order: 1 });
+    }
+  }
+  hits.sort((a, b) => a.order - b.order || a.size - b.size);
+  return [...new Set(hits.map((h) => h.name))];
 }

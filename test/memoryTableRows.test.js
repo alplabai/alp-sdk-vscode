@@ -237,3 +237,79 @@ test("groupRowsByTier puts every row in the group its NAME belongs in, not the f
     ["reserved"],
   );
 });
+
+test("ranges print the inclusive last byte, sizes print exactly, and one view pads to its widest address", async () => {
+  const { buildRows } = await load();
+  const {
+    V2N_REGIONS,
+    AEN_REGIONS,
+  } = require("./helpers/memoryFixtureRegions");
+  const aen = buildRows(AEN_REGIONS, [], new Map(), null, null);
+  const he = aen.find((r) => r.name === "he_slot0");
+  assert.equal(he.range, "0x80010000 – 0x802affff");
+  assert.equal(he.size, "2.63 MiB (0x2a0000)");
+  assert.equal(aen.find((r) => r.name === "mcuboot").size, "64 KiB");
+
+  const v2n = buildRows(V2N_REGIONS, [], new Map(), null, null);
+  const byName = Object.fromEntries(v2n.map((r) => [r.name, r]));
+  // An 8-digit floor, never view-wide up-padding: 32-bit addresses keep
+  // eight digits and ddr_main's last byte keeps its natural nine.
+  assert.equal(byName.ddr_main.range, "0x48000000 – 0x147ffffff");
+  assert.equal(byName.ddr_main.size, "4 GiB");
+  assert.equal(byName.ocram_low.range, "0x00010000 – 0x0008ffff");
+  assert.equal(byName.m33_tcm.range, "0x80000000 – 0x8001ffff");
+});
+
+test("no resolved region is outside the shared window (ddr_main and m33_tcm included)", async () => {
+  const { buildRows } = await load();
+  const { chartWindowOf } = await (
+    await import("./webview/esbuildImport.mjs")
+  ).importWebviewModule("features/build-plan/regionWindow.ts");
+  const { V2N_REGIONS } = require("./helpers/memoryFixtureRegions");
+  const win = chartWindowOf([], new Map(), V2N_REGIONS);
+  const rows = buildRows(V2N_REGIONS, [], new Map(), win, null);
+  assert.deepEqual(
+    rows.filter((r) => r.outside).map((r) => r.name),
+    [],
+  );
+});
+
+test("a sizeless region whose base lies above the window is flagged outside", async () => {
+  const { buildRows } = await load();
+  const { chartWindowOf } = await (
+    await import("./webview/esbuildImport.mjs")
+  ).importWebviewModule("features/build-plan/regionWindow.ts");
+  const { AEN_REGIONS, region } = require("./helpers/memoryFixtureRegions");
+  // A base with no size never shapes the window, so 0x90000000 sits above
+  // the AEN window's hi (0x80580000); a zero size counts as no size too.
+  const sizeless = { ...region("far_flash", 0x90000000, null, "unstated") };
+  const zero = { ...region("zero_size", 0x90100000, 0, "unstated") };
+  const regions = [...AEN_REGIONS, sizeless, zero];
+  const win = chartWindowOf([], new Map(), regions);
+  assert.equal(win.hi, 0x80580000);
+  const rows = buildRows(regions, [], new Map(), win, null);
+  assert.deepEqual(
+    rows.filter((r) => r.outside).map((r) => r.name),
+    ["far_flash", "zero_size"],
+  );
+});
+
+test("a partition's device offset prints exactly, in hex", async () => {
+  const { buildRows } = await load();
+  const rows = buildRows(
+    [],
+    [
+      span({
+        id: "partition:storage",
+        kind: "partition",
+        label: "storage",
+        deviceOffset: 0x1847c,
+        device: "ospi0",
+      }),
+    ],
+    new Map(),
+    null,
+    null,
+  );
+  assert.equal(rows[0].range, "+0x1847c in ospi0");
+});

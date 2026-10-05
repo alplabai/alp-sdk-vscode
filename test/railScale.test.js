@@ -73,8 +73,8 @@ test("segment heights sum to plot height exactly (all-extent case)", async () =>
 
 test("segment heights sum to plot height when fixed > plotHeight", async () => {
   const { layoutRail, MIN_EXTENT_PX } = await load();
-  // Create a case where fixed > plotHeight: 31 extents = 31 * 8 = 248 pixels
-  // on a 240-pixel plot, so squeeze < 1.
+  // Create a case where fixed > plotHeight: 31 extents at MIN_EXTENT_PX each
+  // exceed a 240-pixel plot, so squeeze < 1.
   const boundaries = [0];
   for (let i = 1; i <= 31; i++) {
     boundaries.push(i * 0x1000000);
@@ -125,7 +125,7 @@ test("piecewise mapping: gap and extent with same size get different heights", a
   assert.ok(extent1.height >= MIN_EXTENT_PX);
   assert.ok(extent2.height >= MIN_EXTENT_PX);
   // Gap and extents of the same byte size must have different heights:
-  // gap is fixed 12px, extents share the remaining proportionally.
+  // gap is fixed GAP_PX, extents share the remainder by log2(size).
   assert.notEqual(
     gap.height,
     extent1.height,
@@ -133,7 +133,7 @@ test("piecewise mapping: gap and extent with same size get different heights", a
   );
 
   // Verify the yOf mapping respects the piecewise structure: the gap
-  // (occupying 12px) and a same-sized extent must map to different y-spans.
+  // (occupying GAP_PX) and a same-sized extent must map to different y-spans.
   const gapSpan = Math.abs(layout.yOf(gap.hi) - layout.yOf(gap.lo));
   const extentSpan = Math.abs(layout.yOf(extent1.hi) - layout.yOf(extent1.lo));
   assert.notEqual(
@@ -221,4 +221,144 @@ test("a window with no interior boundary is one extent segment, no gaps", async 
   assert.equal(layout.segments.length, 1);
   assert.equal(layout.segments[0].kind, "extent");
   assert.equal(layout.segments[0].height, 100);
+});
+
+// ── log-of-SIZE heights, on the real fixture region tables ─────────────────
+
+const { AEN_REGIONS, V2N_REGIONS } = require("./helpers/memoryFixtureRegions");
+
+const loadAll = async () => {
+  const imp = (await import("./webview/esbuildImport.mjs")).importWebviewModule;
+  return {
+    ...(await imp("features/build-plan/railScale.ts")),
+    ...(await imp("features/build-plan/railGeometry.ts")),
+    ...(await imp("features/build-plan/regionWindow.ts")),
+  };
+};
+
+/** The rail the chart draws for a region table alone, on the chart's own
+ *  240-unit plot. */
+async function railFor(regions) {
+  const m = await loadAll();
+  const win = m.chartWindowOf([], new Map(), regions);
+  const { boundaries, occupied } = m.railBoundaries(
+    [],
+    new Map(),
+    m.resolvedRegions(regions),
+  );
+  return { m, win, layout: m.layoutRail(win, boundaries, 18, 258, occupied) };
+}
+
+for (const [name, regions] of [
+  ["rpmsg-aen", AEN_REGIONS],
+  ["rpmsg-v2n", V2N_REGIONS],
+]) {
+  test(`${name}: yOf is monotonic over every edge and inside every segment`, async () => {
+    const { layout } = await railFor(regions);
+    const probes = layout.segments.flatMap((s) => [
+      s.lo,
+      s.lo + Math.floor((s.hi - s.lo) / 2),
+      s.hi,
+    ]);
+    const sorted = [...new Set(probes)].sort((a, b) => a - b);
+    for (let i = 1; i < sorted.length; i++) {
+      assert.ok(
+        layout.yOf(sorted[i]) < layout.yOf(sorted[i - 1]),
+        `yOf(0x${sorted[i].toString(16)}) must sit above yOf(0x${sorted[i - 1].toString(16)})`,
+      );
+    }
+  });
+
+  test(`${name}: every declared segment clears MIN_EXTENT_PX; every gap is shorter than the smallest`, async () => {
+    const { m, layout } = await railFor(regions);
+    const extents = layout.segments.filter((s) => s.kind === "extent");
+    const gaps = layout.segments.filter((s) => s.kind === "gap");
+    const smallest = Math.min(...extents.map((s) => s.height));
+    assert.ok(
+      smallest >= m.MIN_EXTENT_PX,
+      `smallest declared segment is ${smallest}px, under the ${m.MIN_EXTENT_PX}px floor`,
+    );
+    for (const g of gaps) {
+      assert.ok(
+        g.height < smallest,
+        `gap 0x${g.lo.toString(16)} is ${g.height}px, not shorter than the smallest declared segment (${smallest}px)`,
+      );
+    }
+  });
+}
+
+test("rpmsg-aen: the 32 KiB atoc band is at the floor or above, and a larger slot is taller", async () => {
+  const { m, layout } = await railFor(AEN_REGIONS);
+  const atoc = layout.segments.find((s) => s.lo === 0x80578000);
+  const heSlot = layout.segments.find((s) => s.lo === 0x80010000);
+  assert.equal(atoc.hi, 0x80580000);
+  assert.ok(atoc.height >= m.MIN_EXTENT_PX);
+  // Heights grow with log2(size): 2.63 MiB outranks 32 KiB.
+  assert.ok(heSlot.height > atoc.height);
+});
+
+test("rpmsg-v2n: ddr_main (4 GiB) spans its sub-segments around m33_tcm, each at or above the floor", async () => {
+  const { m, layout } = await railFor(V2N_REGIONS);
+  // Edges are the union of all regions' edges: ddr_main is cut at
+  // m33_tcm's base and end, and the run between ocram_low and ddr_main is
+  // an undeclared gap.
+  const ddrParts = layout.segments.filter(
+    (s) => s.lo >= 0x48000000 && s.hi <= 0x148000000,
+  );
+  assert.deepEqual(
+    ddrParts.map((s) => [s.lo, s.hi]),
+    [
+      [0x48000000, 0x80000000],
+      [0x80000000, 0x80020000],
+      [0x80020000, 0x148000000],
+    ],
+  );
+  for (const s of ddrParts) {
+    assert.equal(s.kind, "extent");
+    assert.ok(s.height >= m.MIN_EXTENT_PX);
+  }
+  const gap = layout.segments.find((s) => s.kind === "gap");
+  assert.deepEqual([gap.lo, gap.hi], [0x90000, 0x48000000]);
+  // Log, not linear: the 128 KiB TCM is not a hairline beside 3.1 GiB.
+  const tcm = ddrParts[1];
+  const top = ddrParts[2];
+  // ~25000x the bytes, a handful of times the height.
+  assert.ok(top.height / tcm.height < 10);
+});
+
+test("isExactAt is false where one pixel stands for many addresses", async () => {
+  const { layout } = await railFor(V2N_REGIONS);
+  const ddrTop = layout.segments[layout.segments.length - 1];
+  assert.equal(layout.isExactAt(ddrTop.top + ddrTop.height / 2), false);
+  const { layoutRail } = await loadAll();
+  const tiny = layoutRail({ lo: 0, hi: 16 }, [0, 16], 0, 100);
+  assert.equal(tiny.isExactAt(50), true);
+});
+
+test("railHeightNeeded grows with the segment count so no floor is squeezed", async () => {
+  const { railHeightNeeded, MIN_EXTENT_PX, GAP_PX } = await loadAll();
+  const boundaries = [0];
+  for (let i = 1; i <= 31; i++) boundaries.push(i * 0x1000000);
+  assert.equal(
+    railHeightNeeded({ lo: 0, hi: 31 * 0x1000000 }, boundaries),
+    31 * MIN_EXTENT_PX,
+  );
+  assert.equal(
+    railHeightNeeded(
+      { lo: 0, hi: 0x30 },
+      [0, 0x10, 0x20, 0x30],
+      [
+        { lo: 0, hi: 0x10 },
+        { lo: 0x20, hi: 0x30 },
+      ],
+      5,
+    ),
+    2 * MIN_EXTENT_PX + GAP_PX + 5,
+  );
+});
+
+test("the top pixel reads the window's last byte, never one past it", async () => {
+  const { layout, win } = await railFor(AEN_REGIONS);
+  assert.equal(layout.addressAt(18), win.hi - 1); // 0x8057ffff
+  assert.equal(layout.addressAt(0), win.hi - 1); // clamped above the plot
 });

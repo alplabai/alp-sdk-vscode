@@ -4,13 +4,12 @@
 // arithmetic, no React and no CSS import, so a table (MemoryTable.tsx)
 // and the chart (MemoryChart.tsx) both pull from one place rather than
 // drifting apart with two copies of the same rule. `Window`, `endOf`,
-// `budgetEnd` and `windowOf` live here for the same reason: both
+// `budgetEnd` and `chartWindowOf` live here for the same reason: both
 // `MemoryRegions.tsx` and `MemoryChart.tsx` need the window a manifest's
-// spans cover, and `chartWindowOf` below is the one place that also grows
-// it over resolved regions — the table's "outside this map's window" note
-// and the chart's own drawn window read the identical computation, so the
-// two can never drift the way two copies of the same three steps
-// eventually do.
+// spans and regions cover, and `chartWindowOf` below is the one place that
+// computes it — the table's "outside this map's window" note and the chart's
+// own drawn window read the identical computation, so the two can never
+// drift the way two copies of the same steps eventually do.
 
 import type { MemoryRegion, MemorySpan, SliceSize } from "../../types";
 
@@ -45,28 +44,8 @@ export function budgetEnd(
   return typeof total === "number" && total > 0 ? span.base + total : null;
 }
 
-/**
- * The window the map covers: the lowest pinned base to the highest reach.
- * Null when fewer than two distinct addresses are known — one point is not a
- * range, and a ruler drawn across nothing invites the reader to measure
- * distances that were never measured.
- */
-export function windowOf(
-  spans: MemorySpan[],
-  budgets: Map<string, SliceSize>,
-): Window | null {
-  const bases = spans.map((s) => s.base).filter((b): b is number => b !== null);
-  if (bases.length === 0) return null;
-  const ends = spans
-    .flatMap((s) => [endOf(s) ?? s.base, budgetEnd(s, budgets.get(s.label))])
-    .filter((e): e is number => e !== null);
-  const lo = Math.min(...bases);
-  const hi = Math.max(...ends);
-  return hi > lo ? { lo, hi } : null;
-}
-
 /** A region's own resolved extent, paired with the row it came from — the
- *  shape both the window-growth rule and a rail's frame-drawing want, so
+ *  shape both the window computation and a rail's region bands want, so
  *  neither re-derives `status === "ok"` + a positive size itself. */
 export interface ResolvedRegion {
   region: MemoryRegion;
@@ -76,7 +55,7 @@ export interface ResolvedRegion {
 
 /** Every region that resolves an extent: `status: "ok"`, a base, and a
  *  positive size. An unresolved, sizeless or zero-size region draws no
- *  frame and cannot grow the window. */
+ *  band and contributes no extent to the window. */
 export function resolvedRegions(regions: MemoryRegion[]): ResolvedRegion[] {
   const out: ResolvedRegion[] = [];
   for (const region of regions) {
@@ -88,71 +67,64 @@ export function resolvedRegions(regions: MemoryRegion[]): ResolvedRegion[] {
 }
 
 /**
- * Grows a window, to a FIXPOINT, over every resolved region that
- * intersects or TOUCHES it — so a region ending exactly where the window
- * begins (the normal adjacency of a region table, not a gap) still pulls
- * the window's edge out to cover it, and the next region touching THAT new
- * edge is pulled in too, and so on until nothing moves. A region that
- * never intersects or touches the window through that whole process is
- * left out on purpose — the region table then says it is outside it.
- */
-export function growWindowOverRegions(
-  win: Window,
-  regions: ResolvedRegion[],
-): Window {
-  let { lo, hi } = win;
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const r of regions) {
-      if (r.lo > hi || r.hi < lo) continue;
-      if (r.lo < lo) {
-        lo = r.lo;
-        changed = true;
-      }
-      if (r.hi > hi) {
-        hi = r.hi;
-        changed = true;
-      }
-    }
-  }
-  return { lo, hi };
-}
-
-/**
- * The single window computation both the chart and the table draw from:
- * the placed spans' own window (`windowOf`, on the `base !== null` subset),
- * grown over every region `resolvedRegions` resolves for this SoM. Null
- * when the spans alone pin no window — regions never CREATE one, only
- * widen one that already exists.
+ * The single window computation both the chart and the table draw from: the
+ * UNION of every declared address — each placed span's base and end, each
+ * slot image's `tan size` budget end, and each resolved region's own extent.
+ * Regions do not merely widen a window the spans already pinned: they CREATE
+ * one, so a manifest whose spans pin fewer than two addresses still gets a
+ * rail as long as one region resolves. And no resolved region is ever left
+ * out because it sits far from the spans (V2N's `ddr_main` at 0x48000000,
+ * 4 GiB): the piecewise scale (railScale.ts) compresses the empty run between
+ * them and marks it, rather than this window dropping the region.
  *
- * Called once per render from each of `MemoryChart.tsx` and
- * `MemoryRegions.tsx` rather than each doing its own `windowOf` +
- * `resolvedRegions` + `growWindowOverRegions` in sequence: two copies of
- * the same three steps are exactly how the drawn window and the region
- * table's "outside this map's window" note would drift apart the moment
- * either copy was touched without the other.
+ * Null only when fewer than two distinct addresses are known — one point is
+ * not a range.
+ *
+ * Called from both `MemoryChart.tsx` and `MemoryRegions.tsx`, so the window
+ * the chart draws and the one the table measures "outside" against can never
+ * drift apart.
  */
 export function chartWindowOf(
   spans: MemorySpan[],
   budgets: Map<string, SliceSize>,
   regions: MemoryRegion[],
 ): Window | null {
-  const placed = spans.filter((s) => s.base !== null);
-  const rawWindow = windowOf(placed, budgets);
-  if (!rawWindow) return null;
-  return growWindowOverRegions(rawWindow, resolvedRegions(regions));
+  const addresses = declaredAddresses(spans, budgets, regions);
+  if (addresses.length === 0) return null;
+  const lo = Math.min(...addresses);
+  const hi = Math.max(...addresses);
+  return hi > lo ? { lo, hi } : null;
 }
 
-/** The resolved regions that actually intersect a window — what a rail
- *  draws a frame for. Strict intersection, not "touches": a region merely
- *  adjacent to the window has nothing to show and would draw a
- *  zero-height frame. */
-export function regionsInWindow(
-  win: Window,
-  regions: ResolvedRegion[],
+/** Every address the memory view declares that has an extent: span bases
+ *  and ends, budget ends, resolved region extents — what the window is the
+ *  union of. */
+function declaredAddresses(
+  spans: MemorySpan[],
+  budgets: Map<string, SliceSize>,
+  regions: MemoryRegion[],
+): number[] {
+  const out: number[] = [];
+  for (const s of spans) {
+    if (s.base === null) continue;
+    out.push(s.base);
+    const end = endOf(s);
+    if (end !== null) out.push(end);
+    const bEnd = budgetEnd(s, budgets.get(s.label));
+    if (bEnd !== null) out.push(bEnd);
+  }
+  for (const r of resolvedRegions(regions)) out.push(r.lo, r.hi);
+  return out;
+}
+
+/** Resolved regions, largest extent first — the rail's draw order. SVG
+ *  paints later siblings on top, so a nested region (V2N's `m33_tcm`
+ *  inside `ddr_main`) is drawn after its container and wins the click,
+ *  whatever order the manifest listed them in. Returns a new array. */
+export function regionsLargestFirst(
+  regions: readonly ResolvedRegion[],
 ): ResolvedRegion[] {
-  return regions.filter((r) => r.lo < win.hi && r.hi > win.lo);
+  return [...regions].sort((a, b) => b.hi - b.lo - (a.hi - a.lo));
 }
 
 /** Names shared by two or more rows. Selecting a region row sets `selected`

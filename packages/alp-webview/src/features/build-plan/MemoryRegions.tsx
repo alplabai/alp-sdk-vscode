@@ -49,7 +49,7 @@ import {
   copyFindingText,
   openDeclaringFile,
 } from "./blockedFindingActions";
-import { formatAddress, formatBytes } from "./format";
+import { formatOffsetRange, formatRange } from "./format";
 import { MemoryChart } from "./MemoryChart";
 import { MemoryTable } from "./MemoryTable";
 import { chartWindowOf } from "./regionWindow";
@@ -70,16 +70,6 @@ const CONFLICT_TITLE: Record<MemoryConflict["kind"], string> = {
   // Record<MemoryConflict["kind"], string> requires every member.
   outside_region: "lands outside the region it names",
 };
-
-/** `from – to` as an address range, or a single address when they're equal.
- *  Shared by `Conflicts`' absolute-address branch and `OutsideRegionNotice`,
- *  which has no device-relative branch to choose between — `outside_region`
- *  findings never carry a `device`. */
-function formatExtent(from: number, to: number): string {
-  return from === to
-    ? formatAddress(from)
-    : `${formatAddress(from)} – ${formatAddress(to)}`;
-}
 
 /**
  * The DOM skeleton `Conflicts`, `OutsideRegionNotice` and `BlockedFindings`
@@ -129,7 +119,11 @@ function FindingList<T extends { id: string }>({
   );
 }
 
-/** Overlapping extents, stated before the picture rather than under it. */
+/** Overlapping extents, stated before the picture rather than under it.
+ *  A finding's `[from, to)` extent — half-open, like every extent in core —
+ *  printed with its inclusive last byte, or as one address when it is a
+ *  point (`covers_load_address`). `outside_region` findings never carry a
+ *  `device`, so only `Conflicts` has the device-relative branch. */
 function Conflicts({ conflicts }: { conflicts: MemoryConflict[] }) {
   return (
     <FindingList
@@ -147,8 +141,8 @@ function Conflicts({ conflicts }: { conflicts: MemoryConflict[] }) {
           <span className={styles.conflictKind}>{CONFLICT_TITLE[c.kind]}</span>
           <code className={styles.addr}>
             {c.device !== null
-              ? `+${formatBytes(c.from)} – +${formatBytes(c.to)} in ${c.device}`
-              : formatExtent(c.from, c.to)}
+              ? `${formatOffsetRange(c.from, c.to)} in ${c.device}`
+              : formatRange(c.from, c.to)}
           </code>
         </>
       )}
@@ -180,7 +174,7 @@ function OutsideRegionNotice({ findings }: { findings: MemoryConflict[] }) {
           <span className={styles.rowName}>
             {f.first}&rsquo;s extent is not inside region {f.second}
           </span>
-          <code className={styles.addr}>{formatExtent(f.from, f.to)}</code>
+          <code className={styles.addr}>{formatRange(f.from, f.to)}</code>
         </>
       )}
     />
@@ -280,8 +274,8 @@ export function MemoryRegions({
   const [selected, setSelected] = useState<string | null>(null);
   // The chart column's OWN live width (Task 8, #484 phase 4) — a callback
   // ref (`setChartColumn` handed straight to `.mapSide`'s `ref`) rather than
-  // a plain `useRef`, because `.mapSide` mounts and unmounts as `placed`
-  // flips between empty and not: a plain ref's `useEffect([])` would only
+  // a plain `useRef`, because `.mapSide` mounts and unmounts as the chart
+  // window flips between null and not: a plain ref's `useEffect([])` would only
   // ever see whatever `.current` held at THIS component's own first mount,
   // missing every later mount of `.mapSide` itself. A callback ref re-fires
   // on every one of those, so the observer below is always attached to
@@ -301,7 +295,6 @@ export function MemoryRegions({
 
   if (!memory) return null;
   const budgetByCore = new Map(sizes.map((s) => [s.core_id, s]));
-  const placed = memory.spans.filter((s) => s.base !== null);
   // Same call `MemoryChart` makes internally, so the window this table
   // reports as "outside" and the one the chart actually draws can never
   // disagree.
@@ -342,7 +335,7 @@ export function MemoryRegions({
         </p>
       )}
 
-      {/* The rail (when there is a placed span to draw) and the unified
+      {/* The rail (when there is a window to draw) and the unified
        *  table share this one row — see `.map`'s own comment
        *  (MemoryRegions.module.css) for the breakpoint-free construction.
        *  Rendered whenever EITHER would have something to show, independent
@@ -352,13 +345,16 @@ export function MemoryRegions({
        *  when. */}
       {(hasSpans || hasRegions) && (
         <div className={styles.map}>
-          {placed.length > 0 && (
+          {/* Mounted only when there IS a window to draw — placed spans
+           *  or resolved regions alike can create one (`chartWindowOf`). A
+           *  null window mounts nothing, legend and caption included, so no
+           *  caption is ever left describing a chart that is not there. */}
+          {chartWindow !== null && (
             <div className={styles.mapSide} ref={setChartColumn}>
               <AuthorityLegend />
               <p className={styles.legend}>
-                The rail is a schematic: address space with nothing declared
-                compresses to a fixed height and is marked, never drawn to
-                scale.
+                Heights grow with log₂(size); address order is exact, distances
+                are not to scale; empty space is compressed and marked.
               </p>
               <MemoryChart
                 spans={memory.spans}

@@ -785,18 +785,18 @@ const VIEWS: Array<[string, React.FC]> = [
 // checking less, not by proving nothing was actually dropped.
 const MEMORY_TAB_NEEDLES = [
   "alp_shmem0", // a sized carve-out, drawn as a band
-  "0x80540000 – 0x80580000", // its extent, both ends
+  "0x80540000 – 0x8057ffff", // its extent: base and INCLUSIVE last byte
   "mram_main", // the region it came from
-  "+0 b in storage", // the partition: an offset, never an address
-  "64.0 kib", // its size
+  "+0x0 in storage", // the partition: an exact offset, never an address
+  "64 kib", // its size — an exact multiple prints clean
   // m55_hp's slot extent, named as tan's measurement rather than
   // folded into the address beside it.
-  "5.50 mib · tan size",
+  "5.50 mib · tan size", // 5.5 MiB is exact, so no hex
   "peer slice skipped", // a degraded link's reason, verbatim
-  // #484 phase 4: the single piecewise rail's own caption — never
-  // "true scale"/"equalized" (both retired with the second rail) and
-  // never a "22×" magnification factor (retired with DETAIL_FACTOR).
-  "piecewise scale",
+  // The single rail's own caption — never "true scale"/"equalized"
+  // (both retired with the second rail) and never a "22×" magnification
+  // factor (retired with DETAIL_FACTOR). Heights grow with log2(size).
+  "log₂(size) scale",
   // D4: the conflict the allocator never checks, stated before the
   // picture — a carve-out pinned onto the HP image slot.
   "covers an image load address",
@@ -804,7 +804,7 @@ const MEMORY_TAB_NEEDLES = [
   // #484 phase 4 (Task 6): the one-sentence legend that now sits
   // ABOVE the chart, after `AuthorityLegend` — the scale-mode prose
   // it replaced is gone along with the modes themselves.
-  "the rail is a schematic",
+  "heights grow with log₂(size)",
 ];
 
 // Text a broken/degraded UI shows — flagged so we SEE the problem, not skip it.
@@ -892,8 +892,9 @@ async function main() {
         "build/m55_hp/zephyr/zephyr.elf", // slice output_artefact
         "peer slice skipped", // ipc link reason
         // #359 — footprint from `tan size`, and the no-data branch beside it.
-        "97.1 kib / 5.50 mib (1.7%)", // flash, measured
-        "16.6 kib / 256.0 kib (6.5%)", // ram, measured
+        // flash/ram, measured — a non-multiple prints its exact hex too
+        "97.1 kib (0x1847c) / 5.50 mib (1.7%)",
+        "16.6 kib (0x4248) / 256 kib (6.5%)",
         "in budget", // status verdict
         "not built", // a slice tan could not measure
         // #314 readout half — the per-slice toolchain from THIS build's
@@ -1035,10 +1036,10 @@ async function main() {
               problems.push(`build-plan: notes tab missing "${needle}"`);
             }
           }
-          // The map must not be on screen at the same time. "piecewise
-          // scale" is the rail's own caption (#484 phase 4) — present only
-          // while the chart itself is mounted.
-          if (notes.includes("piecewise scale")) {
+          // The map must not be on screen at the same time. "log₂(size)
+          // scale" is the rail's own caption — present only while the chart
+          // itself is mounted.
+          if (notes.includes("log₂(size) scale")) {
             problems.push("build-plan: the notes tab still renders the map");
           }
           // And again with Notes open: this tab's headings come from a
@@ -1819,7 +1820,7 @@ async function main() {
       // in the table to get them would DESELECT it — two clicks to see
       // anything. Nothing in this suite clicked the rail before, so drift
       // here was invisible.
-      const railHit = container.querySelector('svg[role="img"] .hit');
+      const railHit = container.querySelector('svg[role="img"] [data-span]');
       if (!railHit) {
         problems.push(
           "memory-regions-aen: the rail draws no clickable span — the chart-driven selection cannot be checked",
@@ -1900,10 +1901,10 @@ async function main() {
       const ariaLabel = (svg?.getAttribute("aria-label") || "").toLowerCase();
       if (
         !ariaLabel.includes("0x80000000") ||
-        !ariaLabel.includes("0x80580000")
+        !ariaLabel.includes("0x8057ffff")
       ) {
         problems.push(
-          `memory-regions-aen: chart aria-label "${ariaLabel}" does not span 0x80000000-0x80580000 — the window did not grow over the SoM's regions`,
+          `memory-regions-aen: chart aria-label "${ariaLabel}" does not span 0x80000000-0x8057ffff (inclusive) — the window did not grow over the SoM's regions`,
         );
       }
 
@@ -1969,38 +1970,82 @@ async function main() {
       const tableForTicks = container.querySelector(
         'ul[aria-label="Memory map rows"]',
       );
+      // A range prints its INCLUSIVE last byte, so an edge the rail draws
+      // at a region's exclusive end is that last byte + 1.
       const rangeAddrs = new Set(
         Array.from(
           tableForTicks?.querySelectorAll('[data-col="range"]') ?? [],
-        ).flatMap(
-          (el) => (el.textContent || "").match(/0x[0-9a-fA-F]+/g) ?? [],
-        ),
+        ).flatMap((el) => {
+          const found = (
+            (el.textContent || "").match(/0x[0-9a-fA-F]+/g) ?? []
+          ).map((h) => parseInt(h, 16));
+          return found.length === 2 ? [found[0], found[1] + 1] : found;
+        }),
       );
+      // Every edge carries its address in `data-address`, labelled or not
+      // (a label too close to a kept one is omitted; the tick stays).
       const boundaryTickLabels = Array.from(
         container.querySelectorAll('[data-tick="boundary"]'),
-      ).map((g) => (g.textContent || "").trim());
+      ).map((g) => g.getAttribute("data-address") || "");
       if (boundaryTickLabels.length === 0) {
         problems.push("memory-regions-aen: no boundary tick was drawn");
       }
       for (const label of boundaryTickLabels) {
-        if (!rangeAddrs.has(label)) {
+        if (!rangeAddrs.has(parseInt(label, 16))) {
           problems.push(
             `memory-regions-aen: boundary tick "${label}" is not any row's own address — a declared-boundary tick landed somewhere nothing real begins or ends`,
           );
         }
       }
-      // A computed ("interior") tick must never coincide with a declared
-      // one — that would be the same address drawn twice, once in each
-      // ink, which is indistinguishable from a single mistaken tick.
-      const interiorTickLabels = Array.from(
-        container.querySelectorAll('[data-tick="interior"]'),
-      ).map((g) => (g.textContent || "").trim());
-      for (const label of interiorTickLabels) {
-        if (boundaryTickLabels.includes(label)) {
+      // Ticks land ONLY at declared edges: under log-of-size heights a
+      // computed power-of-two mark would measure nothing.
+      if (container.querySelectorAll('[data-tick="interior"]').length !== 0) {
+        problems.push(
+          "memory-regions-aen: a computed (interior) tick was drawn",
+        );
+      }
+      // Every region is ON the rail now: one band per resolved region, and
+      // a click on one selects that region's own table row.
+      const bands = container.querySelectorAll('svg[role="img"] [data-region]');
+      if (bands.length !== 6) {
+        problems.push(
+          `memory-regions-aen: ${bands.length} region band(s) on the rail, want 6`,
+        );
+      }
+      const storageBand = container.querySelector(
+        'svg[role="img"] [data-region="storage"]',
+      );
+      if (storageBand) {
+        storageBand.dispatchEvent(
+          new (
+            window as unknown as { MouseEvent: typeof MouseEvent }
+          ).MouseEvent("click", { bubbles: true, cancelable: true }),
+        );
+        await settle();
+        const picked = container.querySelector(
+          'li[role="treeitem"][data-row][aria-selected="true"]',
+        );
+        if (!(picked?.getAttribute("aria-label") || "").startsWith("storage")) {
           problems.push(
-            `memory-regions-aen: "${label}" is drawn as both a boundary and an interior tick`,
+            "memory-regions-aen: clicking the storage band did not select the storage row",
           );
         }
+        if (
+          !container.querySelector(
+            'svg[role="img"] [data-region="storage"] rect[data-selected]',
+          )
+        ) {
+          problems.push(
+            "memory-regions-aen: the selected storage band carries no selection ring",
+          );
+        }
+        // Deselect, so the row loop below starts from nothing selected.
+        storageBand.dispatchEvent(
+          new (
+            window as unknown as { MouseEvent: typeof MouseEvent }
+          ).MouseEvent("click", { bubbles: true, cancelable: true }),
+        );
+        await settle();
       }
 
       // ── #484 phase 3: the two lists collapse into one address-ordered
@@ -3272,11 +3317,26 @@ async function main() {
       // note with `&rsquo;`, which becomes U+2019 (’) in textContent — a
       // straight `'` here would silently match zero rows every time, since
       // `String.match` does not fold the two.
+      // The window is the union of every resolved region, so ddr_main and
+      // m33_tcm are ON the rail (with the empty run compressed), never
+      // flagged "outside this map's window".
       const outsideCount = (memText.match(/outside this map’s window/g) || [])
         .length;
-      if (outsideCount !== 2) {
+      if (outsideCount !== 0) {
         problems.push(
-          `memory-regions-v2n: ${outsideCount} row(s) marked outside the chart window, want exactly 2 (ddr_main, m33_tcm — ocram_low is the one that joins the window)`,
+          `memory-regions-v2n: ${outsideCount} row(s) marked outside the chart window, want 0 — every resolved region is inside the window`,
+        );
+      }
+      for (const name of ["ddr_main", "ocram_low", "m33_tcm"]) {
+        if (
+          !container.querySelector(`svg[role="img"] [data-region="${name}"]`)
+        ) {
+          problems.push(`memory-regions-v2n: no rail band for region ${name}`);
+        }
+      }
+      if (!memText.includes("0x48000000 – 0x147ffffff")) {
+        problems.push(
+          "memory-regions-v2n: ddr_main's range is not printed with its inclusive end at its natural width",
         );
       }
     }
@@ -3503,11 +3563,13 @@ async function main() {
           "memory-regions-region-only: the one resolved region's own name is missing from the table",
         );
       }
-      // No placed span means no rail: `.mapSide` (and therefore the chart)
-      // must not mount at all, not merely render empty.
-      if (container.querySelector('svg[role="img"]')) {
+      // Regions CREATE the window: one resolved region and no placed span
+      // still draws a rail, with that region as a band on it.
+      if (
+        !container.querySelector('svg[role="img"] [data-region="mram_main"]')
+      ) {
         problems.push(
-          "memory-regions-region-only: a rail rendered with zero placed spans to draw",
+          "memory-regions-region-only: no rail band for the one resolved region — regions must be able to create the window",
         );
       }
     }
@@ -3517,7 +3579,7 @@ async function main() {
       );
     }
     console.log(
-      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-region-only: a resolved region with zero placed spans still renders beside the (absent) rail`,
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-regions-region-only: a resolved region with zero placed spans still draws a rail of that region`,
     );
   }
 
@@ -3817,9 +3879,9 @@ async function main() {
       ).map((el) => el.getAttribute("aria-label") || "");
 
       const alwaysGaps = [
-        "128.0 KiB empty, compressed", // 0x80010000–0x80030000, covered by nothing ever
-        "48.0 KiB empty, compressed", // 0x80048000–0x80054000, covered by nothing ever
-        "40.0 KiB empty, compressed", // 0x80068000–0x80072000, covered by nothing ever
+        "128 KiB empty, compressed", // 0x80010000–0x80030000, covered by nothing ever
+        "48 KiB empty, compressed", // 0x80048000–0x80054000, covered by nothing ever
+        "40 KiB empty, compressed", // 0x80068000–0x80072000, covered by nothing ever
       ];
       for (const want of alwaysGaps) {
         if (!gapLabels.includes(want)) {
@@ -3836,17 +3898,17 @@ async function main() {
         [
           "the region push (occupied.push({ lo: r.lo, hi: r.hi }))",
           "0x80000000–0x80010000",
-          "64.0 KiB empty, compressed",
+          "64 KiB empty, compressed",
         ],
         [
           "the span's own size-resolved-end push (occupied.push({ lo: s.base, hi: end }))",
           "0x80030000–0x80048000",
-          "96.0 KiB empty, compressed",
+          "96 KiB empty, compressed",
         ],
         [
           "the budget-end push (occupied.push({ lo: s.base, hi: bEnd }))",
           "0x80054000–0x80068000",
-          "80.0 KiB empty, compressed",
+          "80 KiB empty, compressed",
         ],
       ];
       for (const [source, range, wouldBeGap] of perSourcePins) {
@@ -3897,7 +3959,7 @@ async function main() {
         ];
         const renderedBoundaries = new Set(
           Array.from(container.querySelectorAll('[data-tick="boundary"]')).map(
-            (el) => (el.textContent || "").trim().toLowerCase(),
+            (el) => (el.getAttribute("data-address") || "").toLowerCase(),
           ),
         );
         for (const addr of interior) {

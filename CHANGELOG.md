@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **The Memory tab's rail now draws every SoM region as a labelled band, on
+  a log₂(size) scale (#484).** Each resolved region is a band inside the
+  rail, behind the placed spans, tinted by authority tier (yours, locked,
+  or the hatch for not proven) and named when it is tall enough. Clicking a
+  band selects that region's row in the table, and the selected band gets a
+  ring. The rail's window now covers every resolved region, not only the
+  ones next to a placed span. So a manifest with regions but no placed
+  span still gets a rail, and V2N's `ddr_main` and `m33_tcm` are drawn
+  instead of being flagged "outside this map's window". Each segment's
+  height grows with log₂ of its size. A 32 KiB `atoc` stays readable beside
+  a 4 GiB `ddr_main`, empty runs compress to a marked break, and ticks sit
+  only at declared edges. The hover readout names the span or region under
+  the pointer and marks an interpolated address with `≈`.
+
+- **Address ranges and sizes are printed exactly (#484).** A range shows
+  its inclusive last byte (`0x80010000 – 0x802affff`), not the exclusive
+  end that names the next region's first byte. Sizes gain GiB. A size that
+  is an exact unit multiple prints clean (`64 KiB`, `4 GiB`). One that
+  rounds prints the exact hex beside it (`2.63 MiB (0x2a0000)`).
+  Partition and device-overlap offsets print as exact hex (`+0x10000`).
+  The same size format reaches the Slices tab's footprint, which now
+  reads, for example, `97.1 KiB (0x1847c) / 5.50 MiB (1.7%)`.
+
 - **The Build Plan panel's Memory tab is now one address-ordered table and
   one piecewise rail (#484).** The placed-extents list and the separate SoM
   region table — two of the tab's three old surfaces — are replaced by a

@@ -13,7 +13,8 @@
 // rounded silently away — on the one screen whose digits are read one at a
 // time.
 //
-// `layoutRail` (railScale.ts) replaces both rails with ONE: every declared
+// `layoutRail` (railScale.ts) replaces both rails with ONE, its segment
+// heights growing with log2 of each segment's SIZE: every declared
 // address (a span's base and end, a budget's end, a resolved region's own
 // extent) lands exactly where it says, and every run neither a span nor a
 // region occupies compresses to a fixed height and is MARKED as compressed —
@@ -30,10 +31,11 @@
 // that way; one drawn into a fixed `viewBox` cannot. Every coordinate below
 // is a number in that box, so the layout engine has no say in it.
 //
-// WHAT IS NOT TAKEN FROM d3-scale (not used here any more): `scale.ticks()`
-// would answer 0x8004E200 and friends — arithmetically even, and meaningless
-// as addresses. `binaryTicks`, below, keeps the power-of-two rule for the
-// computed, secondary marks between declared boundaries.
+// TICKS ONLY AT SEGMENT EDGES. Under log-of-size heights (railScale.ts) a
+// computed power-of-two mark between two declared boundaries would sit at a
+// height that means nothing a reader can measure, so there are none: every
+// tick is a declared edge, and an edge label closer than TICK_LABEL_H to one
+// already drawn is omitted (its tick line stays) rather than overprinted.
 
 import { useState } from "react";
 import type {
@@ -43,19 +45,25 @@ import type {
   SliceSize,
 } from "../../types";
 import { tierOf } from "./authorityTier";
-import { formatAddress, formatBytes } from "./format";
+import { formatAddress, formatBytes, formatRange } from "./format";
 import styles from "./MemoryChart.module.css";
-import { railBoundaries, zigzagPath } from "./railGeometry";
-import { layoutRail, type RailLayout } from "./railScale";
+import {
+  gapText,
+  namesAt,
+  railBoundaries,
+  thinEdgeLabels,
+  zigzagPath,
+} from "./railGeometry";
+import { layoutRail, railHeightNeeded, type RailLayout } from "./railScale";
+import { RegionBands } from "./RegionBands";
 import {
   budgetEnd,
   chartWindowOf,
   duplicatedNames,
   endOf,
-  regionsInWindow,
   resolvedRegions,
   type ResolvedRegion,
-  type Window,
+  regionsLargestFirst,
 } from "./regionWindow";
 
 /**
@@ -67,31 +75,16 @@ import {
  * reading size (`--font-size-base`, 13px — a constant VS Code injects into
  * every webview, tied to no setting) that floor is 78 units.
  *
- * AT LEAST 10, because the pad in `formatAddress` is a FLOOR: it pads to eight
- * hex digits and does not truncate to them, so an address past 2^32 prints 11
- * glyphs (~86 units — still inside the gutter) and one past 2^36 prints 12
- * (~94 — not, overrunning the box's left edge by ~6). `.svg` sets
- * `overflow: visible`, so that twelfth glyph is not clipped — it is painted
- * past the SVG's own left edge and, since Task 8 removed the one ancestor
- * that used to clip it there (`.chartScroll`'s `overflow-x: auto`,
- * MemoryRegions.module.css — this box now sits directly in `.mapSide`,
- * which sets no `overflow` of its own), it keeps going: such a label would
- * bleed past the whole panel's own left edge rather than losing its leading
- * `0x` to a scrollbar that never reaches it, on the one screen whose digits
- * are read one at a time. It cannot arise on what this panel resolves
- * today — MRAM and OCRAM bases come back as 0x0…/0x8…, all ten glyphs — and
- * a 64-bit A-core map is where it would; widening the gutter is that
- * change's job, not this one's.
+ * AT LEAST 10, because the pad in `formatAddress` is a FLOOR. One view pads
+ * an address past 2^32 keeps its natural width: V2N's `ddr_main` edge
+ * 0x148000000 is 11 glyphs, ~86 units — still inside the gutter. A 12-glyph label (past 2^36) would overrun the box's left
+ * edge unclipped (`.svg` sets `overflow: visible`); widening the gutter is
+ * a 64-bit A-core map's job, not this one's.
  *
  * THE AUTHORITY GUTTER — a 6-unit tier swatch per resolved region, at
- * `RAIL_X - 10` — sits inside this same margin, between the tick labels and
- * the rail's own left edge. It overlaps the last one or two units of the
- * longest tick labels (those ending closest to `RAIL_X - 8`) rather than
- * widening the margin again: the swatch is a sparse, subtle tint or hatch,
- * present only where a region actually resolves, and drawn after the ticks
- * so it never hides a digit outright. Moving it clear of every label would
- * cost the same horizontal budget RAIL_X already spends carefully — see
- * MemoryChart.module.css's `.gutter` comment for the geometry.
+ * `RAIL_X - 10` — overlaps the last unit or two of the longest tick labels
+ * rather than widening the margin again; it is drawn after the ticks so it
+ * never hides a digit outright.
  *
  * RAIL_X is 96, an 88-unit gutter (good to ~14.6px) that clears the 78-unit
  * floor above with margin. APERTURE_X is a literal, not an expression of
@@ -112,36 +105,33 @@ import {
  * `ResizeObserver` available, or one that has not fired yet — keeps drawing
  * at, rather than ever rendering a rail 0 units wide.
  *
- * RAIL_W IS 148, and the names that run inside it are why that width is a
- * decision and not an oversight. A band label starts at `x + 5` and runs
- * inward over the remaining 143 units, which at base holds ~18 glyphs, one
- * more than the longest name in the SDK's own emitted goldens: the default
- * carve-out `alp_default_rpmsg`, 17 glyphs and ~133 units, which stops ~10
- * units short of the rail's edge; the core ids and partition names beside it
- * are shorter still. Past the rail's edge there is white space before
- * anything (6 units to the aperture strip, 8 to the right-hand addresses),
- * and all of it is still INSIDE the viewBox — the clipping above happens at
- * the BOX's edge, not the rail's — so an 18-glyph name has margin, a
- * 19-glyph one spills into that white, and a 20-glyph one overprints the
- * aperture bar rather than being cut. Widening RAIL_W to buy glyphs nobody
- * has spent is not free either, and Task 8 leaves that decision alone: it is
- * still a hand-edit, not something a wider measured box does on its own —
- * the measured width only grows or shrinks the margin past the rail.
+ * RAIL_W IS 148: a band label starting at `x + 5` holds ~18 glyphs at base,
+ * one more than the longest name in the SDK's own goldens
+ * (`alp_default_rpmsg`, 17). A longer name spills into the white space past
+ * the rail rather than being cut. Widening it is a hand-edit; the measured
+ * width only grows or shrinks the margin past the rail.
  */
 const FALLBACK_WIDTH = 578;
-const H = 300;
 const PLOT_TOP = 18;
-const PLOT_BOTTOM = 258;
+/** The rail's plot height when its segments' floors fit inside it. A
+ *  manifest declaring more segments than fit grows the drawing instead
+ *  (`railHeightNeeded`, railScale.ts), so no floor is ever squeezed. */
+const MIN_PLOT_H = 240;
+/** Room the log-proportional share keeps beyond the floors when the
+ *  drawing has to grow. */
+const PLOT_SLACK = 48;
+/** Caption baseline below the plot, and the box's margin below that. */
+const CAPTION_DY = 24;
+const BOTTOM_MARGIN = 18;
 const RAIL_X = 96;
 const RAIL_W = 148;
 const APERTURE_X = 250;
 const APERTURE_W = 9;
-const CAPTION_Y = 282;
 
 /**
- * The vertical room one tick label claims around its own middle baseline: a
- * generated mark closer than this to a DECLARED boundary is dropped rather
- * than drawn.
+ * The vertical room one tick label claims around its own middle baseline: an
+ * edge label closer than this to one already drawn is omitted (its tick line
+ * stays), and a region label is held to the same room (RegionBands.tsx).
  *
  * PINNED BY HAND, and it cannot be otherwise. The size it guards is
  * `.tickLabel`'s `var(--font-size-base)` — a custom property the webview's
@@ -157,8 +147,8 @@ const CAPTION_Y = 282;
  *
  * REVISIT IT WHENEVER `.tickLabel`'s TOKEN MOVES: nothing here follows the
  * token and no gate reddens when it changes. Erring high is safe — it only
- * drops computed marks that would have crowded a declared boundary, and a
- * declared boundary itself is never dropped. Erring low is not: two
+ * omits a label (the tick line, the band's title and the table still
+ * carry the address). Erring low is not: two
  * addresses print through each other, on the one screen whose numbers are
  * read digit by digit. BAND_LABEL_DY and LINE_LABEL_DY below are pinned
  * separately, at the same base size, and do not move when this constant is
@@ -188,6 +178,9 @@ const TICK_LABEL_H = 14;
  */
 const BAND_LABEL_DY = 15;
 const LINE_LABEL_DY = -5;
+/** The hover readout's second line (the names under the pointer), below the
+ *  rule: a capital's ascent plus a gap. */
+const HOVER_NAME_DY = 14;
 
 /**
  * The `<pattern>` id the "unproven" authority tier's hatch fill references
@@ -198,31 +191,6 @@ const LINE_LABEL_DY = -5;
  * the stylesheet, because nothing ties them together automatically.
  */
 const HATCH_PATTERN_ID = "memory-authority-hatch";
-
-/**
- * Tick addresses for a window: aligned to a power of two, never to a power of
- * ten.
- *
- * `scaleLinear.ticks()` would answer 0x8004E200 and friends — arithmetically
- * even, and meaningless as addresses. Memory is aligned in powers of two, so a
- * tick is a multiple of the largest 2^k that still yields at least `target`
- * marks. The window's own ends are always included: they are the two
- * addresses the drawing is actually bounded by — and are also always among
- * the DECLARED boundaries `Rail` draws separately (below), so a caller never
- * sees them twice.
- */
-export function binaryTicks(win: Window, target = 4): number[] {
-  const span = win.hi - win.lo;
-  if (span <= 0) return [win.lo];
-  let step = 2 ** Math.floor(Math.log2(span / Math.max(target, 1)));
-  if (step < 1) step = 1;
-  const out: number[] = [];
-  const first = Math.ceil(win.lo / step) * step;
-  for (let a = first; a <= win.hi && out.length < 64; a += step) out.push(a);
-  if (out[0] !== win.lo) out.unshift(win.lo);
-  if (out[out.length - 1] !== win.hi) out.push(win.hi);
-  return out;
-}
 
 /**
  * What an extent BELONGS to, and therefore what colour it takes.
@@ -250,40 +218,39 @@ export function seriesIndex(spans: MemorySpan[]): Map<string, number> {
 }
 
 interface RailProps {
-  win: Window;
   layout: RailLayout;
   spans: MemorySpan[];
   budgets: Map<string, SliceSize>;
   x: number;
   width: number;
+  plotBottom: number;
   selected: string | null;
   onSelect: (id: string) => void;
   caption: string;
   series: Map<string, number>;
   regions: ResolvedRegion[];
+  duplicated: ReadonlySet<string>;
   /** Null when nothing is selected, OR when the selected region's name is
    *  shared by two or more rows — a duplicated name is refused here, not
    *  just in the table, so a click on either duplicate row never
-   *  highlights both this gutter and the aperture bar of the same name.
-   *  Distinct from `selected` (the raw id), which spans still match
-   *  directly — only a region gutter/aperture match is name-based and so
-   *  is the one that needs this refusal. */
+   *  highlights both this band and the aperture bar of the same name. */
   selectedRegionName: string | null;
 }
 
-/** The one rail: axis, gaps, the authority gutter, budgets, bands, the live
- *  readout. `layout` is computed once in `MemoryChart` and shared with
- *  `ApertureBar` — two independently-rounded scales would let an aperture
- *  bar drift out of alignment with the band it hulls. */
+/** The one rail: axis, gaps, the authority gutter, region bands, budgets,
+ *  span bands, the live readout. `layout` is computed once in `MemoryChart`
+ *  and shared with `ApertureBar` — two independently-rounded scales would
+ *  let an aperture bar drift out of alignment with the band it hulls. */
 function Rail({
-  win,
   layout,
   spans,
   budgets,
   regions,
+  duplicated,
   selectedRegionName,
   x,
   width,
+  plotBottom,
   selected,
   onSelect,
   caption,
@@ -297,30 +264,45 @@ function Rail({
   const tickX2 = x;
 
   // The DECLARED boundaries themselves — every segment edge `layoutRail`
-  // actually drew. A tick here can only ever land where a real span, budget
-  // or region begins or ends.
+  // actually drew. A tick can only ever land where a real span, budget or
+  // region begins or ends.
   const boundaryAddrs = [
     ...new Set(layout.segments.flatMap((s) => [s.lo, s.hi])),
   ].sort((a, b) => a - b);
-  const boundaryYs = boundaryAddrs.map((a) => y(a));
+  const labelled = thinEdgeLabels(boundaryAddrs, y, TICK_LABEL_H);
 
-  // Computed, power-of-two marks for orientation only, dropped wherever they
-  // would land within a label's height of a DECLARED boundary — rendered one
-  // register down, in secondary ink, so a computed mark can never be
-  // mistaken for one.
-  const interiorTicks = binaryTicks(win).filter((addr) => {
-    const pos = y(addr);
-    return boundaryYs.every((by) => Math.abs(pos - by) >= TICK_LABEL_H);
-  });
+  // Every span label's baseline, so a region label never lands on one.
+  const spanLabelBaselines: number[] = [];
+  for (const s of spans) {
+    if (s.base === null) continue;
+    const end = endOf(s);
+    const bEnd = budgetEnd(s, budgets.get(s.label));
+    if (bEnd !== null) spanLabelBaselines.push(y(bEnd) + BAND_LABEL_DY);
+    if (end !== null && y(s.base) - y(end) >= 1) {
+      spanLabelBaselines.push(y(end) + BAND_LABEL_DY);
+    } else if (bEnd === null) {
+      spanLabelBaselines.push(y(s.base) + LINE_LABEL_DY);
+    }
+  }
+
+  // A gap's label sits just above its break mark; a region label must not
+  // land on it either.
+  for (const seg of layout.segments) {
+    if (seg.kind === "gap") {
+      spanLabelBaselines.push(seg.top + seg.height / 2 + LINE_LABEL_DY);
+    }
+  }
+
+  const hoverNames =
+    hover === null ? [] : namesAt(hover, spans, budgets, regions);
+  const hoverExact = hover !== null && layout.isExactAt(y(hover));
 
   // THE READOUT'S POINTER TRACKING, on this component's root rather than on
   // the catcher rect below it. `.svg` (MemoryChart.module.css) overrides
   // neither width nor height, so the svg renders at exactly its own
-  // `viewBox` size and a client offset inside it IS a viewBox coordinate —
-  // which is what lets this read the same number the old handler computed
-  // from the rect's own box, from an ancestor the bands bubble up to as
-  // well. jsdom computes no layout, so its zero-height box is a no-op here
-  // rather than a wrong answer.
+  // `viewBox` size and a client offset inside it IS a viewBox coordinate.
+  // jsdom computes no layout, so its zero-height box is a no-op here rather
+  // than a wrong answer.
   return (
     <g
       onMouseMove={(e) => {
@@ -328,9 +310,7 @@ function Rail({
         if (!box || box.height === 0) return;
         const vx = e.clientX - box.left;
         const vy = e.clientY - box.top;
-        // The same region the catcher rect covered, so the readout's trigger
-        // area is unchanged by moving the handler up here.
-        if (vx < x || vx > x + width || vy < PLOT_TOP || vy > PLOT_BOTTOM) {
+        if (vx < x || vx > x + width || vy < PLOT_TOP || vy > plotBottom) {
           setHover(null);
           return;
         }
@@ -339,7 +319,11 @@ function Rail({
       onMouseLeave={() => setHover(null)}
     >
       {boundaryAddrs.map((addr) => (
-        <g key={`tick-${addr}`} data-tick="boundary">
+        <g
+          key={`tick-${addr}`}
+          data-tick="boundary"
+          data-address={formatAddress(addr)}
+        >
           <line
             className={styles.tick}
             x1={tickX1}
@@ -347,36 +331,17 @@ function Rail({
             y1={y(addr)}
             y2={y(addr)}
           />
-          <text
-            className={styles.tickLabel}
-            x={labelX}
-            y={y(addr)}
-            textAnchor="end"
-            dominantBaseline="middle"
-          >
-            {formatAddress(addr)}
-          </text>
-        </g>
-      ))}
-
-      {interiorTicks.map((addr) => (
-        <g key={`tick-minor-${addr}`} data-tick="interior">
-          <line
-            className={styles.tickMinor}
-            x1={tickX1}
-            x2={tickX2}
-            y1={y(addr)}
-            y2={y(addr)}
-          />
-          <text
-            className={styles.tickLabelMinor}
-            x={labelX}
-            y={y(addr)}
-            textAnchor="end"
-            dominantBaseline="middle"
-          >
-            {formatAddress(addr)}
-          </text>
+          {labelled.has(addr) && (
+            <text
+              className={styles.tickLabel}
+              x={labelX}
+              y={y(addr)}
+              textAnchor="end"
+              dominantBaseline="middle"
+            >
+              {formatAddress(addr)}
+            </text>
+          )}
         </g>
       ))}
 
@@ -385,7 +350,7 @@ function Rail({
         x={x}
         y={PLOT_TOP}
         width={width}
-        height={PLOT_BOTTOM - PLOT_TOP}
+        height={plotBottom - PLOT_TOP}
       />
 
       {/* A run neither a span nor a region occupies, compressed to a fixed
@@ -398,6 +363,7 @@ function Rail({
           const label = `${formatBytes(seg.hi - seg.lo)} empty, compressed`;
           return (
             <g key={`gap-${seg.lo}`} data-segment="gap" aria-label={label}>
+              <title>{label}</title>
               <path
                 className={styles.gapZigzag}
                 d={zigzagPath(x, mid, width)}
@@ -408,51 +374,76 @@ function Rail({
                 y={mid + LINE_LABEL_DY}
                 textAnchor="middle"
               >
-                {label}
+                {gapText(seg.hi - seg.lo)}
               </text>
             </g>
           );
         })}
 
-      {/* The SoM's own region table (#484 phase 2), as a thin authority-tier
-       *  gutter immediately left of the rail — never a frame drawn behind
-       *  the bands. Decorative, like `AuthoritySwatch`: the region's exact
-       *  name and authority class are read from the table, one interaction
-       *  away; this strip carries only the three-tier vocabulary (solid /
-       *  half-tone / hatch) so tiers can be scanned at a glance. */}
-      {regions.map(({ region, lo, hi }) => {
+      {/* The authority gutter: the same three-tier key as `AuthoritySwatch`,
+       *  at full strength, immediately left of the rail — the high-contrast
+       *  scan key the tinted bands inside the rail are too faint to be. */}
+      {regions.map(({ region, lo, hi }, index) => {
         const top = y(hi);
-        const height = Math.max(y(lo) - top, 1);
         return (
           <rect
-            key={`gutter-${region.id}`}
+            key={`gutter-${index}-${region.id}-${lo}`}
             className={styles.gutter}
             data-tier={tierOf(region.authorityClass)}
             data-selected={selectedRegionName === region.name || undefined}
             x={x - 10}
             width={6}
             y={top}
-            height={height}
+            height={Math.max(y(lo) - top, 1)}
           />
         );
       })}
 
-      {/* `tan size` budgets, dashed: the base is the manifest's own, the
-       *  extent is a second tool's measurement. */}
+      {/* The pointer catcher for the live address readout, BELOW every
+       *  clickable layer: SVG hit-tests the topmost painted element, so a
+       *  band above it wins the click wherever one is, and this catches the
+       *  pointer everywhere else. It carries no handlers of its own — the
+       *  readout is driven from this component's root `<g>`. */}
+      <rect
+        className={styles.hover}
+        x={x}
+        y={PLOT_TOP}
+        width={width}
+        height={plotBottom - PLOT_TOP}
+      />
+
+      <RegionBands
+        regions={regions}
+        yOf={y}
+        x={x}
+        width={width}
+        selectedRegionName={selectedRegionName}
+        duplicated={duplicated}
+        spanLabelBaselines={spanLabelBaselines}
+        onSelect={onSelect}
+      />
+
+      {/* `tan size` budgets: the base is the manifest's own, the extent is
+       *  a second tool's measurement. Clickable like the span itself. */}
       {spans.map((s) => {
         const end = budgetEnd(s, budgets.get(s.label));
         if (end === null || s.base === null) return null;
         const top = y(end);
         return (
-          <g key={`budget-${s.id}`}>
+          <g
+            key={`budget-${s.id}`}
+            className={styles.hit}
+            onClick={() => onSelect(s.id)}
+          >
+            <title>{`${s.label} · ${formatRange(s.base, end)} · ${formatBytes(end - s.base)} · tan size`}</title>
             <rect
               className={styles.budget}
               data-series={series.get(seriesKey(s)) ?? 1}
               data-selected={selected === s.id || undefined}
-              x={x + 1}
-              y={top}
-              width={width - 2}
-              height={Math.max(y(s.base) - top, 1)}
+              x={x + 3}
+              y={top + 2}
+              width={width - 6}
+              height={Math.max(y(s.base) - top - 4, 1)}
             />
             <text
               className={styles.bandLabel}
@@ -465,27 +456,6 @@ function Rail({
         );
       })}
 
-      {/* The pointer catcher for the live address readout, and it sits
-       *  BEFORE the bands on purpose. SVG hit-tests the topmost PAINTED
-       *  element, and `transparent` is `rgba(0,0,0,0)` — painted, not
-       *  absent — so as the last child this rect covered the whole rail and
-       *  swallowed every click meant for the `.hit` bands below it: the
-       *  chart's only interactive affordance was unreachable by any input.
-       *  Underneath them it still catches the pointer everywhere nothing
-       *  else is drawn, while a band wins the click wherever one is.
-       *
-       *  It carries no handlers of its own: the readout is driven from this
-       *  component's root `<g>`, so the pointer moving over a BAND updates
-       *  it too — a handler on this rect alone would have frozen the
-       *  readout the moment the bands stopped being above it. */}
-      <rect
-        className={styles.hover}
-        x={x}
-        y={PLOT_TOP}
-        width={width}
-        height={PLOT_BOTTOM - PLOT_TOP}
-      />
-
       {spans.map((s) => {
         if (s.base === null) return null;
         const end = endOf(s);
@@ -494,15 +464,26 @@ function Rail({
         // height would put a wall where the manifest gave a point.
         const h = end === null ? 0 : y(s.base) - y(end);
         const isMarker = h < 1;
+        const isSelected = selected === s.id || undefined;
         return (
           // No `role`/`tabIndex`: selection is driven from the table, one
-          // interaction away. `onClick` stays for mouse convenience only —
-          // a mouse-only affordance makes no keyboard claim.
-          <g key={s.id} className={styles.hit} onClick={() => onSelect(s.id)}>
+          // interaction away. `onClick` stays for mouse convenience only.
+          <g
+            key={s.id}
+            className={styles.hit}
+            data-span={s.label}
+            onClick={() => onSelect(s.id)}
+          >
+            <title>
+              {end !== null
+                ? `${s.label} · ${formatRange(s.base, end)} · ${formatBytes(end - s.base)}`
+                : `${s.label} · ${formatAddress(s.base)}`}
+            </title>
             {isMarker ? (
               <line
                 className={styles.marker}
                 data-series={series.get(seriesKey(s)) ?? 1}
+                data-selected={isSelected}
                 x1={x}
                 x2={x + width}
                 y1={top}
@@ -512,11 +493,11 @@ function Rail({
               <rect
                 className={styles.band}
                 data-series={series.get(seriesKey(s)) ?? 1}
-                data-selected={selected === s.id || undefined}
-                x={x + 1}
-                y={top}
-                width={width - 2}
-                height={Math.max(h, 1)}
+                data-selected={isSelected}
+                x={x + 3}
+                y={top + 2}
+                width={width - 6}
+                height={Math.max(h - 4, 1)}
               />
             )}
             {/* A budget band already carries this label; a marker sitting on
@@ -537,7 +518,7 @@ function Rail({
       })}
 
       {hover !== null && (
-        <g pointerEvents="none">
+        <g pointerEvents="none" data-readout="">
           <line
             className={styles.hoverLine}
             x1={x}
@@ -545,21 +526,33 @@ function Rail({
             y1={y(hover)}
             y2={y(hover)}
           />
+          {/* "≈" whenever one pixel here stands for more than one address:
+           *  the readout is then interpolated, not a declared figure. */}
           <text
             className={styles.hoverLabel}
             x={x + width - 5}
             y={y(hover) + LINE_LABEL_DY}
             textAnchor="end"
           >
-            {formatAddress(Math.floor(hover))}
+            {`${hoverExact ? "" : "≈"}${formatAddress(Math.floor(hover))}`}
           </text>
+          {hoverNames.length > 0 && (
+            <text
+              className={styles.hoverLabel}
+              x={x + width - 5}
+              y={y(hover) + HOVER_NAME_DY}
+              textAnchor="end"
+            >
+              {hoverNames.join(" · ")}
+            </text>
+          )}
         </g>
       )}
 
       <text
         className={styles.caption}
         x={x + width / 2}
-        y={CAPTION_Y}
+        y={plotBottom + CAPTION_DY}
         textAnchor="middle"
       >
         {caption}
@@ -633,82 +626,71 @@ export function MemoryChart({
   apertures: MemoryAperture[];
   budgets: Map<string, SliceSize>;
   // OPTIONAL, defaulting to `[]`: a caller that never resolves a region
-  // table — no producer new enough, or a SoM the resolver has nothing to
-  // say about — passes nothing and gets exactly the pre-region chart, with
-  // no window growth and no gutter drawn.
+  // table passes nothing and gets a chart of its spans alone.
   regions?: MemoryRegion[];
   /** The caller's OWN measured chart-column width (`MemoryRegions.tsx`'s
-   *  `ResizeObserver`), in the same units the caller's CSS box resolves to.
-   *  This component never measures itself — see the width docblock above
-   *  for why a caller that cannot measure, or has not yet, still gets a
-   *  real drawing rather than one 0 units wide. */
+   *  `ResizeObserver`). This component never measures itself — see the
+   *  width docblock above for why a caller that cannot measure, or has not
+   *  yet, still gets a real drawing rather than one 0 units wide. */
   width: number;
   selected: string | null;
   onSelect: (id: string) => void;
 }) {
-  // Never the caller's raw number verbatim: a momentary 0 — unmeasured, or a
-  // test harness with no real layout at all — would draw a rail 0 units
-  // wide, a silent failure rather than the honest pre-Task-8 default.
   const chartWidth = width > 0 ? width : FALLBACK_WIDTH;
   const placed = spans.filter((s) => s.base !== null);
   const resolved = resolvedRegions(regions);
-  // Grown to a fixpoint over every resolved region that intersects or
-  // touches the spans' own window — computed once in `chartWindowOf`, the
-  // same call `MemoryRegions.tsx` makes for the table's "outside this
-  // map's window" note, so the two can never disagree about where the
-  // window ends.
+  // The union of every placed span, budget and resolved region — the same
+  // call `MemoryRegions.tsx` makes, so the two never disagree about it.
+  // Regions can CREATE the window: a chart renders with one resolved region
+  // and no placed span at all.
   const win = chartWindowOf(spans, budgets, regions);
   if (!win) return null;
 
-  const regionsInMain = regionsInWindow(win, resolved);
   const regionApertures = apertures.filter(
     (a) => a.kind === "region" && a.hullBase !== null,
   );
   const series = seriesIndex(placed);
 
-  // ONE piecewise layout, shared by the rail and every aperture bar beside
-  // it — see `Rail`'s own doc comment for why building this twice would be
-  // a drift risk, not just duplicated work.
-  const { boundaries, occupied } = railBoundaries(
-    placed,
-    budgets,
-    regionsInMain,
+  // ONE layout, shared by the rail and every aperture bar beside it.
+  // Segment boundaries are the union of every edge, so a containing region
+  // (V2N's `ddr_main` around `m33_tcm`) spans its sub-segments.
+  const { boundaries, occupied } = railBoundaries(placed, budgets, resolved);
+  const plotH = Math.max(
+    MIN_PLOT_H,
+    railHeightNeeded(win, boundaries, occupied, PLOT_SLACK),
   );
-  const layout = layoutRail(win, boundaries, PLOT_TOP, PLOT_BOTTOM, occupied);
+  const plotBottom = PLOT_TOP + plotH;
+  const height = plotBottom + CAPTION_DY + BOTTOM_MARGIN;
+  const layout = layoutRail(win, boundaries, PLOT_TOP, plotBottom, occupied);
 
-  // A selected REGION (id `memory:<name>`) also highlights the aperture of
-  // the same name — a different id namespace (`region:<name>`), so this is
-  // a name match, not an id match. Refused (set to null) when that name is
-  // shared by two or more rows in the FULL region list (not just the
-  // resolved ones in `win`) — the same join `duplicatedNames` refuses in
-  // the table, computed the same way here so the gutter, this aperture
-  // highlight and the table row all refuse the identical set of names.
+  // A selected REGION (id `memory:<name>`) highlights its band and the
+  // aperture of the same name — a name match, refused (null) when that
+  // name is shared by two or more rows in the FULL region list, the same
+  // set `duplicatedNames` refuses in the table.
   const rawSelectedRegionName =
     selected !== null && selected.startsWith("memory:")
       ? selected.slice("memory:".length)
       : null;
-  const duplicatedRegionNames = duplicatedNames(regions);
+  const duplicated = duplicatedNames(regions);
   const selectedRegionName =
-    rawSelectedRegionName !== null &&
-    duplicatedRegionNames.has(rawSelectedRegionName)
+    rawSelectedRegionName !== null && duplicated.has(rawSelectedRegionName)
       ? null
       : rawSelectedRegionName;
 
   return (
     <svg
       className={styles.svg}
-      viewBox={`0 0 ${chartWidth} ${H}`}
+      viewBox={`0 0 ${chartWidth} ${height}`}
       width={chartWidth}
-      height={H}
+      height={height}
       role="img"
-      aria-label={`Memory map from ${formatAddress(win.lo)} to ${formatAddress(win.hi)}`}
+      aria-label={`Memory map from ${formatAddress(win.lo)} to ${formatAddress(win.hi - 1)}`}
     >
       <defs>
-        {/* The "unproven" tier's hatch: a solid/half-tone/hatch vocabulary
-         *  shared with `AuthoritySwatch`, drawn here as a `<pattern>` because
-         *  SVG `fill` takes a paint reference, never a CSS
-         *  `repeating-linear-gradient()`. Defined once and referenced by
-         *  `styles.gutter[data-tier="unproven"]`'s `fill: url(#...)`. */}
+        {/* The "unproven" tier's hatch: SVG `fill` takes a paint reference,
+         *  never a CSS `repeating-linear-gradient()`. Referenced by
+         *  `.gutter[data-tier="unproven"]` and `.regionBand[data-tier=
+         *  "unproven"]`'s `fill: url(#...)`. */}
         <pattern
           id={HATCH_PATTERN_ID}
           patternUnits="userSpaceOnUse"
@@ -721,17 +703,18 @@ export function MemoryChart({
       </defs>
 
       <Rail
-        win={win}
         layout={layout}
         spans={placed}
         budgets={budgets}
-        regions={regionsInMain}
+        regions={regionsLargestFirst(resolved)}
+        duplicated={duplicated}
         selectedRegionName={selectedRegionName}
         x={RAIL_X}
         width={RAIL_W}
+        plotBottom={plotBottom}
         selected={selected}
         onSelect={onSelect}
-        caption="piecewise scale"
+        caption="log₂(size) scale"
         series={series}
       />
 

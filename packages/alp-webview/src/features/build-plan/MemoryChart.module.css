@@ -71,9 +71,15 @@
   stroke-width: 2.5;
 }
 
-/* A base with no size is a line, not a block. */
+/* A base with no size is a line, not a block. Selected, it thickens the
+   same way a selected band's stroke does, so picking `m55_he` in the table
+   visibly lands on its marker. */
 .marker {
   stroke-width: 2;
+}
+
+.marker[data-selected] {
+  stroke-width: 4;
 }
 
 .band[data-series="1"],
@@ -165,8 +171,7 @@
 
 /* Load-bearing, not decorative: an axis mark IS the information, so a
    DECLARED boundary (a real span, budget or region edge) takes --text-primary
-   — the strongest ink this panel has — never --border-chart, which now
-   marks only the computed, secondary ticks below. */
+   — the strongest ink this panel has. */
 .tick {
   stroke: var(--text-primary);
   stroke-width: 1;
@@ -185,35 +190,17 @@
    above, and nothing wraps it that clips any more). The width docblock in
    MemoryChart.tsx carries that case and why it does not arise today.
 
-   PRIMARY INK, same reasoning as `.tick`: this labels a DECLARED boundary,
-   never a computed one — see `.tickMinor`/`.tickLabelMinor` below for the
-   secondary-ink pair a power-of-two mark takes instead, so the two can never
-   be mistaken for each other. */
+   PRIMARY INK, same reasoning as `.tick`: every tick labels a DECLARED
+   segment edge — the rail draws no computed marks at all. */
 .tickLabel {
   fill: var(--text-primary);
   font-size: var(--font-size-base);
 }
 
-/* A computed, power-of-two mark between declared boundaries — orientation
-   only, never a fact about where anything begins or ends. Secondary ink
-   (the SAME token `.tick`/`.tickLabel` used before this task promoted them)
-   is what keeps a reader from mistaking arithmetic convenience for a
-   declared edge; see MemoryChart.tsx's `interiorTicks` filter for how the
-   two sets are kept from landing close enough to collide. */
-.tickMinor {
-  stroke: var(--border-chart);
-  stroke-width: 1;
-}
-
-.tickLabelMinor {
-  fill: var(--text-secondary);
-  font-size: var(--font-size-base);
-}
-
-/* Which ruler this is: a piecewise one, never a proportional one throughout —
-   see railScale.ts's own header for the trade this makes. Centred on a
-   148-unit rail: "piecewise scale" (15 glyphs) runs ~117 units at base and
-   lands inside its own rail with ~15 to spare each side. */
+/* Which ruler this is: log2-of-size segment heights, never a proportional
+   one — see railScale.ts's own header for the trade this makes. Centred on a
+   148-unit rail: "log₂(size) scale" (16 glyphs) runs ~125 units at base and
+   lands inside its own rail. */
 .caption {
   fill: var(--text-secondary);
   font-size: var(--font-size-base);
@@ -279,6 +266,45 @@
   outline-offset: -1px;
 }
 
+/* THE REGION BANDS (RegionBands.tsx): each resolved SoM region drawn INSIDE
+   the rail, behind the spans, in the same three-tier vocabulary as the
+   gutter and `AuthoritySwatch` — but as a TINT, not at full strength: the
+   band is a background the span bands and every label sit on, so it must
+   stay well below their ink. yours = denser tint, locked = half of it,
+   not proven = the hatch pattern at low opacity. */
+.regionBand {
+  stroke: none;
+}
+
+.regionBand[data-tier="yours"] {
+  fill: color-mix(in srgb, var(--text-primary) 24%, transparent);
+}
+
+.regionBand[data-tier="locked"] {
+  fill: color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+
+.regionBand[data-tier="unproven"] {
+  fill: url(#memory-authority-hatch);
+  fill-opacity: 0.22;
+}
+
+/* The selected region's ring: an SVG `stroke`, which a <rect> paints, never a
+   CSS `outline`, which SVG content does not reliably paint. Primary ink, so
+   it clears any of the three tints behind it by a wide margin. */
+.regionBand[data-selected] {
+  stroke: var(--text-primary);
+  stroke-width: 2;
+}
+
+/* A region's name, bottom-right inside its band (span names sit top-left).
+   Secondary ink at reading size: the band is context, the spans on top of
+   it are the subject. */
+.regionLabel {
+  fill: var(--text-secondary);
+  font-size: var(--font-size-base);
+}
+
 /* The hatch pattern's own stroke, full-strength `--text-primary` — the same
    ink `AuthoritySwatch.module.css`'s `unproven` tier strokes at, so the two
    hatches read as the same tier rather than two different ones. */
@@ -288,8 +314,7 @@
 
 /* A run neither a span nor a region occupies, compressed to a fixed height
    rather than drawn to scale (railScale.ts). Secondary ink: a compressed run
-   is orientation, not a fact about where anything begins or ends, the same
-   distinction `.tickMinor` draws for a computed axis mark. */
+   is orientation, not a fact about where anything begins or ends. */
 .gapZigzag {
   fill: none;
   stroke: var(--border-chart);
