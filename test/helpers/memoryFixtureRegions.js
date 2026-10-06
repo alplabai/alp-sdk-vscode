@@ -32,12 +32,12 @@ function region(
 
 /** rpmsg-aen: six regions tiling 0x80000000 – 0x8057ffff. */
 const AEN_REGIONS = [
-  region("mcuboot", 2147483648, 65536, "vendor_image"), // 0x80000000, 64 KiB
+  region("mcuboot", 2147483648, 65536, "locked"), // 0x80000000, 64 KiB
   region("he_slot0", 2147549184, 2752512, "customer_image"), // 0x80010000
   region("hp_slot0", 2150301696, 2752512, "customer_image"), // 0x802b0000
-  region("reserved", 2153054208, 65536, "none"), // 0x80550000
+  region("reserved", 2153054208, 65536, "reserved"), // 0x80550000
   region("storage", 2153119744, 98304, "customer_runtime"), // 0x80560000
-  region("atoc", 2153218048, 32768, "secure_enclave"), // 0x80578000, 32 KiB
+  region("atoc", 2153218048, 32768, "locked"), // 0x80578000, 32 KiB
 ];
 
 /** rpmsg-v2n: ddr_main (4 GiB) CONTAINS m33_tcm; ocram_low sits far below.

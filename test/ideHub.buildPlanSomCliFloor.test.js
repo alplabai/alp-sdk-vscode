@@ -44,7 +44,7 @@ const PROJECT = "/work/renesas-control";
  * @param opts.sku     board.yaml's declared SoM
  * @param opts.probed  what `probeTanVersion` answers
  */
-async function drive(message, opts) {
+async function drive(act, opts) {
   const commandSpawns = [];
   const streamedSpawns = [];
   const notified = [];
@@ -162,23 +162,21 @@ async function drive(message, opts) {
   streamedSpawns.length = 0;
   notified.length = 0;
 
-  onMessage(message);
+  act(BuildPlanPanel);
   for (let i = 0; i < 8; i += 1) await new Promise((r) => setImmediate(r));
 
   return { commandSpawns, streamedSpawns, notified, orderedCalls };
 }
 
+// The two `tan build` sites are the panel's editor-title commands
+// (`alp.buildPlan.materialise` / `alp.buildPlan.build`), reached through
+// the panel's static entry points.
+const MATERIALISE = (panel) => panel.materialise({ extensionUri: "/ext" });
+const BUILD = (panel) => panel.build({ extensionUri: "/ext" });
+
 const SITES = [
-  {
-    message: { type: "materialiseBuildPlan" },
-    what: "Materialise",
-    spawns: (r) => r.commandSpawns,
-  },
-  {
-    message: { type: "runBuild" },
-    what: "the Build button",
-    spawns: (r) => r.streamedSpawns,
-  },
+  { act: MATERIALISE, what: "Materialise", spawns: (r) => r.commandSpawns },
+  { act: BUILD, what: "the Build command", spawns: (r) => r.streamedSpawns },
 ];
 
 /** Only the CLI-floor notification, never the materialise/build handler's OWN
@@ -187,9 +185,9 @@ const SITES = [
 const floorNotices = (notified) =>
   notified.filter((p) => p.dedupeKey === "som-cli-floor");
 
-for (const { message, what, spawns } of SITES) {
+for (const { act, what, spawns } of SITES) {
   test(`${what}: an old tan on a Renesas project is warned before the build runs`, async () => {
-    const result = await drive(message, { sku: "E1M-V2N101", probed: "0.5.1" });
+    const result = await drive(act, { sku: "E1M-V2N101", probed: "0.5.1" });
 
     const notices = floorNotices(result.notified);
     assert.equal(
@@ -207,14 +205,14 @@ for (const { message, what, spawns } of SITES) {
   });
 
   test(`${what}: a current tan on a Renesas project is silent`, async () => {
-    const result = await drive(message, { sku: "E1M-V2N102", probed: "0.6.0" });
+    const result = await drive(act, { sku: "E1M-V2N102", probed: "0.6.0" });
 
     assert.deepEqual(floorNotices(result.notified), []);
     assert.equal(spawns(result).length, 1);
   });
 
   test(`${what}: a non-Renesas project is silent`, async () => {
-    const result = await drive(message, { sku: "E1M-AEN801", probed: "0.4.1" });
+    const result = await drive(act, { sku: "E1M-AEN801", probed: "0.4.1" });
 
     assert.deepEqual(floorNotices(result.notified), []);
     assert.equal(spawns(result).length, 1);
@@ -226,10 +224,10 @@ test("Materialise: the CLI-floor probe runs BEFORE the build reservation, not in
   // 3s. Reserving `BUILD_RUN_NAME` before the probe resolves would refuse
   // the Build button with `"Alp Build" is still running` for that whole
   // window while nothing is actually running yet.
-  const result = await drive(
-    { type: "materialiseBuildPlan" },
-    { sku: "E1M-V2N101", probed: "0.5.1" },
-  );
+  const result = await drive(MATERIALISE, {
+    sku: "E1M-V2N101",
+    probed: "0.5.1",
+  });
 
   assert.deepEqual(
     result.orderedCalls,
@@ -239,7 +237,7 @@ test("Materialise: the CLI-floor probe runs BEFORE the build reservation, not in
   );
 });
 
-for (const { message, what, spawns } of SITES) {
+for (const { act, what, spawns } of SITES) {
   test(`${what}: a throwing CLI-floor probe still runs the build (#2)`, async () => {
     // `warnIfCliCannotBuildSom` must never reject — fixed centrally in
     // src/build/somCliFloorGuard.ts (test/build.somCliFloorGuardNeverThrows.
@@ -249,7 +247,7 @@ for (const { message, what, spawns } of SITES) {
     // rejection AND the build never runs), and `handleMaterialiseBuildPlan`'s
     // try/catch is really a try/FINALLY with no catch, so a throw there
     // skips the materialise too.
-    const result = await drive(message, {
+    const result = await drive(act, {
       sku: "E1M-V2N101",
       probed: "0.5.1",
       probeThrows: true,

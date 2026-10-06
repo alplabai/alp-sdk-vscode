@@ -75,7 +75,7 @@
 // into modules the compiler never resolves is precisely how a module joins
 // the view unseen.
 //
-// THE SCOPE FOLLOWS BINDINGS, NOT WHOLE MODULES. `MemoryRegions.tsx` imports
+// THE SCOPE FOLLOWS BINDINGS, NOT WHOLE MODULES. `MemoryStrip.tsx` imports
 // `{ Button }` from `../../shared/ui`, a barrel that also re-exports
 // components which legitimately DO talk to the host (the Markdown and
 // ResourceLink components both post messages, correctly, for their own
@@ -109,7 +109,7 @@
 // the most likely next edit on this code:
 //
 //  1. A SIBLING COMPONENT rendered by `BuildPlanView.tsx` beside
-//     `<MemoryRegions/>`. A new `MemoryLegend.tsx` that posts `writeBoardYaml`
+//     `<MemoryStrip/>`. A new strip child that posts `writeBoardYaml`
 //     passes this gate, because nothing the Memory view imports reaches it.
 //     The directory classification this file replaced DID catch that, so this
 //     is a real loss of coverage, recorded rather than hidden. It was not
@@ -118,8 +118,8 @@
 //     remove a file from every scan at once — or a naming convention, which
 //     is that list under another name. "Which tab renders this" is a semantic
 //     fact the import graph does not carry: the container legitimately posts
-//     for the Slices tab through `useBuildPlan.ts`.
-//  2. A PROP-INJECTED CALLBACK. Give `MemoryRegions` an
+//     for the Cores rows through `useBuildPlan.ts`.
+//  2. A PROP-INJECTED CALLBACK. Give `MemoryStrip` an
 //     `onHostAction?: () => void` and wire it from the out-of-scope parent,
 //     and the message ships (`writeBoardYaml in dist/main.js: 1`). The view's
 //     own modules hold no transport edge, which is all this gate reads.
@@ -182,19 +182,15 @@ const WEBVIEW_TSCONFIG = joinPath(WEBVIEW, "tsconfig.json");
 const AMBIENT_DECLARATIONS = joinPath(SRC, "vite-env.d.ts");
 
 /**
- * The Memory view's entry components — the roots of the walk.
+ * The Memory view's entry component — the root of the walk.
  *
- * Established from `BuildPlanView.tsx`, which owns the tab strip: it renders
- * `<MemoryRegions …/>` for `tab === "memory"` and `<MemoryNotes />` for
- * `tab === "notes"`, the map's own context. `MemoryChart.tsx` and
- * `MemoryTable.tsx` are deliberately NOT roots — `MemoryRegions.tsx` imports
- * both, so the walk reaches them on its own; listing them here would be the
- * hand-maintenance this derivation exists to remove.
+ * Established from `BuildPlanView.tsx`, which renders `<MemoryStrip …/>`
+ * as the page's Memory section. `stripLayout.ts` and `memoryRows.ts` are
+ * deliberately NOT roots — `MemoryStrip.tsx` imports both, so the walk
+ * reaches them on its own; listing them here would be the hand-maintenance
+ * this derivation exists to remove.
  */
-const ROOTS = [
-  joinPath(BUILD_PLAN_DIR, "MemoryRegions.tsx"),
-  joinPath(BUILD_PLAN_DIR, "MemoryNotes.tsx"),
-];
+const ROOTS = [joinPath(BUILD_PLAN_DIR, "MemoryStrip.tsx")];
 
 /** The host transport. Every ban below is stated against THIS resolved file,
  *  never against the text of a specifier. */
@@ -205,7 +201,7 @@ const TRANSPORT_MODULE = joinPath(SRC, "vscode.ts");
  *  messages", which needs SOME transport; recording the exception here,
  *  scoped to this one file and the two message kinds below, is how that need
  *  is met without reopening "the memory view has no path back to the host"
- *  for the picture/table/Notes modules this gate exists to keep passive. */
+ *  for the strip modules this gate exists to keep passive. */
 const SANCTIONED_HOST_FILE = joinPath(
   BUILD_PLAN_DIR,
   "blockedFindingActions.ts",
@@ -746,9 +742,10 @@ test("the memory view's module graph resolves completely", async () => {
         "set — the walk is broken, not the code",
     );
   }
-  // The picture and the table are reached THROUGH the entry components; if
-  // the walk stops short of them it has silently stopped covering the view.
-  for (const name of ["MemoryChart.tsx", "MemoryTable.tsx"]) {
+  // The layout and the row model are reached THROUGH the entry component;
+  // if the walk stops short of them it has silently stopped covering the
+  // view.
+  for (const name of ["stripLayout.ts", "memoryRows.ts"]) {
     assert.ok(
       graph.reachable.includes(joinPath(BUILD_PLAN_DIR, name)),
       `the walk did not reach ${name}, which the memory view renders — a ` +
@@ -993,9 +990,9 @@ test("the memory view offers no editing affordance", async () => {
   const graph = await moduleGraph();
   assertNothingWasDropped(graph);
 
-  // A control that takes a value is the shape of an edit. Buttons and pointer
-  // handlers are allowed and present (scale mode, row selection, the address
-  // readout); they change what is DRAWN, never what is stored.
+  // A control that takes a value is the shape of an edit. Buttons and
+  // keyboard handlers are allowed and present (selecting a strip item);
+  // they change what is DRAWN, never what is stored.
   for (const file of graph.reachable) {
     const source = read(file);
     for (const forbidden of [

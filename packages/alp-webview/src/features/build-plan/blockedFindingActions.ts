@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// The only host round-trip in the Memory tab (#484 Task 7) — deliberately
-// kept in its OWN file, outside `MemoryRegions.tsx`, `MemoryChart.tsx`,
-// `MemoryTable.tsx`, `memoryTableRows.ts` and `AuthoritySwatch.tsx`. Those
-// five stay the picture and the table: they never ask the host to do
-// anything, because nothing in the emitted contract can yet tell a
+// The only host round-trip in the Memory section (#484) — deliberately
+// kept in its OWN file, outside `MemoryStrip.tsx`, `stripLayout.ts` and
+// `memoryRows.ts`. Those three stay the picture and its figures: they never
+// ask the host to do anything, because nothing in the emitted contract can yet tell a
 // customer-writable band from a Secure-Enclave-owned one — `write_authority`
 // is optional on both `som-preset-v1` and `system-manifest-v1`, and promotion
 // to required is alp-sdk#2024 — and an edit affordance over that ambiguity is
@@ -12,7 +11,7 @@
 //
 // `test/memoryRegions.readOnly.test.js` is what enforces this split, and
 // THIS FILE IS IN ITS SCOPE TOO — the gate bans the host TRANSPORT itself,
-// not just mutation, so relocating the two calls out of the five files
+// not just mutation, so relocating the two calls out of the three files
 // above closes nothing on its own. The gate instead names this file
 // explicitly and allows exactly the two message types below
 // (`openBoardYaml`, `copyText`) and nothing else — no dispatched command,

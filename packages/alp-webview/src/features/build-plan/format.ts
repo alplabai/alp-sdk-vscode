@@ -33,6 +33,22 @@ const UNITS: ReadonlyArray<{ size: number; name: string; digits: number }> = [
  * the count is already exact (`99 B`).
  */
 export function formatBytes(bytes: number): string {
+  const { text, hex } = splitBytes(bytes);
+  return hex === null ? text : `${text} (${hex})`;
+}
+
+/**
+ * `formatBytes`'s two halves, kept apart for a caller that lays them out on
+ * separate lines (the memory table's Size column). `text` is the rounded,
+ * reading-size figure; `hex` is the exact byte count in the spelling a
+ * linker map uses, present exactly when `text` ALONE would lose bytes —
+ * `64 KiB` is exact and carries none, `2.63 MiB` is not and carries
+ * `0x2a0000`. Below 1 KiB the count is already exact, so `hex` is null.
+ */
+export function splitBytes(bytes: number): {
+  text: string;
+  hex: string | null;
+} {
   for (const unit of UNITS) {
     const fixed = (bytes / unit.size).toFixed(unit.digits);
     // Below 1 KiB the byte count itself is printed — never `1.0 KiB` for
@@ -42,10 +58,10 @@ export function formatBytes(bytes: number): string {
     const isExact = value * unit.size === bytes;
     const shown = Number.isInteger(value) ? String(value) : fixed;
     return isExact
-      ? `${shown} ${unit.name}`
-      : `${fixed} ${unit.name} (0x${bytes.toString(16)})`;
+      ? { text: `${shown} ${unit.name}`, hex: null }
+      : { text: `${fixed} ${unit.name}`, hex: `0x${bytes.toString(16)}` };
   }
-  return `${bytes} B`;
+  return { text: `${bytes} B`, hex: null };
 }
 
 /**

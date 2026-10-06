@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure row-building logic for the unified memory map (#484 phase 3) — no
-// React, no CSS import, unit-tested directly through
-// test/webview/esbuildImport.mjs the way authorityTier.ts and railScale.ts
-// are. MemoryTable.tsx renders; this module decides which rows exist, which
-// tier each belongs in, and the order they render in.
-//
-// This logic was component-local, which is exactly why nothing could reach it:
-// a harness assertion that reads a row's rendered `data-tier` against
-// `byTier[row.tier]` can never disagree with itself when both read the same
-// field off the same object. Moving tier derivation and sort order here, with
-// their own unit tests asserting group MEMBERSHIP by name rather than by
-// re-reading the field under test, is what actually closes that hole.
+// Pure row-building logic for the memory strip (#484) — no React, no CSS
+// import, unit-tested directly through test/webview/esbuildImport.mjs the
+// way authorityTier.ts and railScale.ts are. MemoryStrip.tsx draws; this
+// module decides what each item IS: its exact range, its size in both
+// spellings, its footprint, its authority, and the note that ties it to the
+// region it came from. The strip's selected-item detail line is one of these
+// rows printed in full.
 
-import type { MemoryRegion, MemorySpan, SliceSize } from "../../types";
+import type {
+  MemoryRegion,
+  MemorySpan,
+  MemoryUnresolved,
+  SliceSize,
+} from "../../types";
 import { type AuthorityTier, tierOf } from "./authorityTier";
 import {
   budgetEnd,
@@ -21,14 +21,15 @@ import {
   endOf,
   resolvedRegions,
   type ResolvedRegion,
-  type Window,
 } from "./regionWindow";
 import {
   formatAddress,
   formatBytes,
   formatOffset,
   formatRange,
+  splitBytes,
 } from "./format";
+import { slotUsageOf, usedPercent } from "./slotUsage";
 
 /** Spec table (#484 §2), verbatim. `write_authority` null is "absent" —
  *  its label depends on `source`, which the class itself does not (see
@@ -75,11 +76,18 @@ export const SPAN_KIND_LABEL: Record<MemorySpan["kind"], string> = {
   partition: "partition",
 };
 
-// `duplicatedNames` is imported from `regionWindow.ts`, not redeclared here:
-// every by-name join in this file — `usersOf` below, the chart's own
-// frame/aperture selection and core's `findOutsideRegion` — refuses an
-// ambiguous name the same way, off the same computation, so no two of them
-// can ever disagree about which names are ambiguous.
+/**
+ * Whether the SoM said anything about who may write its regions. False
+ * when every resolved region is `unstated` (or there are none): the
+ * fail-closed tier is then only a default, not a finding about the
+ * reader's rows, and calling their own firmware "not yours" would be
+ * false — so the strip draws no tier at all and says once that the SoM
+ * does not publish authority. A declared `reserved` region keeps the
+ * tiers: that tier is then a statement the manifest made.
+ */
+export function authorityDeclared(regions: MemoryRegion[]): boolean {
+  return regions.some((r) => r.authorityClass !== "unstated");
+}
 
 /** The labels of every resolved carve-out or partition that names this
  *  region — never called for a region whose name is in `duplicatedNames()`;
@@ -91,26 +99,8 @@ export function usersOf(region: MemoryRegion, spans: MemorySpan[]): string[] {
     .map((s) => s.label);
 }
 
-/** Every distinct `flash_device` a resolved partition names that has no
- *  matching region row — a controller instance is not a region and has no
- *  base to show. */
-export function devicesWithNoRegion(
-  spans: MemorySpan[],
-  regionNames: Set<string>,
-): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const span of spans) {
-    if (span.kind !== "partition" || span.device === null) continue;
-    if (seen.has(span.device) || regionNames.has(span.device)) continue;
-    seen.add(span.device);
-    out.push(span.device);
-  }
-  return out;
-}
-
-/** One row of the unified table — a region or a placed span, normalised to
- *  the same shape so both can sort and render together. */
+/** One item of the strip — a region or a placed span, normalised to the
+ *  same shape so the detail line prints either without a second code path. */
 export interface Row {
   /** Unique React key. A duplicate-named region shares its `id` with every
    *  other row of that name (see `MemoryRegion.id`'s own doc), so the key
@@ -119,43 +109,88 @@ export interface Row {
   key: string;
   /** The real selection id (`region.id` or `span.id`) — NOT guaranteed
    *  unique for a duplicated region name, on purpose: every row sharing
-   *  that name is `inert` below, so none of them ever reaches `onSelect`. */
+   *  that name is `inert` below, so none of them is ever selectable. */
   id: string;
   origin: "region" | "span";
   tier: AuthorityTier;
   name: string;
   producer: "SoM region" | "placed image";
-  /** Sort key. Null sorts last within the tier, by name. */
+  /** Null when the manifest pinned no address. */
   base: number | null;
   range: string;
-  size: string;
+  /** The rounded figure alone (`2.63 MiB`), or the "not pinned" sentence
+   *  when the manifest gave no size. */
+  sizeText: string;
+  /** The exact byte count in hex (`0x2a0000`), or null when there is no
+   *  size to spell. */
+  sizeHex: string | null;
+  /** "from tan size" when the size is a `tan size` budget, not manifest-pinned. */
+  sizeNote: string | null;
+  /** `95.5 KiB · 3.6%`, "size unknown" for a slot image `tan size` did not
+   *  measure, or null when this row has no footprint (a region, a
+   *  carve-out, a partition). */
+  usedText: string | null;
+  /** The exact used byte count in hex, beside `usedText`. */
+  usedHex: string | null;
+  usedNote: string | null;
   cores: string[];
   reason: string | null;
   /** "used by …" / "name shared by N rows, not joined" (region) or the
-   *  DECLARED-join sentence for a span (region) or the DECLARED-join
-   *  sentence for a span's own `carve_out_region` name — a separate
-   *  question from which region's extent CONTAINS the span's address (see
-   *  `regionsContaining` below): a carve-out's `carve_out_region` says
-   *  where the resolver allocated it FROM, by name, never what physically
-   *  contains it. */
+   *  DECLARED-join sentence for a span's own `carve_out_region` name — a
+   *  separate question from which region's extent CONTAINS the span's
+   *  address (see `regionsContaining` below): a carve-out's
+   *  `carve_out_region` says where the resolver allocated it FROM, by name,
+   *  never what physically contains it. */
   note: string | null;
   kindText: string;
-  /** A span's raw `kind` (`slot_image` / `carve_out` / `partition`), or
-   *  null for a region row — drives the detail row's `[data-kind]`, the
-   *  marker a placed image is findable by on the map. */
-  rawKind: MemorySpan["kind"] | null;
   authorityText: string | null;
-  /** Drives `.authority[data-class]`'s locked/customer_image styling in the
-   *  detail row — the region's own class, or the class of the region whose
-   *  extent contains a span's base address. */
-  authorityClassAttr: string | null;
-  outside: boolean;
   accessibleName: string;
-  /** A duplicated region name: no `onSelect`, `aria-disabled`, and
-   *  `.row[aria-disabled]` sets `cursor: default` (#664 — the variant the
-   *  old CSS lacked). */
+  /** A duplicated region name: never selectable, because its id is shared
+   *  with every other row of that name and a click could highlight all of
+   *  them at once. */
   inert: boolean;
   selected: boolean;
+}
+
+/** The size cells for a byte count that may be absent. `fromBudget` marks a
+ *  size `tan size` supplied rather than the manifest. */
+function sizeCells(
+  bytes: number | null,
+  fromBudget: boolean,
+): Pick<Row, "sizeText" | "sizeHex" | "sizeNote"> {
+  if (bytes === null) {
+    return {
+      sizeText: "size not pinned by this manifest",
+      sizeHex: null,
+      sizeNote: null,
+    };
+  }
+  return {
+    sizeText: splitBytes(bytes).text,
+    // Always the exact hex, even when the rounded figure is exact: the
+    // detail line is compared digit by digit against a linker map.
+    sizeHex: `0x${bytes.toString(16)}`,
+    sizeNote: fromBudget ? "from tan size" : null,
+  };
+}
+
+/** The used cells. A slot image with no measured footprint says so in
+ *  words — never `0`, never blank. Anything that is not a slot image has
+ *  no `tan size` footprint and carries none. */
+export function usedCells(
+  usage: ReturnType<typeof slotUsageOf>,
+): Pick<Row, "usedText" | "usedHex" | "usedNote"> {
+  if (usage === null) return { usedText: null, usedHex: null, usedNote: null };
+  if (usage.used === null) {
+    return { usedText: "size unknown", usedHex: null, usedNote: null };
+  }
+  const pct = usedPercent(usage);
+  const bytes = splitBytes(usage.used).text;
+  return {
+    usedText: pct === null ? bytes : `${bytes} · ${pct}%`,
+    usedHex: `0x${usage.used.toString(16)}`,
+    usedNote: "from tan size",
+  };
 }
 
 function joinAccessibleName(parts: (string | null)[]): string {
@@ -183,7 +218,6 @@ function regionRow(
   spans: MemorySpan[],
   dupes: Set<string>,
   countByName: Map<string, number>,
-  window: Window | null,
   selectedId: string | null,
 ): Row {
   const isDuplicated = dupes.has(region.name);
@@ -198,26 +232,6 @@ function regionRow(
         ? formatRange(region.base, end)
         : `${formatAddress(region.base)} – size unresolved`
       : "address unresolved";
-  const size =
-    region.sizeBytes !== null
-      ? formatBytes(region.sizeBytes)
-      : "size not pinned by this manifest";
-  // Every RESOLVED region (`status: "ok"`, a base, a positive size) is
-  // inside the window by construction — `chartWindowOf` is the union of all
-  // of them — so this flag can only fire for a region with a base that does
-  // NOT resolve: no size, a zero size, or a status other than `ok`. None of
-  // those draws on the rail. A sizeless one is marked outside only when
-  // its base alone already clears `window.hi`. The LOWER half needs a real
-  // extent to know the region fully clears `window.lo` rather than merely
-  // starting before it, and a sizeless region has none: its true reach is
-  // unknown, so it is never claimed to be outside on the lower side — it
-  // could still extend into the window.
-  const outside =
-    window !== null &&
-    region.base !== null &&
-    (region.sizeBytes !== null
-      ? region.base >= window.hi || region.base + region.sizeBytes <= window.lo
-      : region.base >= window.hi);
   const note = isDuplicated
     ? `name shared by ${countByName.get(region.name)} rows, not joined`
     : (() => {
@@ -226,6 +240,7 @@ function regionRow(
       })();
   const authorityText = authorityLabel(region);
   const kindText = kindLabel(region.kind);
+  const size = sizeCells(region.sizeBytes, false);
   const accessibleName = joinAccessibleName([
     region.name,
     "SoM region",
@@ -233,8 +248,9 @@ function regionRow(
     authorityText,
     kindText,
     range,
-    size,
+    region.sizeBytes !== null ? formatBytes(region.sizeBytes) : size.sizeText,
     region.cores.length > 0 ? region.cores.join(" ↔ ") : null,
+    note,
     region.reason,
   ]);
   return {
@@ -246,15 +262,15 @@ function regionRow(
     producer: "SoM region",
     base: region.base,
     range,
-    size,
+    ...size,
+    usedText: null,
+    usedHex: null,
+    usedNote: null,
     cores: region.cores,
     reason: region.reason,
     note,
     kindText,
-    rawKind: null,
     authorityText,
-    authorityClassAttr: region.authorityClass,
-    outside,
     accessibleName,
     inert: isDuplicated,
     selected: selectedId === region.id && !isDuplicated,
@@ -267,12 +283,9 @@ function regionRow(
  * name match. `span.region` (a carve-out's `carve_out_region`) says which
  * aperture the resolver allocated FROM, by declaration; it is not
  * necessarily the region a span's address physically lands inside, and a
- * `slot_image` span carries no `region` at all. The old name-based
- * derivation's defect is concrete: `m55_he` (span, `region: null`) and
- * `he_slot0` (region, `customer_image`) share the base `0x80010000`, yet the
- * name join put `m55_he` in "unproven" and `he_slot0` in "yours" — separated
- * by an entire "Locked" group, in a table whose whole point is putting the two
- * on adjacent rows.
+ * `slot_image` span carries no `region` at all. A name-based derivation
+ * once put `m55_he` (span, `region: null`) in "unproven" while `he_slot0`
+ * (region, `customer_image`) at the very same base sat in "yours".
  *
  * Fail-closed to `"unproven"` when the base is absent, or when it is
  * contained by zero or by two-or-more resolved regions — an ambiguous
@@ -292,8 +305,11 @@ function spanRow(
   const tier: AuthorityTier = containingMatch
     ? tierOf(containingMatch.authorityClass)
     : "unproven";
-  const end = endOf(span);
   const budgetTo = budgetEnd(span, budgets.get(span.label));
+  // A slot image the manifest pins only a base for still occupies the slot
+  // `tan size` measured, so its range reads base to the slot's last byte —
+  // the same extent the strip draws — rather than a bare base address.
+  const end = endOf(span) ?? budgetTo;
   const range =
     span.base !== null
       ? end !== null
@@ -302,18 +318,18 @@ function spanRow(
       : span.deviceOffset !== null
         ? `${formatOffset(span.deviceOffset)} in ${span.device ?? "?"}`
         : "—";
-  const size =
-    span.sizeBytes !== null
-      ? formatBytes(span.sizeBytes)
-      : budgetTo !== null && span.base !== null
-        ? `${formatBytes(budgetTo - span.base)} · tan size`
-        : "size not pinned by this manifest";
+  const usage = slotUsageOf(span, budgets.get(span.label));
+  const sizeBytes =
+    span.sizeBytes ??
+    (budgetTo !== null && span.base !== null ? budgetTo - span.base : null);
+  const size = sizeCells(sizeBytes, span.sizeBytes === null);
+  const used = usedCells(usage);
   // The DECLARED join (`span.region`, a carve-out's `carve_out_region`) is a
   // separate question from containment above, and stays name-based: it is
   // the manifest's own statement of which aperture it allocated FROM, and
   // the two numbers (the region's own extent, this span's own extent) are
   // never merged into one — a reader wanting the region's own base/size
-  // reads its row, one address away.
+  // selects its band, one click away.
   const nameAmbiguous = span.region !== null && dupes.has(span.region);
   const nameMatch =
     span.region !== null && !nameAmbiguous
@@ -342,7 +358,8 @@ function spanRow(
     authorityText,
     kindText,
     range,
-    size,
+    sizeBytes !== null ? formatBytes(sizeBytes) : size.sizeText,
+    used.usedText === null ? null : `used ${used.usedText}`,
     span.cores.length > 0 ? span.cores.join(" ↔ ") : null,
     note,
   ]);
@@ -355,53 +372,24 @@ function spanRow(
     producer: "placed image",
     base: span.base,
     range,
-    size,
+    ...size,
+    ...used,
     cores: span.cores,
     reason: null,
     note,
     kindText,
-    rawKind: span.kind,
     authorityText,
-    authorityClassAttr: containingMatch ? containingMatch.authorityClass : null,
-    outside: false,
     accessibleName,
     inert: false,
     selected: selectedId === span.id,
   };
 }
 
-/**
- * Sorts within a tier by address, spans-with-no-base last (by name) — the
- * same rule `compareByTierThenAddress` (Task 1) applies for TIER and
- * ADDRESS — plus one rule that comparator cannot express: at an equal base,
- * the region sorts before the span whose address it contains. A region and
- * a span landing inside it almost never share a NAME (`he_slot0` the
- * region, `m55_he` the span), so `compareByTierThenAddress`'s own name
- * tie-break would already have returned a (wrong, name-order) non-zero
- * result before this rule ever got a chance to apply — which is why this
- * module sorts rows with its own comparator instead of calling that one
- * directly. Tier is not re-compared here: `groupRowsByTier` below has
- * already bucketed every row by tier, so every pair this function ever sees
- * shares one.
- */
-export function compareRows(a: Row, b: Row): number {
-  if (a.base === null && b.base === null) return a.name.localeCompare(b.name);
-  if (a.base === null) return 1;
-  if (b.base === null) return -1;
-  if (a.base !== b.base) return a.base - b.base;
-  if (a.origin !== b.origin) return a.origin === "region" ? -1 : 1;
-  return a.name.localeCompare(b.name);
-}
-
-export const TIERS: AuthorityTier[] = ["yours", "locked", "unproven"];
-
-/** Every row, region rows first then span rows, unsorted and unbucketed —
- *  `groupRowsByTier` below does both from this. */
+/** Every row, region rows first then span rows, in the manifest's own order. */
 export function buildRows(
   regions: MemoryRegion[],
   spans: MemorySpan[],
   budgets: Map<string, SliceSize>,
-  window: Window | null,
   selected: string | null,
 ): Row[] {
   const dupes = duplicatedNames(regions);
@@ -412,7 +400,7 @@ export function buildRows(
   const resolved = resolvedRegions(regions);
   return [
     ...regions.map((r, i) =>
-      regionRow(r, i, spans, dupes, countByName, window, selected),
+      regionRow(r, i, spans, dupes, countByName, selected),
     ),
     ...spans.map((s) =>
       spanRow(s, regions, resolved, dupes, budgets, selected),
@@ -420,15 +408,84 @@ export function buildRows(
   ];
 }
 
-/** Buckets `rows` by tier and sorts each bucket with `compareRows` — the
- *  one place tier order (`TIER_ORDER`) and within-tier order meet. */
-export function groupRowsByTier(rows: Row[]): Record<AuthorityTier, Row[]> {
-  const byTier: Record<AuthorityTier, Row[]> = {
-    yours: [],
-    locked: [],
-    unproven: [],
-  };
-  for (const row of rows) byTier[row.tier].push(row);
-  for (const tier of TIERS) byTier[tier].sort(compareRows);
-  return byTier;
+/** One declared entry the resolver did not place, or a SoM region that
+ *  resolves no extent — address-less by nature, drawn as a ghost beside
+ *  the strip rather than on it. */
+export interface UnplacedRow {
+  key: string;
+  id: string;
+  name: string;
+  kindText: string;
+  cores: string[];
+  /** The emitter's own status word, capitalised ("Blocked", "Pending",
+   *  "Unresolved"). */
+  statusText: string;
+  /** The size when the manifest resolved one without an address (V2N's
+   *  `mram_main` resolves 5.50 MiB and no base), else null. */
+  sizeText: string | null;
+  /** The resolver's reason, verbatim and in full; null when it gave none. */
+  reason: string | null;
+  accessibleName: string;
+}
+
+const capitalise = (word: string): string =>
+  word.charAt(0).toUpperCase() + word.slice(1);
+
+/** Declared entries that resolved no address, in the manifest's own order. */
+export function buildUnplacedRows(entries: MemoryUnresolved[]): UnplacedRow[] {
+  return entries.map((e) => {
+    const statusText = capitalise(e.status);
+    return {
+      key: `unplaced:${e.id}`,
+      id: e.id,
+      name: e.label,
+      kindText: SPAN_KIND_LABEL[e.kind],
+      cores: e.cores,
+      statusText,
+      sizeText: null,
+      reason: e.reason,
+      accessibleName: joinAccessibleName([
+        e.label,
+        SPAN_KIND_LABEL[e.kind],
+        "not placed",
+        statusText,
+        e.cores.length > 0 ? e.cores.join(" ↔ ") : null,
+        e.reason,
+      ]),
+    };
+  });
+}
+
+/** SoM regions that resolve no extent — no base, no size, a zero size, or
+ *  a status other than `ok` — which the strip cannot draw and must not
+ *  drop: the reason they did not resolve is the one actionable half. */
+export function unresolvedRegionRows(regions: MemoryRegion[]): UnplacedRow[] {
+  const drawn = new Set(resolvedRegions(regions).map((r) => r.region));
+  return regions
+    .filter((r) => !drawn.has(r))
+    .map((r, i) => {
+      const statusText = capitalise(
+        r.status === "ok" ? "unresolved" : r.status,
+      );
+      const sizeText = r.sizeBytes !== null ? formatBytes(r.sizeBytes) : null;
+      return {
+        key: `unresolved-region:${i}:${r.id}`,
+        id: r.id,
+        name: r.name,
+        kindText: "SoM region",
+        cores: r.cores,
+        statusText,
+        sizeText,
+        reason: r.reason,
+        accessibleName: joinAccessibleName([
+          r.name,
+          "SoM region",
+          "not drawn",
+          statusText,
+          sizeText,
+          r.cores.length > 0 ? r.cores.join(" ↔ ") : null,
+          r.reason,
+        ]),
+      };
+    });
 }

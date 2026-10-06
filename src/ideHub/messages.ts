@@ -902,16 +902,6 @@ export interface RequestBuildPlanMessage {
   type: "requestBuildPlan";
 }
 
-/** Materialise the plan's files to disk (`alp build --materialise`). */
-export interface MaterialiseBuildPlanMessage {
-  type: "materialiseBuildPlan";
-}
-
-/** Run the build live in a terminal (`alp build`). */
-export interface RunBuildMessage {
-  type: "runBuild";
-}
-
 /** Flash a single manifest slice (`alp flash --core <id>`). */
 export interface FlashSliceMessage {
   type: "flashSlice";
@@ -998,8 +988,6 @@ export type WebviewToExtMessage =
   | RunFixAllMessage
   | ReloadHardwareExplorerMessage
   | RequestBuildPlanMessage
-  | MaterialiseBuildPlanMessage
-  | RunBuildMessage
   | FlashSliceMessage
   | OpenBoardYamlMessage
   | CopyTextMessage

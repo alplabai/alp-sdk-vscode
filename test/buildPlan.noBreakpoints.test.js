@@ -3,7 +3,7 @@
 // The No-Breakpoint Rule (DESIGN.md): the system ships zero width-based
 // media queries; the only sanctioned `@media` anywhere is
 // `prefers-reduced-motion: reduce`. This gate holds the build-plan feature's
-// own stylesheets to that rule — MemoryRegions.module.css is the one Task 8
+// own stylesheets to that rule — MemoryStrip.module.css is the one Task 8
 // (#484 phase 4) touches to make the memory tab's rail-and-table layout
 // measured rather than pinned to a literal width, and a width-based media
 // query is exactly the kind of "just add a breakpoint" fix that would
@@ -55,12 +55,12 @@ const CSS_FILES = cssModuleFiles(BUILD_PLAN_DIR);
 // wrong. This is what turns red first when that happens.
 test("the glob actually found the build-plan feature's stylesheets", () => {
   assert.ok(
-    CSS_FILES.length >= 5,
-    `found ${CSS_FILES.length} build-plan *.module.css file(s), want at least 5`,
+    CSS_FILES.length >= 3,
+    `found ${CSS_FILES.length} build-plan *.module.css file(s), want at least 3`,
   );
   assert.ok(
-    CSS_FILES.some((f) => f.endsWith("MemoryRegions.module.css")),
-    "the glob did not find MemoryRegions.module.css — Task 8's own target file",
+    CSS_FILES.some((f) => f.endsWith("MemoryStrip.module.css")),
+    "the glob did not find MemoryStrip.module.css — Task 8's own target file",
   );
 });
 

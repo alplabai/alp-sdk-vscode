@@ -1,55 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// WCAG contrast for the Memory tab's chart — pinning the fixes from the Build
-// Plan panel's colour-contrast measurements and the two corrections that
-// followed, not re-deriving them from memory: every ratio below is computed
-// from the CSS's OWN declared tokens (read straight out of tokens.css /
-// MemoryChart.module.css / Button.module.css — and, for the accent button's
-// `[data-tier]` survival, the BUILT dist/main.css, since a CSS Modules class is
-// hashed and only the built artifact can tell a working selector from dead
-// markup), resolved to VS Code's canonical
-// Dark+/Light+/High-Contrast-Dark/High-Contrast-Light registerColor() defaults
-// plus one real shipping default (2026 Dark, which has a TRANSLUCENT
-// focusBorder — the other four themes' is opaque). If a future edit repoints
-// one of these rules at an unsafe token, this recomputes and fails — it does
-// not compare against a hardcoded "was" value.
+// WCAG contrast for the memory strip and the chart palette — pinning the
+// fixes from the Build Plan panel's colour-contrast measurements, not
+// re-deriving them from memory: every ratio below is computed from the CSS's
+// OWN declared tokens (read straight out of tokens.css /
+// MemoryStrip.module.css / Button.module.css), resolved to VS Code's
+// canonical Dark+/Light+/High-Contrast-Dark/High-Contrast-Light
+// registerColor() defaults plus one real shipping default (2026 Dark, which
+// has a TRANSLUCENT focusBorder — the other four themes' is opaque). If a
+// future edit repoints one of these rules at an unsafe token, this
+// recomputes and fails — it does not compare against a hardcoded "was"
+// value.
 //
-// Defects pinned:
-//   1. Every chart-series band/marker LABEL against its own series' 30%
-//      band fill (was: the series colour on itself, failing in both themes
-//      for all six series; now: --chart-label-fg, one token for all six).
-//   2. --chart-3 is opaque in every default theme and separated from
-//      --chart-5 (was: charts.orange, never opaque, both themes; an earlier
-//      gitDecoration.modifiedResourceForeground was opaque but
-//      extension-contributed AND too close in hue to --chart-5; now:
-//      terminal.ansiCyan — core, opaque, ~145° from --chart-5's hue).
-//   3. --accent-fg (white) vs --accent: six real/current themes pass;
-//      Dark+/Light+ are an accepted, declined shortfall pinned exactly (the
-//      figure recorded earlier for the pressed scale-toggle button).
-//   4. The chart's meaning-bearing strokes (rail frame, tick, the computed-
-//      mark tick) against their backdrop (was: --border-default; now
-//      --border-chart, or, for a DECLARED axis boundary, --text-primary),
-//      holding in every theme this file tests.
+// Pinned:
+//   1. A placed image's text (`--text-primary`) against its own series'
+//      tint (`.span[data-series=N]`, a `color-mix` of `--chart-N`) — the
+//      pairing that once failed 4.5:1 for all six series when the label
+//      took its series' own colour.
+//   2. --chart-3 is opaque, core-registered, and separated by hue from
+//      --chart-5 (charts.orange, its natural slot, is never opaque).
+//   3. --accent-fg (white) vs --accent on the accent button appearance.
+//   4. The strip's meaning-bearing strokes — a box's border, a tick — use a
+//      token that clears 3:1 in every default theme, never the decorative
+//      --border-default.
+//   5. Every pair of the six chart-series colours is separated by hue.
 //
-// RETIRED, #484 phase 4: the pressed scale-toggle button (`.scaleBtn`), the
-// inter-rail bracket (`.bracket`) and the region-frame authority encoding
-// (`.regionFrame`) this file used to pin contrast fixes for are all deleted
-// along with the second rail and the equalized-mode toggle. Their SELECTOR-
-// specific tests (the pressed-fill/pressed-text-role check, both focus-ring
-// checks, the region-frame out-of-scope pin) are removed with them, not
-// adapted — there is no fill/token left on those selectors to re-derive a
-// ratio from.
-//
-// NOT RETIRED, ONLY RETARGETED: the `--accent-fg`/`--accent` PAIR itself did
-// not die with `.scaleBtn` — it still ships on `.btn[data-appearance="accent"]`
-// (Button.module.css), the "toggles / segmented controls" appearance that
-// inherited the deleted toggle's role. Defect 3 below reads THAT selector. The
-// High-Contrast-Dark `:global(...)` override was genuinely `.scaleBtn`-specific
-// (no such override exists on the button component) and stays gone — but the
-// BUILT-ARTIFACT verification method it demonstrated (a CSS Modules class is
-// hashed, so only the compiled output can tell a working selector from dead
-// markup) is restored below against something this branch actually ships: the
-// authority gutter's three `[data-tier]` rules surviving Vite.
+// Source text, not a rendered DOM, for the same reason as the type-scale
+// gate: jsdom performs no layout and resolves no colour.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -69,41 +46,14 @@ const TOKENS_CSS = fs.readFileSync(
   path.join(SRC, "styles", "tokens.css"),
   "utf8",
 );
-const CHART_CSS = fs.readFileSync(
-  path.join(SRC, "features", "build-plan", "MemoryChart.module.css"),
+const STRIP_CSS = fs.readFileSync(
+  path.join(SRC, "features", "build-plan", "MemoryStrip.module.css"),
   "utf8",
 );
 const BUTTON_CSS = fs.readFileSync(
   path.join(SRC, "shared", "ui", "Button", "Button.module.css"),
   "utf8",
 );
-
-/** The exact (hashed) local class name the BUILT `dist/main.css` uses for
- * `.gutter`'s own BASE rule (`pointer-events: none` — its full body, and the
- * one declaration unique to it in the whole bundle). Matching on this,
- * rather than on any hashed class followed by `[data-tier=...]`, is what
- * keeps the [data-tier] test below from being satisfied by a DIFFERENT
- * class that happens to share the same attribute vocabulary —
- * `AuthoritySwatch.module.css`'s `.swatch[data-tier="…"]` rules do exactly
- * that, and a later measurement proved the unscoped regex passed against
- * them even with every `.gutter[data-tier]` rule deleted from source. */
-function builtGutterClass(distCss) {
-  const re = /\._([\w-]+)\{pointer-events:none\}/;
-  const m = re.exec(distCss);
-  if (!m) {
-    throw new Error(
-      "could not find the built .gutter base rule (pointer-events: none) " +
-        "in dist/main.css — run `pnpm run compile`",
-    );
-  }
-  return m[1];
-}
-
-// ---------------------------------------------------------------------------
-// Colour math (ports contrast.py's maths verbatim — same formulas, same
-// rounding behaviour, so a ratio computed here matches the figures recorded
-// here).
-// ---------------------------------------------------------------------------
 
 /** Composite an (r,g,b,a 0-255) foreground over an OPAQUE (r,g,b) background. */
 function composite(fgRgba, bgRgb) {
@@ -221,48 +171,38 @@ function escapeForRegExp(literal) {
   return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** The `{ token, pct }` a `.band[data-series="N"]`/`.budget[data-series="N"]`
- * rule fills with, read out of MemoryChart.module.css. */
-function bandFillFor(n) {
+/** The `{ token, pct }` a `.span[data-series="N"]` box tints with, read
+ * out of MemoryStrip.module.css. Series 1 is `.span`'s own base rule. */
+function spanTintFor(n) {
+  const selector =
+    n === 1 ? "\\.span\\s*\\{" : `\\.span\\[data-series="${n}"\\]\\s*\\{`;
   const re = new RegExp(
-    `\\.band\\[data-series="${n}"\\][^{]*\\{[^}]*fill:\\s*color-mix\\(in srgb,\\s*var\\((--chart-${n})\\)\\s*(\\d+)%`,
+    `${selector}[^}]*background:\\s*color-mix\\(in srgb,\\s*var\\((--chart-${n})\\)\\s*(\\d+)%`,
   );
-  const m = re.exec(CHART_CSS);
-  if (!m) {
-    throw new Error(`could not find the band fill rule for series ${n}`);
-  }
+  const m = re.exec(STRIP_CSS);
+  if (!m) throw new Error(`could not find the span tint rule for series ${n}`);
   return { token: m[1], pct: parseInt(m[2], 10) };
 }
 
-/** The token `.markerLabel, .bandLabel { fill: ... }` uses, read out of
- * MemoryChart.module.css — the ONE rule all six series' labels now share. */
-function labelFillToken() {
-  const re = /\.markerLabel,\s*\.bandLabel\s*\{[^}]*fill:\s*var\((--[\w-]+)/;
-  const m = re.exec(CHART_CSS);
-  if (!m) {
-    throw new Error("could not find the consolidated label fill rule");
-  }
+/** The token a bare `selector { color: var(...) }` rule uses. */
+function colorTokenFor(selector) {
+  const re = new RegExp(
+    `${escapeForRegExp(selector)}\\s*\\{[^}]*[^-]color:\\s*var\\((--[\\w-]+)`,
+  );
+  const m = re.exec(STRIP_CSS);
+  if (!m) throw new Error(`could not find a color rule for ${selector}`);
   return m[1];
 }
 
-/** The token a bare `selector { stroke: var(...) }` rule uses. */
+/** The token a `selector { border: 1px solid var(...) }` or
+ * `selector { background: var(...) }` stroke rule uses. */
 function strokeTokenFor(selector) {
   const re = new RegExp(
-    `${escapeForRegExp(selector)}\\s*\\{[^}]*stroke:\\s*var\\((--[\\w-]+)`,
+    `${escapeForRegExp(selector)}\\s*\\{[^}]*(?:border(?:-left)?:\\s*\\dpx (?:solid|dashed) var\\((--[\\w-]+)|background:\\s*var\\((--[\\w-]+))`,
   );
-  const m = re.exec(CHART_CSS);
+  const m = re.exec(STRIP_CSS);
   if (!m) throw new Error(`could not find a stroke rule for ${selector}`);
-  return m[1];
-}
-
-/** The token a bare `selector { fill: var(...) }` rule uses. */
-function fillTokenFor(selector) {
-  const re = new RegExp(
-    `${escapeForRegExp(selector)}\\s*\\{[^}]*fill:\\s*var\\((--[\\w-]+)`,
-  );
-  const m = re.exec(CHART_CSS);
-  if (!m) throw new Error(`could not find a fill rule for ${selector}`);
-  return m[1];
+  return m[1] ?? m[2];
 }
 
 /** `{ bg, fg }` tokens for `.btn[data-appearance="accent"] { ... }`, read out
@@ -294,66 +234,37 @@ function fallbackHexFor(name) {
 }
 
 // ---------------------------------------------------------------------------
-// Defect 1 — every chart-series label against its OWN series' 30% band fill.
+// Defect 1 — a placed image's text against its OWN series' tint.
 // ---------------------------------------------------------------------------
 
-test("every chart-series band/marker label clears 4.5:1 against its own series' band fill", () => {
-  const labelToken = labelFillToken();
+test("a placed image's text clears 4.5:1 against its own series' tint in every covered theme", () => {
+  const textToken = colorTokenFor(".span");
+  assert.equal(textToken, "--text-primary");
   for (const theme of THEMES) {
-    const surfaceInput = resolvedOpaqueRgb(theme, "--surface-input", null);
-    const labelRgb = resolvedOpaqueRgb(theme, labelToken, surfaceInput);
+    const ground = resolvedOpaqueRgb(theme, "--surface-bg", null);
+    const textRgb = resolvedOpaqueRgb(theme, textToken, ground);
     for (let n = 1; n <= 6; n++) {
-      const { token, pct } = bandFillFor(n);
-      const seriesRgb = resolvedOpaqueRgb(theme, token, surfaceInput);
-      const tint = composite([...seriesRgb, (pct / 100) * 255], surfaceInput);
-      const ratio = contrast(labelRgb, tint);
+      const { token, pct } = spanTintFor(n);
+      const seriesRgb = resolvedOpaqueRgb(theme, token, ground);
+      const tint = composite([...seriesRgb, (pct / 100) * 255], ground);
+      const ratio = contrast(textRgb, tint);
       assert.ok(
         ratio >= 4.5,
-        `series ${n} label (${labelToken}) vs its own ${pct}% band fill in ` +
+        `series ${n} text (${textToken}) vs its own ${pct}% tint in ` +
           `${theme}: ${ratio.toFixed(2)}:1, need >= 4.5:1`,
       );
     }
   }
 });
 
-test("the label no longer inherits the series colour (one shared token, not six)", () => {
-  const labelToken = labelFillToken();
-  for (let n = 1; n <= 6; n++) {
-    assert.notEqual(
-      labelToken,
-      `--chart-${n}`,
-      "the band/marker label must not fill with its own series token — " +
-        "that pairing is what failed 4.5:1 against its own tint",
-    );
-  }
-});
-
-test("no per-series override re-appears on the band/marker label", () => {
-  const re = /\.(?:bandLabel|markerLabel)\[data-series="\d+"\]\s*\{[^}]*fill:/;
-  assert.equal(
-    re.test(CHART_CSS),
-    false,
-    "a per-series override on .bandLabel/.markerLabel's fill reintroduces " +
-      "the label-inherits-the-series-colour pairing that failed 4.5:1 " +
-      "against its own band fill for all six series",
-  );
-});
-
-test("no data-series attribute survives on a label element (dead since the label fill stopped varying by series)", () => {
-  const CHART_TSX = fs.readFileSync(
-    path.join(SRC, "features", "build-plan", "MemoryChart.tsx"),
-    "utf8",
-  );
-  // A `<text className={... bandLabel ...} data-series=...>` (or
-  // markerLabel) would be a CSS consumer with nothing left to consume it.
+test("a placed image's box never takes its own series colour as text", () => {
   const re =
-    /<text[^>]*className=\{[^}]*(?:bandLabel|markerLabel)[^}]*\}[^>]*data-series=/;
+    /\.span(?:\[data-series="\d+"\])?\s*\{[^}]*[^-]color:\s*var\(--chart-/;
   assert.equal(
-    re.test(CHART_TSX),
+    re.test(STRIP_CSS),
     false,
-    "a label <text> element still carries data-series, but no CSS rule " +
-      "selects .bandLabel[data-series=...]/.markerLabel[data-series=...] " +
-      "any more — dead markup",
+    "a .span rule colours its text with a --chart-N token — the pairing that " +
+      "failed 4.5:1 against its own tint for all six series",
   );
 });
 
@@ -569,44 +480,18 @@ test("--accent-fg (white) vs --accent: six real/current themes pass; Dark+/Light
   }
 });
 
-// The built-artifact verification method the retired HC-Dark override test
-// demonstrated — a CSS Modules class is hashed, so only the compiled output
-// can tell a working selector from dead markup — restored here against
-// something this branch actually ships: the authority gutter's three
-// `[data-tier]` rules. SCOPED to `.gutter`'s own hashed class
-// (`builtGutterClass`, above), not to "any hashed class at all" — an
-// unscoped `\._[\w-]+\[data-tier=...\]` is satisfied independently by
-// `AuthoritySwatch.module.css`'s `.swatch[data-tier="…"]` rules, which share
-// the identical attribute vocabulary: a later check deleted every
-// `.gutter[data-tier]` rule from source, rebuilt, and the unscoped version
-// of this test still passed 19/19.
-test("the gutter's three [data-tier] rules survive the build (verified against the built artifact, not just source)", () => {
-  const distCss = readDistCss();
-  const gutterClass = builtGutterClass(distCss);
-  for (const tier of ["yours", "locked", "unproven"]) {
-    const re = new RegExp(
-      `\\._${escapeForRegExp(gutterClass)}\\[data-tier=(?:"${tier}"|${tier})\\]`,
-    );
-    assert.ok(
-      re.test(distCss),
-      `dist/main.css has no ._${gutterClass}[data-tier=${tier}] rule — CSS ` +
-        "Modules source alone cannot show this: the class is hashed at " +
-        "build time and only the compiled output proves the rule reaches " +
-        "a real selector",
-    );
-  }
-});
-
 // ---------------------------------------------------------------------------
-// Defect 4 — the chart's meaning-bearing strokes (rail frame, declared-
-// boundary tick, computed-mark tick).
+// Defect 4 — the strip's meaning-bearing strokes (a region band's border, a
+// placed image's border, a marker's hairline, a tick).
 // ---------------------------------------------------------------------------
 
-test("the rail frame, the edge ticks and the selected region ring use a stroke token that clears 3:1 in every default theme", () => {
+test("the strip's boxes, markers and ticks use a stroke token that clears 3:1 in every default theme", () => {
   for (const selector of [
-    ".railFrame",
+    ".region",
+    ".span",
+    ".span[data-marker]",
     ".tick",
-    ".regionBand[data-selected]",
+    ".ghost",
   ]) {
     const token = strokeTokenFor(selector);
     assert.notEqual(
@@ -617,39 +502,28 @@ test("the rail frame, the edge ticks and the selected region ring use a stroke t
     );
     for (const theme of THEMES) {
       const surfaceBg = resolvedOpaqueRgb(theme, "--surface-bg", null);
-      const surfaceInput = resolvedOpaqueRgb(theme, "--surface-input", null);
-      const strokeVsBg = resolvedOpaqueRgb(theme, token, surfaceBg);
-      const strokeVsInput = resolvedOpaqueRgb(theme, token, surfaceInput);
-      const ratioBg = contrast(strokeVsBg, surfaceBg);
-      const ratioInput = contrast(strokeVsInput, surfaceInput);
+      const stroke = resolvedOpaqueRgb(theme, token, surfaceBg);
+      const ratio = contrast(stroke, surfaceBg);
       assert.ok(
-        ratioBg >= 3,
+        ratio >= 3,
         `${selector} stroke (${token}) vs --surface-bg in ${theme}: ` +
-          `${ratioBg.toFixed(2)}:1, need >= 3:1`,
-      );
-      assert.ok(
-        ratioInput >= 3,
-        `${selector} stroke (${token}) vs --surface-input in ${theme}: ` +
-          `${ratioInput.toFixed(2)}:1, need >= 3:1`,
+          `${ratio.toFixed(2)}:1, need >= 3:1`,
       );
     }
   }
 });
 
-// Under log-of-size heights (railScale.ts) a computed power-of-two mark
-// between two declared edges sits at a height nothing can be measured
-// against, so the rail draws ticks ONLY at declared edges. The secondary
-// tick register is gone with it — and must stay gone: a computed mark that
-// came back would be typographically indistinguishable from a declared
-// address unless it also brought back its own, distinct ink.
+// Under log-of-size lengths (railScale.ts) a computed power-of-two mark
+// between two declared edges would sit at a position nothing can be measured
+// against, so the strip ticks ONLY at declared edges — and must stay that way.
 test("no computed (power-of-two) tick register survives beside the declared edges", () => {
+  const stripTsx = fs.readFileSync(
+    path.join(SRC, "features", "build-plan", "stripLayout.ts"),
+    "utf8",
+  );
+  assert.equal(/binaryTicks|Math\.pow\(2|\*\* ?2/.test(stripTsx), false);
   for (const cls of ["tickMinor", "tickLabelMinor"]) {
-    assert.equal(
-      new RegExp(`\\.${cls}\\b`).test(CHART_CSS),
-      false,
-      `.${cls} is back in MemoryChart.module.css — the rail draws ticks only ` +
-        "at declared segment edges",
-    );
+    assert.equal(new RegExp(`\\.${cls}\\b`).test(STRIP_CSS), false);
   }
 });
 
@@ -708,9 +582,9 @@ test("descriptionForeground's real alpha is exercised, not silently opaque", () 
 test("an unsafe pairing is still caught (the gate is not vacuously true)", () => {
   // The OLD, broken pairing: the series colour on its own 30% fill. If this
   // stopped failing, the arm above would be checking nothing.
-  const surfaceInputDark = resolvedOpaqueRgb("dark", "--surface-input", null);
+  const surfaceDark = resolvedOpaqueRgb("dark", "--surface-bg", null);
   const chart1Dark = resolvedOpaqueRgb("dark", "--chart-1", null);
-  const oldTint = composite([...chart1Dark, 0.3 * 255], surfaceInputDark);
+  const oldTint = composite([...chart1Dark, 0.3 * 255], surfaceDark);
   const oldRatio = contrast(chart1Dark, oldTint);
   assert.ok(
     oldRatio < 4.5,

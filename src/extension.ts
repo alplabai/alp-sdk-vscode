@@ -426,6 +426,18 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("alp.showBuildPlan", () =>
       BuildPlanPanel.open(context),
     ),
+    // The Build Plan panel's editor-title toolbar (package.json
+    // `menus.editor/title`, gated on `activeWebviewPanelId`): the actions
+    // live in VS Code's own toolbar rather than as buttons in the page.
+    vscode.commands.registerCommand("alp.buildPlan.refresh", () =>
+      BuildPlanPanel.refresh(context),
+    ),
+    vscode.commands.registerCommand("alp.buildPlan.build", () =>
+      BuildPlanPanel.build(context),
+    ),
+    vscode.commands.registerCommand("alp.buildPlan.materialise", () =>
+      BuildPlanPanel.materialise(context),
+    ),
     vscode.commands.registerCommand("alp.openModelsPanel", () =>
       showModelsPanel(context),
     ),

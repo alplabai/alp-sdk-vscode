@@ -1,78 +1,41 @@
-import { useId, useState } from "react";
-import { Button, Card, EmptyState, Icon, Skeleton } from "../../shared/ui";
+// SPDX-License-Identifier: Apache-2.0
+//
+// The Build Plan panel: one page, read top to bottom.
+//
+//   header        — the module, the carrier, the silicon; when the manifest
+//                   was written and whether a later build left it behind
+//   Plan          — only when `tan build --plan` answers (never at this pin)
+//   Cores         — one row per slice: status, footprint meters, Flash
+//   Memory        — the address strip, the selected item's exact figures
+//   Interconnect  — one row per IPC link, a blocked one with its reason
+//   Helper MCUs   — the module's companion controllers
+//   footer        — where the data came from
+//
+// Every problem sits on the row it is about — a skipped core's reason, a
+// blocked link's, a stale manifest under the header — so there is no
+// separate list of them to cross-reference. Refresh, Build and Materialise
+// are the panel's editor-title commands (`alp.buildPlan.*` in package.json),
+// not buttons here: VS Code's own toolbar is where a panel's actions go.
+
+import type { ReactNode } from "react";
+import { EmptyState, Icon, Skeleton } from "../../shared/ui";
 import type {
-  BuildPlanGeneratedFile,
-  BuildPlanSlice,
+  ManifestHwInfo,
   ManifestProvenance,
-  MemoryView,
-  SizeReport,
   SliceSize,
-  SystemManifest,
 } from "../../types";
+import { postMessage } from "../../vscode";
 import styles from "./BuildPlanView.module.css";
-import { formatBytes } from "./format";
-import { MemoryNotes } from "./MemoryNotes";
-import { MemoryRegions } from "./MemoryRegions";
+import { CoreRows } from "./CoreRows";
+import { HelperMcuRows } from "./HelperMcuRows";
+import { InterconnectRows } from "./InterconnectRows";
+import { MemoryStrip } from "./MemoryStrip";
+import { seriesByLabel } from "./stripLayout";
+import { PlanRows } from "./PlanRows";
 import { useBuildPlan } from "./useBuildPlan";
 
-function commandLine(slice: BuildPlanSlice): string {
-  if (!slice.command) return "(no command — not buildable yet)";
-  const { tool, args } = slice.command;
-  return args.length > 0 ? `${tool} ${args.join(" ")}` : tool;
-}
-
-const isReady = (value?: string): boolean => !!value && value !== "TBD";
-
-/** The system manifest — the resolved per-core contract (`alp build --manifest`):
- *  slices with their runtime + flash wiring, IPC links, and helper MCUs. The
- *  per-slice Flash button shows/hides straight from the manifest: it appears
- *  only when the slice carries a real `flash_method` (not the `TBD`
- *  placeholder). There is no per-slice Build button — `tan build` has no
- *  `--core` option, so building a single slice isn't a real CLI command. */
-/** One region as `97.1 KiB / 5.50 MiB (1.7%)`, degrading honestly: a null
- *  `used` means nothing could measure it and a null `total` means no budget
- *  resolved. Neither is rendered as 0 — tan reports null rather than guessing,
- *  and a fabricated 0% would read as "plenty of room left". */
-function regionLabel(region: SliceSize["flash"]): string {
-  if (region.used === null) return "unknown";
-  const used = formatBytes(region.used);
-  if (region.total === null) return `${used} (no budget)`;
-  const pct = region.pct === null ? "" : ` (${region.pct}%)`;
-  return `${used} / ${formatBytes(region.total)}${pct}`;
-}
-
-/** Footprint for one slice, or null when `tan size` had no row for it. */
-function SliceFootprint({ size }: { size: SliceSize | undefined }) {
-  if (!size) return null;
-  // A slice with no artefact yet, or one that cannot be measured at all, has
-  // no numbers worth a row — say so instead of printing empty regions.
-  if (size.status === "not-built" || size.status === "n/a") {
-    return (
-      <span className={styles.manifestDetail}>
-        <span className={styles.sizeStatus} data-size-status={size.status}>
-          {size.status === "not-built" ? "not built" : "size n/a"}
-        </span>
-        {size.budget_note && <span>{size.budget_note}</span>}
-      </span>
-    );
-  }
-  return (
-    <span className={styles.manifestDetail}>
-      <span className={styles.sizeStatus} data-size-status={size.status}>
-        {size.status === "over"
-          ? "over budget"
-          : size.status === "warn"
-            ? "near budget"
-            : size.status === "no-budget"
-              ? "no budget"
-              : "in budget"}
-      </span>
-      <span>FLASH {regionLabel(size.flash)}</span>
-      <span>RAM {regionLabel(size.ram)}</span>
-      {size.budget_note && <span>{size.budget_note}</span>}
-    </span>
-  );
-}
+/** The manifest, as the reader refers to it. */
+const MANIFEST_PATH = "build/system-manifest.yaml";
 
 /**
  * How long ago the manifest was written, in words (#470).
@@ -81,10 +44,10 @@ function SliceFootprint({ size }: { size: SliceSize | undefined }) {
  * at a glance, where a timestamp makes the reader do the subtraction. Rounded
  * DOWN at every step, so it can never overstate how fresh the file is.
  */
-function writtenAgo(iso: string): string | null {
+export function writtenAgo(iso: string, now = Date.now()): string | null {
   const at = Date.parse(iso);
   if (Number.isNaN(at)) return null;
-  const seconds = Math.floor((Date.now() - at) / 1000);
+  const seconds = Math.floor((now - at) / 1000);
   // A negative age means the file is dated ahead of this clock; the host
   // already renders that as `unknown` with its own sentence, so say nothing
   // rather than print "in -2 minutes".
@@ -98,405 +61,95 @@ function writtenAgo(iso: string): string | null {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-/**
- * The manifest's three readings, in strip order.
- *
- * A LIST, not three hand-written buttons: the arrow keys below need an index
- * to move along, and a strip whose order lives only in JSX cannot supply one
- * without the handler re-deriving it from the DOM — a second copy of the
- * order, and a second thing that can disagree with the first.
- *
- * "Notes" is the map's context, one tab away instead of three paragraphs
- * above the chart. A reading surface should not have to explain itself in
- * place.
- */
-const MANIFEST_TABS = [
-  { id: "slices", label: "Slices" },
-  { id: "memory", label: "Memory" },
-  { id: "notes", label: "Notes" },
-] as const;
-
-type ManifestTab = (typeof MANIFEST_TABS)[number]["id"];
-
-function SystemManifestSection({
-  manifest,
-  postBuild,
-  provenance,
-  error,
-  flashSlice,
-  memory,
-  sizes,
-  sizesError,
-}: {
-  manifest: SystemManifest | null;
-  postBuild: boolean;
-  provenance: ManifestProvenance | null;
-  error: string | null;
-  flashSlice: (coreId: string) => void;
-  memory: MemoryView | null;
-  sizes: SizeReport | null;
-  sizesError: string | null;
-}) {
-  const sizeByCore = new Map<string, SliceSize>(
-    (sizes?.slices ?? []).map((s) => [s.core_id, s]),
-  );
-  // Two readings of one file (#484): the slice list is per-core wiring, the
-  // memory map is the address space. Tabs rather than a second panel — both
-  // come off the same `build/system-manifest.yaml` read, and a second panel
-  // would duplicate that read and its "run `tan build` first" empty state.
-  const [tab, setTab] = useState<ManifestTab>("slices");
-  // Per-INSTANCE ids. The tab/panel pairing is an IDREF, and an IDREF
-  // resolves against the whole document — a hand-written constant would be
-  // duplicated the moment two Build Plan panels exist in one document (the
-  // render harness mounts several), and `getElementById` would answer with
-  // whichever one happened to be first.
-  const uid = useId();
-  const tabDomId = (id: ManifestTab) => `${uid}-tab-${id}`;
-  // ONE panel element, re-labelled as the selection moves. Rendering three
-  // panels and hiding two would give each tab a target of its own, but it
-  // also mounts the chart and the notes prose at once — two readings of the
-  // manifest built and kept alive so that one of them can be looked at.
-  //
-  // Only the SELECTED tab points at it. An `aria-controls` on the other two
-  // would claim each of them controls a panel that is labelled by a
-  // different tab, which is false of both at every moment. Selection follows
-  // focus here, so the tab that has `aria-controls` is always the tab whose
-  // panel this is.
-  const panelDomId = `${uid}-panel`;
-  const selectTabAt = (index: number) => {
-    const next =
-      MANIFEST_TABS[
-        // Wraps both ways: a strip is a ring. The memory table's own arrows
-        // clamp instead — that is the tree pattern's rule, not a disagreement.
-        (index + MANIFEST_TABS.length) % MANIFEST_TABS.length
-      ];
-    setTab(next.id);
-    document.getElementById(tabDomId(next.id))?.focus();
-  };
-  // Two independent commands feed this section, so both notes are rendered.
-  // `sizesError` was reaching the view and being dropped on the floor: a
-  // `tan size` failure left the footprint column simply absent, which reads as
-  // "this build has no sizes" rather than "the measurement failed".
-  const notes = [error, sizesError].filter((n): n is string => !!n);
-  const age = provenance?.writtenAt ? writtenAgo(provenance.writtenAt) : null;
-  if (!manifest) {
-    return notes.length > 0 ? (
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>System manifest</h2>
-        {/* Keyed by position, not by the note text: the two notes fall back to
-         *  the same `outcome.message` when tan itself is what failed, and React
-         *  calls a repeated key unsupported ("may cause children to be
-         *  duplicated and/or omitted"). The index is identity enough here: at
-         *  most two notes, always manifest-then-size, static text with no state
-         *  to carry across a re-render. */}
-        {notes.map((note, i) => (
-          <p key={i} className={styles.manifestNote}>
-            {note}
-          </p>
-        ))}
-      </section>
-    ) : null;
-  }
+function Identity({ hw }: { hw: ManifestHwInfo }) {
   return (
-    <section className={styles.section}>
-      <h2 className={styles.sectionTitle}>
-        System manifest{" "}
-        {/* The badge now carries the VERDICT, not just "a file exists".
-            `post-build` used to be asserted from `fs.existsSync` alone, so an
-            old build's slices and memory numbers rendered as current — #470. */}
-        <span
-          className={styles.manifestBadge}
-          data-freshness={provenance?.freshness ?? "none"}
-        >
-          {!postBuild
-            ? "projection"
-            : provenance?.freshness === "stale"
-              ? "stale"
-              : "post-build"}
-        </span>
-        {/* The AGE is shown whatever the verdict, including `unknown`. It is
-            the fact this side can always support, and it lets the reader draw
-            the conclusion the host refuses to draw for them. */}
-        {age && <span className={styles.manifestAge}>{age}</span>}
-      </h2>
-      {/* Never only a badge: a warning nobody can act on is a puzzle. The host
-          words this — it is the side that knows the build finished after the
-          file was written, and with what exit code. */}
-      {provenance?.reason && (
-        <p
-          className={styles.manifestStaleNote}
-          role={provenance.freshness === "stale" ? "alert" : undefined}
-        >
-          {provenance.reason}
-        </p>
+    <p className={styles.identity}>
+      <span className={styles.mono}>{hw.sku}</span>
+      {hw.som_hw_rev && ` ${hw.som_hw_rev}`}
+      {hw.board_name && (
+        <>
+          {" on "}
+          <span className={styles.mono}>{hw.board_name}</span>
+          {hw.board_hw_rev && ` ${hw.board_hw_rev}`}
+        </>
       )}
-      {sizesError && <p className={styles.manifestNote}>{sizesError}</p>}
-      <div className={styles.tabs} role="tablist" aria-label="System manifest">
-        {MANIFEST_TABS.map(({ id, label }, index) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            id={tabDomId(id)}
-            className={styles.tab}
-            aria-selected={tab === id}
-            aria-controls={tab === id ? panelDomId : undefined}
-            // The strip is ONE tab stop. The -1 is explicit on purpose: a
-            // native <button> with no tabindex attribute is Tab-reachable,
-            // so marking only the selected one as 0 leaves all three in the
-            // tab order and changes nothing a keyboard user can feel.
-            tabIndex={tab === id ? 0 : -1}
-            onClick={() => setTab(id)}
-            onKeyDown={(e) => {
-              // Selection follows focus. Three tabs off one file read are
-              // cheap to render, so there is nothing here for the deferred
-              // (Enter-to-activate) variant to protect.
-              switch (e.key) {
-                case "ArrowRight":
-                  e.preventDefault();
-                  selectTabAt(index + 1);
-                  return;
-                case "ArrowLeft":
-                  e.preventDefault();
-                  selectTabAt(index - 1);
-                  return;
-                case "Home":
-                  e.preventDefault();
-                  selectTabAt(0);
-                  return;
-                case "End":
-                  e.preventDefault();
-                  selectTabAt(MANIFEST_TABS.length - 1);
-                  return;
-                default:
-                  return;
-              }
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      {/* Focusable whatever it holds. The recommendation is to give a panel
-       *  its own tab stop when nothing inside it takes one, and which panel
-       *  that is here is not fixed: Notes is pure prose, and Slices has no
-       *  focusable content either once no slice carries a flash method. A
-       *  panel that is sometimes reachable is worse than one that always
-       *  is. */}
-      <div
-        className={styles.tabPanel}
-        role="tabpanel"
-        id={panelDomId}
-        aria-labelledby={tabDomId(tab)}
-        tabIndex={0}
-      >
-        {tab === "notes" ? (
-          <MemoryNotes />
-        ) : tab === "memory" ? (
-          <MemoryRegions memory={memory} sizes={sizes?.slices ?? []} />
-        ) : (
-          <>
-            <ul className={styles.manifestSlices}>
-              {manifest.slices.map((s) => {
-                const active = s.os !== "off";
-                // What this slice builds, by the first of the five fields the
-                // manifest supplies, and undefined when it supplies none of them.
-                // The "—" is appended per consumer rather than to the chain: a
-                // sentinel is a DISPLAY fallback, and feeding it to `title` too
-                // would grow the row a native tooltip whose entire content is an
-                // em-dash, which discloses nothing and reads as a bug.
-                //
-                // Hoisted because it has TWO consumers: at --font-size-base the
-                // glyphs are ~18% wider than the xs they were, so ~15% fewer
-                // characters of an absolute `build_dir` survive `.manifestTarget`'s
-                // ellipsis (nowrap + overflow hidden inside `flex: 1 1 auto;
-                // min-width: 0`), and the `title` is the only place the path stays
-                // whole — the same reason `.boardYaml` carries one. One const,
-                // because a tooltip that has drifted from the text under it is
-                // worse than no tooltip.
-                const target =
-                  s.build_dir ?? s.board ?? s.machine ?? s.image ?? s.app;
-                return (
-                  <li key={s.core_id} className={styles.manifestSlice}>
-                    <span className={styles.coreId}>{s.core_id}</span>
-                    <span className={styles.backend} data-backend={s.os}>
-                      {s.os}
-                    </span>
-                    <span
-                      className={styles.manifestStatus}
-                      data-status={s.status}
-                    >
-                      {s.status}
-                    </span>
-                    {s.flash_method && (
-                      <span className={styles.manifestFlash}>
-                        {s.flash_method}
-                      </span>
-                    )}
-                    <code
-                      className={styles.manifestTarget}
-                      title={target ?? undefined}
-                    >
-                      {target ?? "—"}
-                    </code>
-                    <span className={styles.manifestActions}>
-                      {active && isReady(s.flash_method) && (
-                        <button
-                          type="button"
-                          className={styles.sliceBtn}
-                          onClick={() => flashSlice(s.core_id)}
-                        >
-                          Flash
-                        </button>
-                      )}
-                    </span>
-                    {/* The status chip alone says `skipped` without saying why, which
-                     *  is the complaint behind #331 — the manifest already carries
-                     *  the answer and it was being dropped. `reason` first, because
-                     *  it is the only one that explains a non-ok slice; then what
-                     *  the build produced, then where to read the log. Wraps to its
-                     *  own line via flex-basis so the chip row keeps its shape. */}
-                    {(s.reason || s.output_artefact || s.log_path) && (
-                      <span className={styles.manifestDetail}>
-                        {s.reason && (
-                          <span className={styles.manifestReason}>
-                            {s.reason}
-                          </span>
-                        )}
-                        {s.output_artefact && (
-                          <span>
-                            out{" "}
-                            <code className={styles.manifestDetailPath}>
-                              {s.output_artefact}
-                            </code>
-                          </span>
-                        )}
-                        {s.log_path && (
-                          <span>
-                            log{" "}
-                            <code className={styles.manifestDetailPath}>
-                              {s.log_path}
-                            </code>
-                          </span>
-                        )}
-                      </span>
-                    )}
-                    {/* This is THIS BUILD's resolved toolchain, read straight from the
-                     *  emitted manifest (`slices[].toolchain`). It is NOT a second
-                     *  opinion on Hardware Explorer's "Toolchain" column — both read
-                     *  the exact same `topology.<core>.toolchain` field
-                     *  (`sdkCatalogue/parse.ts:137` here; alp-sdk
-                     *  `alp_orchestrate/loader.py` sets `toolchain=entry.get("toolchain")`
-                     *  from that same SoM-topology-merged-with-board.yaml-cores entry,
-                     *  and `alp_orchestrate/buildplan.py` says outright it is "never
-                     *  invented"). What differs is WHEN it was read, and it only
-                     *  differs at all once a build has run: under the `projection`
-                     *  badge tan re-derived this live from the current
-                     *  board.yaml/preset (`build --manifest`), so it cannot be stale
-                     *  and will agree with Hardware Explorer; under `post-build` it
-                     *  came off a `build/system-manifest.yaml` on disk
-                     *  (`build --manifest-from`), which a previous `som.sku` can have
-                     *  left behind. While alp-sdk#964 blocks a per-core override,
-                     *  that stale file is the only way the two can disagree; the
-                     *  override — the thing that would let them genuinely diverge —
-                     *  is the #314 picker half. Gated on `active` like the Flash
-                     *  button: an `os: "off"` slice never builds, so its manifest
-                     *  toolchain value (if any) would mislead. Absence renders as an
-                     *  explicit "not reported", never a blank cell or a guessed
-                     *  fallback — a preset that declares no toolchain is schema-legal
-                     *  (som-preset-v1's `topology_entry` has `required: []`), though
-                     *  no shipped preset omits it today. */}
-                    {active && (
-                      <span className={styles.manifestDetail}>
-                        <span>
-                          build toolchain{" "}
-                          {s.toolchain ? (
-                            <code className={styles.manifestDetailPath}>
-                              {s.toolchain}
-                            </code>
-                          ) : (
-                            <em>not reported</em>
-                          )}
-                        </span>
-                      </span>
-                    )}
-                    <SliceFootprint size={sizeByCore.get(s.core_id)} />
-                  </li>
-                );
-              })}
-            </ul>
-            {/* Inside the panel, not beside it. These two belong to the
-             *  Slices reading, and a tabpanel that stops short of half its
-             *  own content leaves that half owned by nothing. The
-             *  `tab === "slices"` guards they used to carry are what the
-             *  branch itself now says. */}
-            {manifest.ipc.length > 0 && (
-              <div className={styles.manifestSub}>
-                <span className={styles.manifestSubTitle}>IPC</span>
-                {manifest.ipc.map((link) => (
-                  <span key={link.name} className={styles.manifestChip}>
-                    {link.name} <em>{link.kind}</em> [
-                    {link.endpoints.join(" ↔ ")}]
-                    {link.status && link.status !== "ok"
-                      ? ` · ${link.status}`
-                      : ""}
-                    {/* Same gap as the slices above: a degraded link showed
-                     *  its status but never its reason, which the model
-                     *  already has. */}
-                    {link.reason ? ` · ${link.reason}` : ""}
-                  </span>
-                ))}
-              </div>
-            )}
-            {manifest.helper_mcus.length > 0 && (
-              <div className={styles.manifestSub}>
-                <span className={styles.manifestSubTitle}>Helper MCUs</span>
-                {manifest.helper_mcus.map((mcu) => (
-                  <span key={mcu.name} className={styles.manifestChip}>
-                    {mcu.name} <em>{mcu.chip}</em>
-                    {!(isReady(mcu.flash_method) && isReady(mcu.firmware_path))
-                      ? " · firmware TBD"
-                      : ""}
-                  </span>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </section>
+      {hw.silicon && (
+        <>
+          {" · "}
+          <span className={styles.mono}>{hw.silicon}</span>
+        </>
+      )}
+    </p>
   );
 }
 
-/** A generated file: a toggle showing its path; expands to its contents. */
-function FileRow({
-  file,
-  open,
-  onToggle,
-}: {
-  file: BuildPlanGeneratedFile;
-  open: boolean;
-  onToggle: () => void;
-}) {
+/** One line under the identity: the file's age and the host's verdict on it.
+ *  `stale` is a claim with evidence (a build finished after the file was
+ *  written and did not update it) and carries the host's own sentence;
+ *  `unknown` says what it does not know rather than passing for fresh. */
+function Freshness({ provenance }: { provenance: ManifestProvenance }) {
+  const age = provenance.writtenAt ? writtenAgo(provenance.writtenAt) : null;
+  const written = age ? `Written ${age}` : "Written at an unknown time";
+  // One short line; the host's own sentence stays one click away, verbatim.
+  // Printed in full it wrapped to a two-line paragraph above everything else.
+  const verdict =
+    provenance.freshness === "fresh"
+      ? "by the last build."
+      : provenance.freshness === "stale"
+        ? "· a later build did not update it."
+        : "· no build has been observed since.";
   return (
-    <li className={styles.fileRow}>
-      <button
-        type="button"
-        className={styles.fileToggle}
-        onClick={onToggle}
-        aria-expanded={open}
-      >
-        <span
-          className={styles.chevron}
-          data-open={open || undefined}
-          aria-hidden="true"
-        >
-          <Icon name="chevronRight" size={12} />
+    <div className={styles.freshness} data-freshness={provenance.freshness}>
+      <Icon
+        name={provenance.freshness === "stale" ? "warning" : "activity"}
+        size={14}
+        className={styles.freshnessIcon}
+      />
+      {provenance.reason ? (
+        <details className={styles.why}>
+          <summary>
+            {written} {verdict}
+          </summary>
+          <p>{provenance.reason}</p>
+        </details>
+      ) : (
+        <span>
+          {written} {verdict}
         </span>
-        <code className={styles.filePath}>{file.path}</code>
-      </button>
-      {open && <pre className={styles.fileContent}>{file.contents}</pre>}
-    </li>
+      )}
+    </div>
+  );
+}
+
+function ErrorLine({ text }: { text: string }) {
+  return (
+    <p className={styles.freshness} data-kind="err">
+      <Icon name="warning" size={14} className={styles.freshnessIcon} />
+      <span>{text}</span>
+    </p>
+  );
+}
+
+const URL_RE = /(https:\/\/[^\s)]+)/g;
+
+/** A note with its URLs made clickable — a webview cannot open a link on its
+ *  own, so each goes through the host's `openUrl`. */
+function Linkified({ text }: { text: string }): ReactNode {
+  return text.split(URL_RE).map((part, i) =>
+    URL_RE.test(part) ? (
+      <a
+        key={i}
+        href={part}
+        onClick={(e) => {
+          e.preventDefault();
+          postMessage({ type: "openUrl", url: part, label: part });
+        }}
+      >
+        {part}
+      </a>
+    ) : (
+      part
+    ),
   );
 }
 
@@ -506,43 +159,36 @@ export function BuildPlanView() {
     error,
     loading,
     manifest,
-    manifestPostBuild,
     manifestProvenance,
     manifestError,
     memory,
     sizes,
     sizesError,
-    reload,
-    materialise,
-    build,
     flashSlice,
   } = useBuildPlan();
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const toggle = (path: string) =>
-    setExpanded((cur) => (cur === path ? null : path));
-
-  // A slice with no command isn't buildable yet (paired with a warning); the
-  // whole-plan build would fail, so gate Build until every slice has a command.
-  const unbuildable = plan ? plan.slices.filter((s) => !s.command) : [];
-  const canBuild = unbuildable.length === 0;
+  const sizeByCore = new Map<string, SliceSize>(
+    (sizes?.slices ?? []).map((s) => [s.core_id, s]),
+  );
+  // The chart series each core's slot is drawn in, so the core row's meters
+  // and the strip's box share a colour.
+  const seriesByCore = memory ? seriesByLabel(memory.spans) : new Map();
+  // Said once, in the footer: why there is no live plan. At this pin `tan
+  // build --plan` is retired (tan-cli#427), so the whole page reads from the
+  // last build's manifest, and the sentence saying so is context, not an
+  // alarm.
+  const planNote = plan ? null : error;
 
   return (
     <div className={styles.root}>
       <header className={styles.header}>
-        <div className={styles.titleRow}>
-          {/* The panel's ROOT heading. It was a <p>, which left the
-              document's first heading at h3 and the outline with no top —
-              a reader jumping by heading landed in the middle of the page
-              with nothing above it saying where they were. */}
-          <h1 className={styles.title}>Build Plan</h1>
-          <Button appearance="secondary" onClick={reload} disabled={loading}>
-            Refresh
-          </Button>
-        </div>
-        <p className={styles.subtitle}>
-          The per-core build plan — what each slice builds, before anything
-          runs.
-        </p>
+        <h1 className={styles.title}>Build Plan</h1>
+        {manifest && <Identity hw={manifest.hw_info} />}
+        {manifest && manifestProvenance && (
+          <Freshness provenance={manifestProvenance} />
+        )}
+        {manifestError && (plan || manifest) && (
+          <ErrorLine text={manifestError} />
+        )}
       </header>
 
       {loading ? (
@@ -554,169 +200,69 @@ export function BuildPlanView() {
       ) : !plan && !manifest ? (
         <EmptyState
           icon={<Icon name="cpu" size={28} />}
-          title="No build plan"
+          title="No build yet"
           description={
+            manifestError ??
             error ??
-            "Open a project with a board.yaml (and a connected SDK) to preview its build plan."
+            `Run a build to write ${MANIFEST_PATH}; this panel reads it.`
           }
         />
       ) : (
-        <div className={styles.body}>
-          {/* `tan build --plan` is deferred (tan-cli#427), so on the pinned CLI
-           *  `plan` is ALWAYS null and this used to collapse the whole tab into
-           *  "No build plan" — taking the system-manifest section down with it,
-           *  including the slices, the footprints and the memory map, all of
-           *  which the panel had already read off disk and posted. The plan's
-           *  absence is now its own line, not the whole page. */}
-          {!plan && (
-            <p className={styles.buildNote}>
-              <Icon name="warning" size={12} />
-              <span>
-                {error ??
-                  "No build plan for this project — the manifest below is read from the last build."}
-              </span>
-            </p>
+        <div className={styles.sections}>
+          {plan && <PlanRows plan={plan} />}
+          {manifest && (
+            <CoreRows
+              slices={manifest.slices}
+              sizeByCore={sizeByCore}
+              seriesByCore={seriesByCore}
+              sizesError={sizesError}
+              flashSlice={flashSlice}
+            />
           )}
-          {plan && (
+          {manifest && memory && (
+            <MemoryStrip
+              memory={memory}
+              budgets={sizeByCore}
+              sku={manifest.hw_info.sku}
+            />
+          )}
+          {manifest && manifest.ipc.length > 0 && (
+            <InterconnectRows
+              links={manifest.ipc}
+              spans={memory?.spans ?? []}
+            />
+          )}
+          {manifest && manifest.helper_mcus.length > 0 && (
+            <HelperMcuRows mcus={manifest.helper_mcus} />
+          )}
+        </div>
+      )}
+
+      {!loading && (plan || manifest) && (
+        <footer className={styles.footer}>
+          {manifest && (
             <>
-              <div className={styles.meta}>
-                <span className={styles.sku}>{plan.sku}</span>
-                <span className={styles.metaItem}>
-                  {plan.slices.length} slice
-                  {plan.slices.length === 1 ? "" : "s"}
-                </span>
-              </div>
-              <div className={styles.boardYaml} title={plan.boardYaml}>
-                <code>{plan.boardYaml}</code>
-              </div>
-
-              <div className={styles.actions}>
-                <Button appearance="secondary" onClick={materialise}>
-                  Materialise
-                </Button>
-                <Button
-                  appearance="primary"
-                  onClick={build}
-                  disabled={!canBuild}
-                  title={
-                    canBuild
-                      ? undefined
-                      : `${unbuildable.length} slice(s) have no command yet — resolve the warnings before building.`
-                  }
-                >
-                  Build
-                </Button>
-              </div>
-              {!canBuild && (
-                <p className={styles.buildNote}>
-                  <Icon name="warning" size={12} />
-                  <span>
-                    Build unavailable —{" "}
-                    <strong>
-                      {unbuildable.map((s) => s.coreId).join(", ")}
-                    </strong>{" "}
-                    {unbuildable.length === 1 ? "has" : "have"} no command yet.
-                    Materialise still writes the config artefacts.
-                  </span>
-                </p>
+              Read from <span className={styles.mono}>{MANIFEST_PATH}</span>
+              {manifest.generated_by && (
+                <>
+                  , written by{" "}
+                  <span className={styles.mono}>{manifest.generated_by}</span>
+                </>
               )}
-
-              <ul className={styles.slices}>
-                {plan.slices.map((slice) => (
-                  <li key={slice.coreId}>
-                    <Card padding="md" className={styles.slice}>
-                      <div className={styles.sliceHead}>
-                        <span className={styles.coreId}>{slice.coreId}</span>
-                        <span
-                          className={styles.backend}
-                          data-backend={slice.backend}
-                        >
-                          {slice.backend}
-                        </span>
-                      </div>
-                      <code className={styles.cmd}>{commandLine(slice)}</code>
-                      <div className={styles.sliceMeta}>
-                        <span className={styles.buildDir}>
-                          {slice.buildDir}
-                        </span>
-                      </div>
-                      {Object.keys(slice.env).length > 0 && (
-                        <dl className={styles.env}>
-                          {Object.entries(slice.env).map(([key, value]) => (
-                            <div key={key} className={styles.envRow}>
-                              <dt className={styles.envKey}>{key}</dt>
-                              <dd className={styles.envVal}>{value}</dd>
-                            </div>
-                          ))}
-                        </dl>
-                      )}
-                      {slice.configArtefacts.length > 0 && (
-                        <ul className={styles.fileList}>
-                          {slice.configArtefacts.map((file) => (
-                            <FileRow
-                              key={file.path}
-                              file={file}
-                              open={expanded === file.path}
-                              onToggle={() => toggle(file.path)}
-                            />
-                          ))}
-                        </ul>
-                      )}
-                    </Card>
-                  </li>
-                ))}
-              </ul>
-
-              {plan.sharedArtefacts.length > 0 && (
-                <section className={styles.section}>
-                  <h2 className={styles.sectionTitle}>
-                    Shared artefacts ({plan.sharedArtefacts.length})
-                  </h2>
-                  <ul className={styles.fileList}>
-                    {plan.sharedArtefacts.map((file) => (
-                      <FileRow
-                        key={file.path}
-                        file={file}
-                        open={expanded === file.path}
-                        onToggle={() => toggle(file.path)}
-                      />
-                    ))}
-                  </ul>
-                </section>
-              )}
-
-              {plan.warnings.length > 0 && (
-                <section className={styles.section}>
-                  <h2 className={styles.sectionTitle}>
-                    Warnings ({plan.warnings.length})
-                  </h2>
-                  <ul className={styles.warnings}>
-                    {plan.warnings.map((warn, i) => (
-                      <li key={`${warn.code}-${i}`} className={styles.warning}>
-                        <span className={styles.warnCode}>{warn.code}</span>
-                        {warn.coreId && (
-                          <span className={styles.warnCore}>{warn.coreId}</span>
-                        )}
-                        <span className={styles.warnMsg}>{warn.message}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
+              .{" "}
             </>
           )}
-
-          <SystemManifestSection
-            manifest={manifest}
-            postBuild={manifestPostBuild}
-            provenance={manifestProvenance}
-            error={manifestError}
-            flashSlice={flashSlice}
-            memory={memory}
-            sizes={sizes}
-            sizesError={sizesError}
-          />
-        </div>
+          {planNote && (
+            // Context, not an alarm: the summary says it in a clause, the
+            // producer's full sentence opens beneath it.
+            <details className={styles.why}>
+              <summary>No live plan preview at this tan version.</summary>
+              <p>
+                <Linkified text={planNote} />
+              </p>
+            </details>
+          )}
+        </footer>
       )}
     </div>
   );

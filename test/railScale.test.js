@@ -335,28 +335,6 @@ test("isExactAt is false where one pixel stands for many addresses", async () =>
   assert.equal(tiny.isExactAt(50), true);
 });
 
-test("railHeightNeeded grows with the segment count so no floor is squeezed", async () => {
-  const { railHeightNeeded, MIN_EXTENT_PX, GAP_PX } = await loadAll();
-  const boundaries = [0];
-  for (let i = 1; i <= 31; i++) boundaries.push(i * 0x1000000);
-  assert.equal(
-    railHeightNeeded({ lo: 0, hi: 31 * 0x1000000 }, boundaries),
-    31 * MIN_EXTENT_PX,
-  );
-  assert.equal(
-    railHeightNeeded(
-      { lo: 0, hi: 0x30 },
-      [0, 0x10, 0x20, 0x30],
-      [
-        { lo: 0, hi: 0x10 },
-        { lo: 0x20, hi: 0x30 },
-      ],
-      5,
-    ),
-    2 * MIN_EXTENT_PX + GAP_PX + 5,
-  );
-});
-
 test("the top pixel reads the window's last byte, never one past it", async () => {
   const { layout, win } = await railFor(AEN_REGIONS);
   assert.equal(layout.addressAt(18), win.hi - 1); // 0x8057ffff

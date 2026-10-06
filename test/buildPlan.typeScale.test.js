@@ -24,9 +24,9 @@
 //
 // That gate asserts every token USED is DECLARED, and that a `var()` fallback
 // names the value its token really has. It never looks at a bare literal, so
-// `font-size: 9px` and `font-size: 10px` sat in `MemoryChart.module.css` —
-// axis addresses and the hover readout, drawn at 10px next to 13px body text —
-// with the whole suite green.
+// `font-size: 9px` and `font-size: 10px` sat in the old memory chart's
+// stylesheet — axis addresses and the hover readout, drawn at 10px next to
+// 13px body text — with the whole suite green.
 //
 // A gate keyed ONLY on that hole would still have been useless here: the
 // literals were five declarations out of the ~35 sites this panel was fixed
@@ -51,7 +51,7 @@
 //       CLASS is on the CHROME allowlist below, each entry carrying why it is
 //       small on purpose. This walks every rule in every `*.module.css` under
 //       this directory (recursively — a module in a subdirectory is gated the
-//       same as one beside these four), not a hand-maintained list of
+//       same as one beside these three), not a hand-maintained list of
 //       "selectors that render primary content": a positive list needs one
 //       entry per selector AND per variant of that selector, and says nothing
 //       about a module that does not exist yet — which is exactly how a new
@@ -440,61 +440,20 @@ test("every font-size in the Build Plan panel names a scale token, `inherit`, or
 // scoped to its own file, so a bare class name would let an unrelated
 // module's same-named class ride an exemption it never earned.
 //
-// SUB-HEADINGS are graded here too — `.unresolvedTitle`, `.conflictsTitle` and
-// MemoryNotes' `.title` are md, which trivially clears `>= base` — but
-// `>= base` could never have PINNED them there: base also satisfies it, and
-// base is exactly where they all sat before this panel was fixed. Their own
-// arm below grades them against the body they actually head instead.
+// SUB-HEADINGS are graded here too — every `.sectionTitle` is md, which
+// trivially clears `>= base` — but `>= base` could never have PINNED them
+// there: base also satisfies it, and base is exactly where the old tab's
+// sub-headings sat before this panel was fixed. Their own arm below grades
+// them against the body they actually head instead.
 
 const CHROME = [
   {
-    file: "BuildPlanView.module.css",
-    class: ".backend",
+    file: "rows.module.css",
+    class: ".sub",
     why:
-      "an uppercase, 0.04em-tracked, weight-600 pill naming the slice's OS " +
-      "— a category, glanced at, and it shares its line with `.coreId`, " +
-      "which is the name being read",
-  },
-  {
-    file: "BuildPlanView.module.css",
-    class: ".manifestBadge",
-    why:
-      "the uppercase tracked freshness badge — one recoloured word read as " +
-      "a state, not as a sentence",
-  },
-  {
-    file: "BuildPlanView.module.css",
-    class: ".manifestSubTitle",
-    why:
-      "the LABEL register (uppercase, 0.04em tracked, weight 600) over the " +
-      "IPC-link / helper-MCU chips, the same register `.sectionTitle` is " +
-      "in — not a heading in the panel's four-rung ladder. `.backend` sits " +
-      "a rung down at xs (Micro), not alongside it",
-  },
-  {
-    file: "BuildPlanView.module.css",
-    class: ".sectionTitle",
-    why:
-      "uppercase + 0.04em + 600: a LABEL register, not a heading in this " +
-      "panel's four-rung ladder, and a label set at body size shouts " +
-      "instead of labelling",
-  },
-  {
-    file: "MemoryRegions.module.css",
-    class: ".kind",
-    why:
-      "small deliberately, and NOT because it is a tracked badge: it has a " +
-      "tinted background and nothing else — no uppercase, no " +
-      "letter-spacing, no weight. It is small so that `.status` beside it, " +
-      "at base, reads as the verdict while this reads as the category " +
-      "('carve-out')",
-  },
-  {
-    file: "BuildPlanView.module.css",
-    class: ".manifestAge",
-    why:
-      "rides the badge on the `.sectionTitle` line — raising it would " +
-      "leave the age reading larger than the heading it sits inside",
+      "the OS · toolchain line under a core's name, and the kind · endpoints " +
+      "line under a link's — glanced at beside the mono identifier that is " +
+      "being read; every figure, address and reason on the row stays at base",
   },
 ];
 
@@ -595,10 +554,9 @@ test("chrome stays below the reading size", () => {
 //   chrome        xs/sm 11-12px the CHROME allowlist above
 //
 // `>= base` cannot hold a sub-heading, because base is precisely the mistake:
-// `.unresolvedTitle`, `.conflictsTitle` and MemoryNotes' `.title` each sat AT
-// the size of the list underneath them before an earlier fix — a rung spent
-// on nothing, with weight and colour left carrying a rank that size is the
-// only signal for. So this arm grades every sub-heading below against the
+// the old tab's sub-headings each sat AT the size of the list underneath
+// them before an earlier fix — a rung spent on nothing, with weight and
+// colour left carrying a rank that size is the only signal for. So this arm grades every sub-heading below against the
 // body it actually heads and demands it be STRICTLY larger.
 //
 // Only the lower edge is graded here. The ceiling — that no sub-heading
@@ -607,42 +565,23 @@ test("chrome stays below the reading size", () => {
 // it per-entry would be a second gate on one fact.
 //
 // `heads` names real markup, read off the components rather than assumed:
-// `.unresolvedTitle` is the <h3> over the `.unresolved` list whose rows carry
-// `.rowName` (the reason itself moved to `.reasonCallout`, the Title register
-// — a same-tier flag beside this heading, not a body it must outrank, the
-// same reason `.outsideFlag` is not one of MemoryTable's `.title` heads
-// either); `.conflictsTitle` is the <h3> `FindingList` renders for
-// `Conflicts`, `OutsideRegionNotice` AND `BlockedFindings` alike, sitting
-// over `.conflictRow` items carrying `.rowName` and `.conflictKind`;
-// MemoryNotes' `.title` is the <h3> of a `<section class=note>` whose
-// paragraphs are `.note p`; MemoryTable's `.title` is the <h3> over the
-// unified "Memory map rows" tree whose treeitems carry `.name` and
-// `.range`.
+// rows.module.css's `.sectionTitle` is the <h2> over every row list (the
+// mono `.name`, the `.status` word, the `.meterLine` figures);
+// MemoryStrip.module.css's `.sectionTitle` is the <h2> over the strip's
+// boxes (`.region`, `.span`) and its `.tickLabel` addresses.
 
 const SUB_HEADINGS = [
   {
-    file: "MemoryRegions.module.css",
-    selector: ".unresolvedTitle",
-    heads: [".rowName"],
-    why: "'Declared, not placed (N)' — the heading over the extents the manifest never resolved",
+    file: "rows.module.css",
+    selector: ".sectionTitle",
+    heads: [".name", ".status", ".meterLine"],
+    why: "'Cores' / 'Interconnect' / 'Helper MCUs' / 'Plan' — the heading over each list of rows",
   },
   {
-    file: "MemoryRegions.module.css",
-    selector: ".conflictsTitle",
-    heads: [".rowName", ".conflictKind"],
-    why: "'N extents land on others' (and its BlockedFindings/OutsideRegionNotice siblings) — the heading over what this view flags as wrong",
-  },
-  {
-    file: "MemoryNotes.module.css",
-    selector: ".title",
-    heads: [".note p"],
-    why: "the <h3> over each note section, in a tab that is nothing but prose",
-  },
-  {
-    file: "MemoryTable.module.css",
-    selector: ".title",
-    heads: [".name", ".range"],
-    why: "'Memory map (N)' — the heading over the unified, address-ordered table",
+    file: "MemoryStrip.module.css",
+    selector: ".sectionTitle",
+    heads: [".region", ".span", ".tickLabel"],
+    why: "'Memory' — the heading over the strip and its detail line",
   },
 ];
 
@@ -762,9 +701,8 @@ test("nothing inside the panel reaches the panel's own title", () => {
       "that says which of two headings contains the other, and a section " +
       "that reads as large as the page it sits on inverts that. A sub-heading " +
       "here is var(--font-size-md) — one rung under this title and one over " +
-      "the base body it heads, which is what `.unresolvedTitle`, " +
-      "`.conflictsTitle` and MemoryNotes' `.title` take; the arm above holds " +
-      "that lower edge, this one holds the ceiling.",
+      "the base body it heads, which is what every `.sectionTitle` takes; " +
+      "the arm above holds that lower edge, this one holds the ceiling.",
   );
 });
 
@@ -780,14 +718,14 @@ test("nothing inside the panel reaches the panel's own title", () => {
 
 test("the type scan actually reads the panel", () => {
   assert.ok(
-    FILES.length >= 4,
+    FILES.length >= 3,
     `found only ${FILES.length} CSS modules under ${path.relative(
       path.join(__dirname, ".."),
       PANEL,
     )} — the walker is broken, not the panel`,
   );
   assert.ok(
-    RULES.length >= 30,
+    RULES.length >= 20,
     `parsed only ${RULES.length} font-size declarations — the rule pattern is ` +
       "broken and both arms are grading almost nothing",
   );

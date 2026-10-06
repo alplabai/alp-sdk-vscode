@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- **The Build Plan panel is one page again, drawn in VS Code's own
+  language.** The summary strip, the "needs attention" list and the
+  Slices / Memory / Notes tabs are gone. The page reads top to bottom:
+  the module's identity and one freshness line under the title, then
+  Cores, Memory, Interconnect and Helper MCUs as Explorer-style rows parted
+  by a hairline, sentence-case headings, no cards and no uppercase labels.
+  Every problem sits on the row it is about — a skipped core's reason on
+  its row, a blocked link's on its row with the resolver's text one
+  disclosure down, a stale manifest as one line under the header — so
+  nothing is said twice. Refresh, Build and Materialise moved to the
+  panel's editor-title toolbar (`alp.buildPlan.refresh` / `.build` /
+  `.materialise`, shown while the panel is active); the only in-page
+  action left is Flash on a built core's row.
+
+- **The memory map is a horizontal strip.** SoM regions run along the top
+  lane and placed images along the lower lane, cut at every declared
+  address on the log₂(size) scale (a 32 KiB `atoc` stays visible beside a
+  4 GiB `ddr_main`), with empty runs compressed and hatched, and address
+  ticks at declared edges only, thinned so none overprint. A placed
+  image's used bytes are a slim fill along its box in the same series
+  colour its core's meters use. Regions carry an authority tier mark only
+  when the SoM declares write authority; otherwise the page says once that
+  it does not. Entries that could not be placed, and regions that resolve
+  no extent, are dashed ghosts beside the strip. Selecting any item (click,
+  or the arrow keys over one roving tab stop) prints it in full underneath:
+  the inclusive range, the size in both spellings, the exact used bytes,
+  the authority in words, and the producer's own reason whole.
+
 - **The Memory tab's rail now draws every SoM region as a labelled band, on
   a log₂(size) scale (#484).** Each resolved region is a band inside the
   rail, behind the placed spans, tinted by authority tier (yours, locked,

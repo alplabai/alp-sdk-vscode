@@ -2,7 +2,7 @@
 //
 // An INVISIBLE ELEMENT MUST STATE WHAT IT DOES TO THE POINTER.
 //
-// THE DEFECT THIS EXISTS FOR. `MemoryChart.module.css`'s `.hover` was
+// THE DEFECT THIS EXISTS FOR. The old memory chart's `.hover` was
 // `fill: transparent` and nothing else — a rect covering the whole rail,
 // emitted last, existing only to catch the pointer for the live address
 // readout. But `transparent` is `rgba(0, 0, 0, 0)`, not `none`, and under
@@ -33,8 +33,8 @@
 //     document order, so it cannot check the other half of the remedy; what
 //     it can do is force the author to state the intent.
 //
-//  2. The classes that exist to be DRAWN OVER the rail rather than hit are
-//     held to `pointer-events: none` by name. This list encodes a fact CSS
+//  2. The classes that exist to be DRAWN OVER an interactive box rather
+//     than hit are held to `pointer-events: none` by name. This list encodes a fact CSS
 //     cannot express — which elements overlay interactive content — and it
 //     is verified against the stylesheet, so a rename or a deletion turns
 //     this red rather than quietly shrinking what is covered.
@@ -117,10 +117,12 @@ function paintsNothing(body) {
 // Arm 2's list. Keyed by file so a class name shared between stylesheets
 // cannot satisfy this from the wrong one.
 const MUST_BE_POINTER_INERT = [
-  // The three-tier authority strip beside the rail: a vocabulary to be
-  // scanned, never a control. It sits over the plot area, so without this it
-  // would shadow the bands underneath exactly as `.hover` did.
-  { file: "MemoryChart.module.css", class: "gutter" },
+  // The authority tier mark along a region band's bottom edge: a vocabulary
+  // to be scanned, never a control. It sits inside the band's own button,
+  // so without this it would take the click meant for the band.
+  { file: "MemoryStrip.module.css", class: "tierMark" },
+  // The used-bytes fill along a placed image's bottom edge, same reason.
+  { file: "MemoryStrip.module.css", class: "used" },
 ];
 
 // THE GATE ON THE GATE. A broken directory path, a broken suffix filter or a
@@ -128,12 +130,12 @@ const MUST_BE_POINTER_INERT = [
 // green because it measured nothing, not because nothing is wrong.
 test("the glob and the block parser actually found the stylesheets", () => {
   assert.ok(
-    CSS_FILES.length >= 5,
-    `found ${CSS_FILES.length} build-plan *.module.css file(s), want at least 5`,
+    CSS_FILES.length >= 3,
+    `found ${CSS_FILES.length} build-plan *.module.css file(s), want at least 3`,
   );
   assert.ok(
-    CSS_FILES.some((f) => f.endsWith("MemoryChart.module.css")),
-    "the glob did not find MemoryChart.module.css — the file the rail is drawn from",
+    CSS_FILES.some((f) => f.endsWith("MemoryStrip.module.css")),
+    "the glob did not find MemoryStrip.module.css — the file the strip is drawn from",
   );
   const blocks = CSS_FILES.flatMap((f) =>
     ruleBlocks(fs.readFileSync(f, "utf8")),
@@ -229,7 +231,7 @@ test("the overlays that must never take the pointer say so", () => {
     );
     assert.ok(
       inert,
-      `${entry.file}'s ".${entry.class}" is drawn over the rail's interactive bands and must declare pointer-events: none`,
+      `${entry.file}'s ".${entry.class}" is drawn over an interactive box and must declare pointer-events: none`,
     );
   }
 });

@@ -1,15 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The memory-region window helpers (#484 phase 2): pure address and pixel
-// arithmetic, no React and no CSS import, so a table (MemoryTable.tsx)
-// and the chart (MemoryChart.tsx) both pull from one place rather than
-// drifting apart with two copies of the same rule. `Window`, `endOf`,
-// `budgetEnd` and `chartWindowOf` live here for the same reason: both
-// `MemoryRegions.tsx` and `MemoryChart.tsx` need the window a manifest's
-// spans and regions cover, and `chartWindowOf` below is the one place that
-// computes it — the table's "outside this map's window" note and the chart's
-// own drawn window read the identical computation, so the two can never
-// drift the way two copies of the same steps eventually do.
+// arithmetic, no React and no CSS import, so the strip's layout
+// (stripLayout.ts) and its row model (memoryRows.ts) both pull from one
+// place rather than drifting apart with two copies of the same rule.
+// `Window`, `endOf`, `budgetEnd` and `chartWindowOf` live here for the same
+// reason: `chartWindowOf` below is the one place that computes the window a
+// manifest's spans and regions cover, so every reader of it agrees.
 
 import type { MemoryRegion, MemorySpan, SliceSize } from "../../types";
 
@@ -67,22 +64,18 @@ export function resolvedRegions(regions: MemoryRegion[]): ResolvedRegion[] {
 }
 
 /**
- * The single window computation both the chart and the table draw from: the
+ * The single window computation the strip draws from: the
  * UNION of every declared address — each placed span's base and end, each
  * slot image's `tan size` budget end, and each resolved region's own extent.
  * Regions do not merely widen a window the spans already pinned: they CREATE
  * one, so a manifest whose spans pin fewer than two addresses still gets a
- * rail as long as one region resolves. And no resolved region is ever left
+ * strip as long as one region resolves. And no resolved region is ever left
  * out because it sits far from the spans (V2N's `ddr_main` at 0x48000000,
  * 4 GiB): the piecewise scale (railScale.ts) compresses the empty run between
  * them and marks it, rather than this window dropping the region.
  *
  * Null only when fewer than two distinct addresses are known — one point is
  * not a range.
- *
- * Called from both `MemoryChart.tsx` and `MemoryRegions.tsx`, so the window
- * the chart draws and the one the table measures "outside" against can never
- * drift apart.
  */
 export function chartWindowOf(
   spans: MemorySpan[],
@@ -117,23 +110,23 @@ function declaredAddresses(
   return out;
 }
 
-/** Resolved regions, largest extent first — the rail's draw order. SVG
- *  paints later siblings on top, so a nested region (V2N's `m33_tcm`
- *  inside `ddr_main`) is drawn after its container and wins the click,
- *  whatever order the manifest listed them in. Returns a new array. */
+/** Resolved regions, largest extent first — the strip's draw order. A
+ *  later sibling paints on top, so a nested region (V2N's `m33_tcm` inside
+ *  `ddr_main`) is drawn after its container and wins the click, whatever
+ *  order the manifest listed them in. Returns a new array. */
 export function regionsLargestFirst(
   regions: readonly ResolvedRegion[],
 ): ResolvedRegion[] {
   return [...regions].sort((a, b) => b.hi - b.lo - (a.hi - a.lo));
 }
 
-/** Names shared by two or more rows. Selecting a region row sets `selected`
+/** Names shared by two or more rows. Selecting a region sets `selected`
  *  to its id (`memory:<name>`) — for a duplicated name that id belongs to
  *  every row sharing it, so a click could highlight all of them at once
  *  unless the caller refuses the join. The single source of truth for that
- *  refusal: `MemoryTable.tsx` imports this instead of keeping its own
- *  copy, so the chart frame, the aperture bar and the table row all refuse
- *  the same names the same way. */
+ *  refusal: `memoryRows.ts` and `stripLayout.ts` both import this instead
+ *  of keeping their own copy, so the band and the detail refuse the same
+ *  names the same way. */
 export function duplicatedNames(regions: MemoryRegion[]): Set<string> {
   const seen = new Set<string>();
   const dupes = new Set<string>();

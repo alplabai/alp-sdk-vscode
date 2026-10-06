@@ -1,0 +1,384 @@
+/* The list language every section of the Build Plan panel shares: a
+ * sentence-case heading with a muted count beside it, and rows parted by one
+ * hairline — the Explorer's own shape, never a card. One stylesheet for the
+ * four row components (cores, interconnect, helper MCUs, plan) so the hover,
+ * the divider, the meter and the disclosure cannot drift between them. */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-4);
+  padding: 0 var(--space-4);
+}
+
+/* md: one rung over the base rows it heads, one under the panel title. */
+.sectionTitle {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sectionNote {
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+}
+
+.sectionNote[data-kind="warn"] {
+  color: var(--status-warn);
+}
+
+.sectionNote[data-kind="err"] {
+  color: var(--status-err);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border-widget);
+}
+
+.item {
+  border-bottom: 1px solid var(--border-widget);
+}
+
+/* Wraps rather than breaking at a width: at 320px the meters drop under the
+ * name on their own, and no media query has to know where that happens. */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-6);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+}
+
+.row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.lead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  flex: 1 1 200px;
+}
+
+.ident {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* The identifier is the one mono thing on the row; it carries no background
+ * because the row already is the surface. */
+.name {
+  font-family: var(--text-mono);
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* sm: the OS/toolchain line under a core's name is glanced at, not read;
+ * every figure a reader needs stays at base. */
+.sub {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: var(--radius-full);
+  border: 1.5px solid currentColor;
+}
+
+.dot[data-kind="ok"] {
+  color: var(--status-ok);
+  background: currentColor;
+}
+
+.dot[data-kind="warn"] {
+  color: var(--status-warn);
+}
+
+.dot[data-kind="err"] {
+  color: var(--status-err);
+  background: currentColor;
+}
+
+.dot[data-kind="off"] {
+  color: var(--text-secondary);
+}
+
+.status {
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+}
+
+.status[data-kind="err"] {
+  color: var(--status-err);
+}
+
+.status[data-kind="warn"] {
+  color: var(--status-warn);
+}
+
+.body {
+  flex: 2 1 280px;
+  min-width: 0;
+}
+
+.meters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--space-3) var(--space-6);
+}
+
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.meterLine {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  font-size: var(--font-size-base);
+}
+
+.meterLabel {
+  color: var(--text-secondary);
+}
+
+.meterPct {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.meterLine[data-status="warn"] .meterPct {
+  color: var(--status-warn);
+}
+
+.meterLine[data-status="over"] .meterPct {
+  color: var(--status-err);
+}
+
+/* A slim meter, the same 4px language the memory strip's used fill speaks. */
+.track {
+  height: 4px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text-secondary) 25%, transparent);
+  overflow: hidden;
+}
+
+/* Tinted by the same series the core's slot carries on the memory strip, so
+ * a reader can match the two by colour before reading a name. */
+.fill {
+  height: 100%;
+  min-width: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--chart-1);
+}
+
+.fill[data-series="2"] {
+  background: var(--chart-2);
+}
+
+.fill[data-series="3"] {
+  background: var(--chart-3);
+}
+
+.fill[data-series="4"] {
+  background: var(--chart-4);
+}
+
+.fill[data-series="5"] {
+  background: var(--chart-5);
+}
+
+.fill[data-series="6"] {
+  background: var(--chart-6);
+}
+
+.fill[data-status="over"] {
+  background: var(--status-err);
+}
+
+/* A problem sits on the row it is about: the skipped core's reason, a
+ * blocked link's status, a plan slice with no command. Verbatim, wrapped,
+ * never cut. */
+.problem {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin: 0;
+  font-size: var(--font-size-base);
+  color: var(--status-warn);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.problem[data-kind="err"] {
+  color: var(--status-err);
+}
+
+.problemIcon {
+  flex: none;
+  margin-top: 2px;
+}
+
+/* Row actions rest quiet and come forward on hover or keyboard focus — the
+ * Explorer's inline-action pattern. Opacity, not visibility, so the control
+ * is always in the tab order. */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  opacity: 0.65;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.row:hover .actions,
+.row:focus-within .actions {
+  opacity: 1;
+}
+
+.ghostBtn {
+  height: 24px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-widget);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.ghostBtn:hover {
+  background: var(--surface-hover);
+}
+
+.linkBtn {
+  height: 24px;
+  padding: 0 var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--text-link);
+  font-family: inherit;
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.linkBtn:hover {
+  color: var(--text-link-active);
+  text-decoration: underline;
+}
+
+.toggle {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  flex: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toggle:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.toggleIcon {
+  display: inline-flex;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.toggleIcon[data-open] {
+  transform: rotate(90deg);
+}
+
+/* The disclosed detail: label / value pairs indented under the name. Values
+ * are identifiers, paths and hex by default and so mono; a producer's prose
+ * note opts back into the UI font. */
+.details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-6);
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-5) var(--space-10);
+  font-size: var(--font-size-base);
+}
+
+.details dt {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.details dd {
+  margin: 0;
+  font-family: var(--text-mono);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.details dd[data-prose] {
+  font-family: inherit;
+}
+
+/* A producer's own text, whole: the reason a link is blocked, a generated
+ * file's contents. A left rule marks it as quoted; the fill is the editor's
+ * own code-block ground. */
+.quote {
+  margin: 0 var(--space-4) var(--space-4) var(--space-10);
+  padding: var(--space-4) var(--space-5);
+  border-left: 2px solid var(--status-err);
+  background: var(--vscode-textCodeBlock-background);
+  font-family: inherit;
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.quote[data-kind="warn"] {
+  border-left-color: var(--status-warn);
+}
+
+.quoteActions {
+  display: flex;
+  gap: var(--space-2);
+  margin: calc(-1 * var(--space-2)) var(--space-4) var(--space-4)
+    var(--space-10);
+}
+
+.quote[data-kind="plain"] {
+  border-left-color: var(--border-widget);
+  font-family: var(--text-mono);
+}
