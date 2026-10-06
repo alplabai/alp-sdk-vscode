@@ -100,7 +100,11 @@ jobs:
       - name: Checkout (with submodule)
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          # alp-sdk-upstream only, not its own submodules: this extension reads
+          # its metadata/, examples/ and docs/, never its vendor trees, and one of
+          # those (the GD32 firmware library) is a private repo that this public
+          # repo's token cannot clone.
+          submodules: true
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -328,7 +332,11 @@ jobs:
       - name: Checkout (with submodule)
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          # alp-sdk-upstream only, not its own submodules: this extension reads
+          # its metadata/, examples/ and docs/, never its vendor trees, and one of
+          # those (the GD32 firmware library) is a private repo that this public
+          # repo's token cannot clone.
+          submodules: true
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
