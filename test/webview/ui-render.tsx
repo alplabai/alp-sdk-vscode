@@ -1110,6 +1110,35 @@ async function main() {
             );
           }
         }
+
+        // A device-relative partition has no x on the strip, so it sits
+        // beside it — but it is still selectable, and its detail prints the
+        // exact device offset. It used to be absent from the selectable
+        // order, so a click cleared the selection instead.
+        const partition = container.querySelector<HTMLButtonElement>(
+          "button[data-placed]",
+        );
+        if (!partition) {
+          problems.push("build-plan: the storage partition is not drawn");
+        } else {
+          partition.click();
+          await settle();
+          const detail =
+            container.querySelector("dl[data-keep-selection]")?.textContent ??
+            "";
+          if (partition.getAttribute("aria-pressed") !== "true") {
+            problems.push("build-plan: clicking a partition did not select it");
+          } else if (partition.tabIndex !== 0) {
+            problems.push(
+              "build-plan: a selected partition is not the strip's tab stop",
+            );
+          }
+          if (!detail.includes("in storage")) {
+            problems.push(
+              "build-plan: a selected partition's detail does not print its device offset",
+            );
+          }
+        }
       }
       checkHeadingOutline(container, "build-plan", problems);
 

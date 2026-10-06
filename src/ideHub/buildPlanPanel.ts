@@ -165,9 +165,10 @@ export class BuildPlanPanel {
   }
 
   /** The open panel, or a fresh one. The three editor-title commands below
-   *  are gated on this panel being the active webview (package.json), so
-   *  the instance exists whenever they fire from the toolbar; the palette
-   *  can still reach them, and then the panel opens first. */
+   *  are offered — toolbar and palette alike — only while this panel is the
+   *  active webview (package.json `when`), so the instance normally exists
+   *  when they fire. A keybinding or an `executeCommand` call is not gated
+   *  by `when`, and that path opens the panel first. */
   private static ensure(context: vscode.ExtensionContext): BuildPlanPanel {
     BuildPlanPanel.open(context);
     return BuildPlanPanel.instance as BuildPlanPanel;

@@ -246,6 +246,30 @@ test("a slot image row carries range, size + hex, and used in both spellings wit
   assert.equal(row.usedNote, "from tan size");
 });
 
+test("an image larger than its pinned slot prints the bytes tan size measured", async () => {
+  const { buildRows } = await load();
+  // The manifest pins a 64 KiB slot; tan size measured a 96 KiB image.
+  const spans = [
+    span({ label: "m55_he", base: 0x80010000, sizeBytes: 0x10000 }),
+  ];
+  const budgets = new Map([
+    [
+      "m55_he",
+      {
+        core_id: "m55_he",
+        os: "zephyr",
+        status: "over",
+        flash: { used: 0x18000, total: 0x2a0000, pct: null },
+        ram: { used: null, total: null, pct: null },
+      },
+    ],
+  ]);
+  const [row] = buildRows([], spans, budgets, null);
+  assert.equal(row.usedHex, "0x18000");
+  assert.equal(row.usedText, "96 KiB · 150%");
+  assert.equal(row.usedNote, "exceeds the slot · from tan size");
+});
+
 test("an unmeasured slot image says 'size unknown'; a region has no used figure", async () => {
   const { buildRows } = await load();
   const rows = byName(

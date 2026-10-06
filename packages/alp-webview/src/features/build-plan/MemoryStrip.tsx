@@ -86,9 +86,15 @@ function useMeasuredWidth() {
 }
 
 /** Items a reader can select, in reading order: placed images left to
- *  right, then regions left to right, then the ghosts. One roving tab stop
- *  moves along it with the arrow keys. */
-function selectableOrder(model: StripModel | null, ghosts: UnplacedRow[]) {
+ *  right, then regions left to right, then the device-relative partitions
+ *  (placed, but with no x on an address strip), then the ghosts. One roving
+ *  tab stop moves along it with the arrow keys. Anything clickable must be
+ *  in here: a pick of an id this list lacks resolves to no selection. */
+function selectableOrder(
+  model: StripModel | null,
+  partitionIds: string[],
+  ghosts: UnplacedRow[],
+) {
   const byLeft = (a: { left: number }, b: { left: number }) => a.left - b.left;
   const spans = model ? [...model.spans].sort(byLeft).map((s) => s.id) : [];
   const regions = model
@@ -97,7 +103,7 @@ function selectableOrder(model: StripModel | null, ghosts: UnplacedRow[]) {
         .sort(byLeft)
         .map((r) => r.id)
     : [];
-  return [...spans, ...regions, ...ghosts.map((g) => g.id)];
+  return [...spans, ...regions, ...partitionIds, ...ghosts.map((g) => g.id)];
 }
 
 function conflictText(c: MemoryConflict): string {
@@ -298,7 +304,10 @@ export function MemoryStrip({
     ...buildUnplacedRows(memory.unresolved),
     ...unresolvedRegionRows(regions),
   ];
-  const order = selectableOrder(model, ghosts);
+  const partitionIds = memory.spans
+    .filter((s) => s.base === null)
+    .map((s) => s.id);
+  const order = selectableOrder(model, partitionIds, ghosts);
   const [pickedHere, setPickedHere] = useState<string | null | undefined>(
     undefined,
   );

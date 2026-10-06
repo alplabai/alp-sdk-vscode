@@ -123,6 +123,10 @@ const MUST_BE_POINTER_INERT = [
   { file: "MemoryStrip.module.css", class: "tierMark" },
   // The used-bytes fill along a placed image's bottom edge, same reason.
   { file: "MemoryStrip.module.css", class: "used" },
+  // The cell field drawn over a placed image's box, and its lit cells: a
+  // click on either must land on the image's own button beneath.
+  { file: "MemoryStrip.module.css", class: "cells" },
+  { file: "MemoryStrip.module.css", class: "cellsLit" },
 ];
 
 // THE GATE ON THE GATE. A broken directory path, a broken suffix filter or a

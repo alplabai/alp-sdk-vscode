@@ -29,7 +29,7 @@ import {
   formatRange,
   splitBytes,
 } from "./format";
-import { slotUsageOf, usedPercent } from "./slotUsage";
+import { overflowsSlot, slotUsageOf, usedPercent } from "./slotUsage";
 
 /** Spec table (#484 §2), verbatim. `write_authority` null is "absent" —
  *  its label depends on `source`, which the class itself does not (see
@@ -189,7 +189,10 @@ export function usedCells(
   return {
     usedText: pct === null ? bytes : `${bytes} · ${pct}%`,
     usedHex: `0x${usage.used.toString(16)}`,
-    usedNote: "from tan size",
+    // Said in words: a percentage over 100 is easy to read past.
+    usedNote: overflowsSlot(usage)
+      ? "exceeds the slot · from tan size"
+      : "from tan size",
   };
 }
 
@@ -470,7 +473,10 @@ export function unresolvedRegionRows(regions: MemoryRegion[]): UnplacedRow[] {
       const sizeText = r.sizeBytes !== null ? formatBytes(r.sizeBytes) : null;
       return {
         key: `unresolved-region:${i}:${r.id}`,
-        id: r.id,
+        // Not the region's own id: `buildRows` emits a row under that id
+        // too, which would win the selection and hide this ghost's status;
+        // and two unresolved regions of one name would share it.
+        id: `unresolved-region:${i}:${r.id}`,
         name: r.name,
         kindText: "SoM region",
         cores: r.cores,

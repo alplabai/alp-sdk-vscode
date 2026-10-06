@@ -55,10 +55,21 @@ test("only a placed slot image has a footprint", async () => {
   assert.equal(slotUsageOf(slot({ base: null }), undefined), null);
 });
 
-test("used is clamped to the slot it sits in", async () => {
-  const { slotUsageOf } = await load("slotUsage.ts");
+test("an image larger than its slot keeps its measured bytes", async () => {
+  const { slotUsageOf, usedPercent, overflowsSlot } =
+    await load("slotUsage.ts");
   const usage = slotUsageOf(slot({ sizeBytes: 1000 }), budget(null, 5000));
-  assert.equal(usage.used, 1000);
+  assert.equal(usage.used, 5000);
+  assert.equal(usedPercent(usage), 500);
+  assert.equal(overflowsSlot(usage), true);
+});
+
+test("only the drawing clamps an overflowing image", async () => {
+  const { usedFillLength, cellFill, CELL_PITCH_PX } =
+    await load("slotUsage.ts");
+  assert.equal(usedFillLength(5000, 1000, 80), 80);
+  const cells = cellFill(5000, 1000, 10 * CELL_PITCH_PX);
+  assert.equal(cells.filled, cells.total);
 });
 
 test("the used fill has a visible minimum and never overflows the slot", async () => {

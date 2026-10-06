@@ -26,8 +26,11 @@ export interface SlotUsage {
   slotEnd: number | null;
   /** Slot size in bytes (`slotEnd - base`), or null with `slotEnd`. */
   total: number | null;
-  /** Bytes the built image occupies, clamped to `total` when that is known;
-   *  null when `tan size` reported nothing for this core. */
+  /** Bytes the built image occupies, exactly as `tan size` measured them —
+   *  MAY exceed `total` when the manifest pins a slot smaller than the image.
+   *  Never clamped here: the printed figure is a firmware fact, and an image
+   *  that does not fit must read as not fitting. Only the drawing clamps
+   *  (`usedFillLength`, `cellFill`). Null when `tan size` reported nothing. */
   used: number | null;
 }
 
@@ -43,18 +46,24 @@ export function slotUsageOf(
   const reported = budget?.flash.used;
   const measured =
     typeof reported === "number" && reported >= 0 ? reported : null;
-  const used =
-    measured !== null && total !== null ? Math.min(measured, total) : measured;
-  return { slotEnd, total, used };
+  return { slotEnd, total, used: measured };
 }
 
 /** `used / total` as a percentage with one decimal (`3.6`), or null when
- *  either side is unknown or the slot is empty. */
+ *  either side is unknown or the slot is empty. Above 100 when the image
+ *  overflows its slot. */
 export function usedPercent(usage: SlotUsage): number | null {
   if (usage.used === null || usage.total === null || usage.total <= 0) {
     return null;
   }
   return Math.round((usage.used / usage.total) * 1000) / 10;
+}
+
+/** True when the measured image is larger than the slot it is placed in. */
+export function overflowsSlot(usage: SlotUsage): boolean {
+  return (
+    usage.used !== null && usage.total !== null && usage.used > usage.total
+  );
 }
 
 /**

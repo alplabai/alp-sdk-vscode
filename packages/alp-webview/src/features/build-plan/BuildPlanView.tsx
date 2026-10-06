@@ -194,8 +194,20 @@ export function BuildPlanView() {
       .filter((s) => s.kind === "slot_image" && s.base !== null)
       .map((s) => [s.label, s.id] as const),
   );
+  // Until the reader picks, the strip selects its lowest-addressed placed
+  // span (MemoryStrip's default), so the list marks that span's core too —
+  // the strip and the list never disagree about what is selected.
+  const lowestPlaced = (memory?.spans ?? [])
+    .filter((s) => s.base !== null)
+    .reduce<MemorySpan | null>(
+      (low, s) =>
+        low === null || (s.base as number) < (low.base as number) ? s : low,
+      null,
+    );
+  const effectivePick =
+    memoryPick === undefined ? (lowestPlaced?.id ?? null) : memoryPick;
   const pickedCore =
-    [...slotByCore].find(([, id]) => id === memoryPick)?.[0] ?? null;
+    [...slotByCore].find(([, id]) => id === effectivePick)?.[0] ?? null;
   // A click on empty space, or Escape, clears the selection — the way a
   // click on the Explorer's background deselects. Controls, links, the
   // disclosures and the detail line (where a reader selects a hex to copy)

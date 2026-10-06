@@ -279,6 +279,7 @@
   bottom: 0;
   height: 100%;
   background: var(--series);
+  pointer-events: none;
 }
 
 .ticks {
