@@ -91,6 +91,11 @@
   cursor: pointer;
 }
 
+.row[data-locatable] {
+  cursor: pointer;
+}
+
+.row[data-locatable]:hover .name,
 .ident[data-locate]:hover .name {
   text-decoration: underline;
 }

@@ -82,7 +82,25 @@ function Row({
   );
   return (
     <li className={styles.item} data-selected={selected || undefined}>
-      <div className={styles.row}>
+      {/* The whole row picks the core's slot on the strip, not just its
+          name: a pointer convenience over the name button, which stays the
+          keyboard path. Clicks on the row's own controls (the disclosure,
+          Flash) are theirs. `data-keep-selection` stops the page's
+          background click from clearing the pick this click just made. */}
+      <div
+        className={styles.row}
+        data-locatable={onLocate ? "" : undefined}
+        data-keep-selection={onLocate ? "" : undefined}
+        onClick={
+          onLocate
+            ? (e) => {
+                if ((e.target as Element).closest("button, a")) return;
+                if (window.getSelection?.()?.toString()) return;
+                onLocate();
+              }
+            : undefined
+        }
+      >
         <div className={styles.lead}>
           <button
             type="button"
