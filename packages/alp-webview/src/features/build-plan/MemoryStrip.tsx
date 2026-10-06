@@ -19,7 +19,7 @@
 // send (open the board config, copy a reason) go through the one sanctioned
 // module, `blockedFindingActions.ts`.
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Icon } from "../../shared/ui";
 import type { MemoryConflict, MemoryView, SliceSize } from "../../types";
 import { TIER_LABEL, type AuthorityTier } from "./authorityTier";
@@ -57,21 +57,32 @@ const CONFLICT_TITLE: Record<MemoryConflict["kind"], string> = {
 const NAME_MIN_PX = 56;
 const FIGURE_MIN_PX = 150;
 
-/** The strip's own live width. 0 — no `ResizeObserver`, or one that has not
- *  fired yet — keeps the fallback, so a first paint still draws a strip. */
-function useMeasuredWidth(ref: React.RefObject<HTMLDivElement | null>) {
+/** The strip's own live width, and the ref that measures it. 0 — no
+ *  `ResizeObserver`, or one that has not fired yet — keeps the fallback, so
+ *  a first paint still draws a strip.
+ *
+ *  A CALLBACK ref, not an effect on a ref object: the strip element mounts
+ *  only once there is something to draw, which can be a render after this
+ *  component mounted (the `tan size` budgets that give a slot its extent
+ *  arrive after the manifest). An effect keyed on a stable ref object ran
+ *  once, found no element, and never observed again — the strip then stayed
+ *  at the fallback width for the life of the panel. */
+function useMeasuredWidth() {
   const [width, setWidth] = useState(0);
-  useEffect(() => {
-    const el = ref.current;
+  const observer = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((el: HTMLDivElement | null) => {
+    observer.current?.disconnect();
+    observer.current = null;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver((entries) => {
-      const next = entries[0]?.contentRect.width;
-      if (next !== undefined) setWidth(next);
+    const next = new ResizeObserver((entries) => {
+      const measured = entries[0]?.contentRect.width;
+      if (measured !== undefined) setWidth(measured);
     });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [ref]);
-  return width > 0 ? width : FALLBACK_STRIP_WIDTH;
+    next.observe(el);
+    observer.current = next;
+  }, []);
+  useEffect(() => () => observer.current?.disconnect(), []);
+  return [ref, width > 0 ? width : FALLBACK_STRIP_WIDTH] as const;
 }
 
 /** Items a reader can select, in reading order: placed images left to
@@ -279,8 +290,7 @@ export function MemoryStrip({
   picked?: string | null;
   onPick?: (id: string) => void;
 }) {
-  const stripRef = useRef<HTMLDivElement>(null);
-  const width = useMeasuredWidth(stripRef);
+  const [stripRef, width] = useMeasuredWidth();
   const uid = useId();
   const regions = memory.regions ?? [];
   const model = buildStrip(memory, budgets, width);

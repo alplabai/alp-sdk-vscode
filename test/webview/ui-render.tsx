@@ -1051,6 +1051,65 @@ async function main() {
         ) {
           problems.push("build-plan: Home did not select the first strip item");
         }
+
+        // A click anywhere on a core row — not just its name, and not on its
+        // own controls — picks that core's slot on the strip, and marks the
+        // row. Then a click on empty space, and Escape, clear the pick.
+        const pressed = () =>
+          stripItems(container).filter(
+            (b) => b.getAttribute("aria-pressed") === "true",
+          );
+        const hpRow = Array.from(
+          container.querySelectorAll<HTMLElement>("[data-locatable]"),
+        ).find((r) => (r.textContent || "").includes("m55_hp"));
+        const meter = hpRow?.querySelector<HTMLElement>('[role="meter"]');
+        if (!hpRow || !meter) {
+          problems.push(
+            "build-plan: the m55_hp core row is not locatable, or has no meter to click",
+          );
+        } else {
+          meter.click();
+          await settle();
+          const picked = pressed();
+          if (
+            picked.length !== 1 ||
+            !(picked[0].getAttribute("aria-label") || "").startsWith("m55_hp")
+          ) {
+            problems.push(
+              "build-plan: a click on the m55_hp row (its meter) did not pick m55_hp's slot",
+            );
+          }
+          if (!hpRow.closest("[data-selected]")) {
+            problems.push(
+              "build-plan: the core whose slot is picked is not marked in the list",
+            );
+          }
+          container.querySelector("h1")?.click();
+          await settle();
+          if (pressed().length !== 0) {
+            problems.push(
+              "build-plan: a click on empty space did not clear the strip selection",
+            );
+          }
+          if (
+            !(container.textContent || "")
+              .toLowerCase()
+              .includes("select a slot or region")
+          ) {
+            problems.push(
+              "build-plan: with nothing selected, the detail line does not say how to select",
+            );
+          }
+          meter.click();
+          await settle();
+          pressKey(container.querySelector("h1") as HTMLElement, "Escape");
+          await settle();
+          if (pressed().length !== 0) {
+            problems.push(
+              "build-plan: Escape did not clear the strip selection",
+            );
+          }
+        }
       }
       checkHeadingOutline(container, "build-plan", problems);
 
