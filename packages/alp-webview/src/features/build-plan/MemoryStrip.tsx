@@ -119,7 +119,7 @@ const capitalise = (word: string): string =>
 
 function RowDetail({ row }: { row: Row }) {
   return (
-    <dl className={styles.detail} aria-live="polite">
+    <dl className={styles.detail} aria-live="polite" data-keep-selection="">
       {row.origin === "span" ? (
         <Pair label={capitalise(row.kindText)}>
           <span className={styles.mono}>{row.name}</span>
@@ -169,7 +169,7 @@ function GhostDetail({ ghost }: { ghost: UnplacedRow }) {
   const declaredInBoardConfig = ghost.key.startsWith("unplaced:");
   const kind = ghost.statusText === "Blocked" ? "err" : "warn";
   return (
-    <dl className={styles.detail} aria-live="polite">
+    <dl className={styles.detail} aria-live="polite" data-keep-selection="">
       <Pair label={ghost.kindText}>
         <span className={styles.mono}>{ghost.name}</span>
       </Pair>
@@ -272,8 +272,10 @@ export function MemoryStrip({
   memory: MemoryView;
   budgets: Map<string, SliceSize>;
   sku: string;
-  /** The selection when the page owns it — a click on a core row picks
-   *  that core's slot here. Undefined leaves it to this component. */
+  /** The selection when the page owns it (with `onPick`) — a click on a
+   *  core row picks that core's slot here. `undefined` selects the first
+   *  placed image; `null` is "nothing selected", which the page sets when
+   *  the reader clicks empty space or presses Escape. */
   picked?: string | null;
   onPick?: (id: string) => void;
 }) {
@@ -287,14 +289,20 @@ export function MemoryStrip({
     ...unresolvedRegionRows(regions),
   ];
   const order = selectableOrder(model, ghosts);
-  const [pickedHere, setPickedHere] = useState<string | null>(null);
-  const picked =
-    pickedFromOutside !== undefined ? pickedFromOutside : pickedHere;
+  const [pickedHere, setPickedHere] = useState<string | null | undefined>(
+    undefined,
+  );
+  const picked = onPick ? pickedFromOutside : pickedHere;
   const setPicked = onPick ?? setPickedHere;
   // The first placed image is selected until the reader picks: the detail
-  // line is where the exact figures live, and an empty one says nothing.
+  // line is where the exact figures live. Once the reader clears the
+  // selection it stays clear, and the detail line says how to bring it back.
   const selected =
-    picked !== null && order.includes(picked) ? picked : order[0];
+    picked === undefined
+      ? order[0]
+      : picked !== null && order.includes(picked)
+        ? picked
+        : null;
   const rows = buildRows(regions, memory.spans, budgets, selected ?? null);
   const selectedRow = rows.find((r) => r.selected) ?? null;
   const selectedGhost = ghosts.find((g) => g.id === selected) ?? null;
@@ -518,6 +526,10 @@ export function MemoryStrip({
         <RowDetail row={selectedRow} />
       ) : selectedGhost ? (
         <GhostDetail ghost={selectedGhost} />
+      ) : order.length > 0 ? (
+        <p className={styles.detailHint}>
+          Select a slot or region for its exact range and size.
+        </p>
       ) : null}
     </section>
   );

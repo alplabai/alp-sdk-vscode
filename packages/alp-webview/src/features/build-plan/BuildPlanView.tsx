@@ -130,6 +130,10 @@ function ErrorLine({ text }: { text: string }) {
   );
 }
 
+/** What a click may land on without clearing the memory selection. */
+const KEEPS_SELECTION =
+  "button, a, summary, input, select, textarea, [data-keep-selection]";
+
 const URL_RE = /(https:\/\/[^\s)]+)/g;
 
 /** A note with its URLs made clickable — a webview cannot open a link on its
@@ -181,7 +185,9 @@ export function BuildPlanView() {
   // The memory strip's selection lives here so a core row can drive it: a
   // click on a core's name picks that core's slot, and the core whose slot
   // is picked is marked in the list.
-  const [memoryPick, setMemoryPick] = useState<string | null>(null);
+  const [memoryPick, setMemoryPick] = useState<string | null | undefined>(
+    undefined,
+  );
   const memoryRef = useRef<HTMLDivElement>(null);
   const slotByCore = new Map(
     (memory?.spans ?? [])
@@ -190,6 +196,19 @@ export function BuildPlanView() {
   );
   const pickedCore =
     [...slotByCore].find(([, id]) => id === memoryPick)?.[0] ?? null;
+  // A click on empty space, or Escape, clears the selection — the way a
+  // click on the Explorer's background deselects. Controls, links, the
+  // disclosures and the detail line (where a reader selects a hex to copy)
+  // keep it, and so does a click that ends a text selection.
+  const clearOnBackground = (e: React.MouseEvent) => {
+    const target = e.target as Element;
+    if (target.closest(KEEPS_SELECTION)) return;
+    if (window.getSelection?.()?.toString()) return;
+    setMemoryPick(null);
+  };
+  const clearOnEscape = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") setMemoryPick(null);
+  };
   const locateCore = (coreId: string) => {
     const slot = slotByCore.get(coreId);
     if (slot === undefined) return null;
@@ -202,7 +221,14 @@ export function BuildPlanView() {
   };
 
   return (
-    <div className={styles.root}>
+    // Pointer and Escape conveniences only: every selection is also made
+    // and changed with the keyboard on the strip itself.
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
+    <div
+      className={styles.root}
+      onClick={clearOnBackground}
+      onKeyDown={clearOnEscape}
+    >
       <header className={styles.header}>
         <h1 className={styles.title}>Build Plan</h1>
         {manifest && <Identity hw={manifest.hw_info} />}
