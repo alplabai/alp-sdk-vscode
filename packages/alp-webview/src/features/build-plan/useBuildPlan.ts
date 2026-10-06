@@ -27,18 +27,15 @@ export interface UseBuildPlan {
    *  or when the measurement failed — never rendered as zero. */
   sizes: SizeReport | null;
   sizesError: string | null;
-  reload(): void;
-  /** Write the plan's files to disk (`alp build --materialise`). */
-  materialise(): void;
-  /** Run the build live in a terminal (`alp build`). */
-  build(): void;
-  /** Flash a single manifest slice (`alp flash --core <id>`). */
+  /** Flash a single manifest slice (`tan flash --core <id>`). */
   flashSlice(coreId: string): void;
 }
 
 /**
- * Requests the build plan from the extension (`alp build --plan`) and tracks the
- * three states the view renders: loading, a plan, or an error/empty message.
+ * Requests the build plan from the extension on mount and tracks what the
+ * host pushes back. Refresh, Build and Materialise are editor-title commands
+ * (`alp.buildPlan.*`) that the HOST runs and answers with the same messages,
+ * so nothing here re-requests: the panel re-renders whatever arrives.
  */
 export function useBuildPlan(): UseBuildPlan {
   const [plan, setPlan] = useState<BuildPlanData | null>(null);
@@ -46,9 +43,6 @@ export function useBuildPlan(): UseBuildPlan {
   const [loading, setLoading] = useState(true);
   const [manifest, setManifest] = useState<SystemManifest | null>(null);
   const [manifestPostBuild, setManifestPostBuild] = useState(false);
-  /** #470: WHEN the manifest was written and whether it still describes the
-   *  last build. Null until the first push, and null forever on the
-   *  projection path, which has no file to be stale. */
   const [manifestProvenance, setManifestProvenance] =
     useState<ManifestProvenance | null>(null);
   const [manifestError, setManifestError] = useState<string | null>(null);
@@ -89,24 +83,6 @@ export function useBuildPlan(): UseBuildPlan {
       memory,
       sizes,
       sizesError,
-      reload() {
-        setLoading(true);
-        setPlan(null);
-        setError(null);
-        setManifest(null);
-        setManifestProvenance(null);
-        setManifestError(null);
-        setMemory(null);
-        setSizes(null);
-        setSizesError(null);
-        postMessage({ type: "requestBuildPlan" });
-      },
-      materialise() {
-        postMessage({ type: "materialiseBuildPlan" });
-      },
-      build() {
-        postMessage({ type: "runBuild" });
-      },
       flashSlice(coreId: string) {
         postMessage({ type: "flashSlice", coreId });
       },

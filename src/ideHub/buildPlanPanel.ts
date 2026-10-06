@@ -164,6 +164,42 @@ export class BuildPlanPanel {
     }
   }
 
+  /** The open panel, or a fresh one. The three editor-title commands below
+   *  are offered — toolbar and palette alike — only while this panel is the
+   *  active webview (package.json `when`), so the instance normally exists
+   *  when they fire. A keybinding or an `executeCommand` call is not gated
+   *  by `when`, and that path opens the panel first. */
+  private static ensure(context: vscode.ExtensionContext): BuildPlanPanel {
+    BuildPlanPanel.open(context);
+    return BuildPlanPanel.instance as BuildPlanPanel;
+  }
+
+  /** `alp.buildPlan.refresh`: re-read the manifest and re-measure the
+   *  slices. `interactive: true` — a toolbar click is the customer's own
+   *  ask, the same as opening the panel. */
+  static refresh(context: vscode.ExtensionContext): void {
+    BuildPlanPanel.ensure(context).postEverything(true);
+  }
+
+  /** `alp.buildPlan.build`: run `tan build` for the whole plan. */
+  static build(context: vscode.ExtensionContext): void {
+    void BuildPlanPanel.ensure(context).handleRunBuild();
+  }
+
+  /** `alp.buildPlan.materialise`: write the plan's generated files. */
+  static materialise(context: vscode.ExtensionContext): void {
+    void BuildPlanPanel.ensure(context).handleMaterialiseBuildPlan();
+  }
+
+  /** Everything the panel shows, posted in order: the plan's absence, the
+   *  manifest off disk, the slice sizes. Only the last spawns anything, so
+   *  it is the only one that carries `interactive`. */
+  private postEverything(interactive: boolean): void {
+    this.postBuildPlanUnavailable();
+    this.postSystemManifest();
+    void this.handleRequestSliceSizes(interactive);
+  }
+
   private handleMessage(msg: WebviewToExtMessage): void {
     switch (msg.type) {
       // The view auto-requests the plan on mount, so `ready` needs no push.
@@ -172,17 +208,7 @@ export class BuildPlanPanel {
       case "requestBuildPlan":
         // The view posts this on mount, i.e. the user's explicit "Alp: Build
         // Plan" open — `interactive: true`, unlike the file-watcher `refresh`.
-        // Only `handleRequestSliceSizes` spawns anything, so it is the only
-        // one that carries the flag.
-        this.postBuildPlanUnavailable();
-        this.postSystemManifest();
-        void this.handleRequestSliceSizes(true);
-        break;
-      case "materialiseBuildPlan":
-        void this.handleMaterialiseBuildPlan();
-        break;
-      case "runBuild":
-        void this.handleRunBuild();
+        this.postEverything(true);
         break;
       case "flashSlice":
         this.handleSliceCommand(msg.coreId);
@@ -478,10 +504,10 @@ export class BuildPlanPanel {
       return;
     }
     try {
-      // `interactive: true`: reached only from the "Materialise" button click
-      // (`materialiseBuildPlan`), never from the file-watcher `refresh()` in
-      // the constructor — unlike `handleRequestSliceSizes` below, which that
-      // same watcher calls and must stay non-interactive.
+      // `interactive: true`: reached only from the toolbar's Materialise
+      // command (`alp.buildPlan.materialise`), never from the file-watcher
+      // `refresh()` in the constructor — unlike `handleRequestSliceSizes`
+      // below, which that same watcher calls and must stay non-interactive.
       const { outcome } = await runAlpCommand(
         this.context,
         ["build", "--materialise"],
@@ -562,8 +588,8 @@ export class BuildPlanPanel {
         // normally re-request it. There is nothing to re-request at this pin —
         // `build --plan` is deferred (tan-cli#427) — and the sizes DO move,
         // because materialising rewrites the build tree the ELFs sit in.
-        // `interactive: true`: the direct follow-through of the "Materialise"
-        // click just above, not a background re-derive.
+        // `interactive: true`: the direct follow-through of the Materialise
+        // command just above, not a background re-derive.
         await this.handleRequestSliceSizes(true);
       } else {
         // Severity comes from the outcome: the most common materialise failure
@@ -583,8 +609,8 @@ export class BuildPlanPanel {
   private async handleRunBuild(): Promise<void> {
     const cwd = this.requireWorkspace("build");
     if (!cwd) return;
-    // #606: the Build button was one of the three `tan build` sites that
-    // skipped #502's Renesas CLI-floor warning.
+    // #606: the panel's Build action was one of the three `tan build` sites
+    // that skipped #502's Renesas CLI-floor warning.
     await warnIfCliCannotBuildSom(this.context, cwd);
     // Stream to the "Alp SDK" channel (persistent), not a terminal that dies on
     // exit — same reason as the Build/Flash orchestrator commands (util.ts).
@@ -600,8 +626,8 @@ export class BuildPlanPanel {
    *  a `tan flash --core` that fails (e.g. `west` not on PATH) otherwise left
    *  only "failed to launch (exit 1)" with the real reason gone.
    *  There is no per-slice build equivalent: `tan build` has no `--core`
-   *  option (only `flash`/`run` do), so the Build button only runs the whole
-   *  plan (`runBuild`). */
+   *  option (only `flash`/`run` do), so the toolbar's Build only runs the
+   *  whole plan (`alp.buildPlan.build`). */
   private handleSliceCommand(coreId: string): void {
     const cwd = this.requireWorkspace("flash this slice");
     if (!cwd) return;
@@ -623,9 +649,9 @@ export class BuildPlanPanel {
   }
 
   /**
-   * Open the project's board.yaml — the Memory tab's promoted
-   * blocked-findings alert asks for this so the customer can jump straight
-   * to the one file every declared carve-out and partition comes from
+   * Open the project's board.yaml — a blocked finding (an IPC link's row, a
+   * ghost on the memory strip) asks for this so the customer can jump
+   * straight to the one file every declared carve-out and partition comes from
    * (`MemoryUnresolved` itself carries no per-finding path — see its own
    * doc). #484.
    *

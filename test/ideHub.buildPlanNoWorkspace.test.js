@@ -38,7 +38,7 @@ const root = path.join(__dirname, "..");
  * with no folder open -- rather than an empty array, so a guard that only
  * handles `[]` cannot pass this by accident.
  */
-async function driveWithNoWorkspace(message) {
+async function driveWithNoWorkspace(act) {
   const commandSpawns = [];
   const streamedSpawns = [];
   const terminalSpawns = [];
@@ -149,28 +149,38 @@ async function driveWithNoWorkspace(message) {
   terminalSpawns.length = 0;
   notified.length = 0;
 
-  onMessage(message);
+  act(BuildPlanPanel, onMessage);
   for (let i = 0; i < 8; i += 1) await new Promise((r) => setImmediate(r));
 
   return { commandSpawns, streamedSpawns, terminalSpawns, notified };
 }
 
+// Build and Materialise are editor-title commands (`alp.buildPlan.*`) that
+// reach the panel through its static entry points; Flash is still a webview
+// message, posted from a core's row.
 const CLICKS = [
   {
-    message: { type: "materialiseBuildPlan" },
+    name: "alp.buildPlan.materialise",
+    act: (panel) => panel.materialise({ extensionUri: "/ext" }),
     what: "`tan build --materialise`, which WRITES generated files",
   },
-  { message: { type: "runBuild" }, what: "`tan build`" },
   {
-    message: { type: "flashSlice", coreId: "m55_hp" },
+    name: "alp.buildPlan.build",
+    act: (panel) => panel.build({ extensionUri: "/ext" }),
+    what: "`tan build`",
+  },
+  {
+    name: "flashSlice",
+    act: (_panel, onMessage) =>
+      onMessage({ type: "flashSlice", coreId: "m55_hp" }),
     what: "`tan flash --core m55_hp`",
   },
 ];
 
-for (const { message, what } of CLICKS) {
-  test(`${message.type} with no folder open never spawns tan`, async () => {
+for (const { name, act, what } of CLICKS) {
+  test(`${name} with no folder open never spawns tan`, async () => {
     const { commandSpawns, streamedSpawns, terminalSpawns } =
-      await driveWithNoWorkspace(message);
+      await driveWithNoWorkspace(act);
 
     const spawned = [...commandSpawns, ...streamedSpawns, ...terminalSpawns];
     assert.deepEqual(
@@ -181,8 +191,8 @@ for (const { message, what } of CLICKS) {
     );
   });
 
-  test(`${message.type} with no folder open explains why nothing ran`, async () => {
-    const { notified } = await driveWithNoWorkspace(message);
+  test(`${name} with no folder open explains why nothing ran`, async () => {
+    const { notified } = await driveWithNoWorkspace(act);
 
     assert.ok(
       notified.length >= 1,

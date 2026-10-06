@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Resolves what each AuthoritySwatch tier actually PAINTS, in a given theme,
-// by reading AuthoritySwatch.module.css itself (so a future edit to the rule
-// is what this measures, not a value this test invents): both its composited
+// Resolves what each authority tier mark actually PAINTS, in a given theme,
+// by reading MemoryStrip.module.css itself (so a future edit to the rule is
+// what this measures, not a value this test invents): both its composited
 // ink colour, and its PATTERN ("solid" or "hatch").
 //
 // The pattern matters as much as the colour. `yours` and `unproven` are
 // deliberately the SAME ink — both resolve `var(--text-primary)` at full
 // strength — and are told apart by shape (a solid fill vs a hatch), not by
 // tone: "the difference survives a greyscale display and does not rest on
-// lightness alone" per AuthoritySwatch.module.css's own comment. A contrast
+// lightness alone" per MemoryStrip.module.css's own comment. A contrast
 // gate that only ever compared ink colours could not see that: two identical
 // colours contrast at exactly 1.00:1 regardless of what percentage either
-// tier's CSS declares, so `buildPlan.swatchContrast.test.js` reads BOTH
+// tier's CSS declares, so `buildPlan.tierContrast.test.js` reads BOTH
 // channels off this helper and only falls back to an ink-contrast check
 // between tiers that share a pattern.
 //
-// Two colour shapes appear in AuthoritySwatch.module.css:
+// Two colour shapes appear in MemoryStrip.module.css's tier rules:
 //   - a flat `background: var(--name)`                        (yours)
 //   - `color-mix(in srgb, var(--name) P%, transparent)`        (locked)
 // and one pattern shape:
@@ -38,7 +38,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { resolvedOpaqueRgb } = require("./vscodeThemes");
 
-const SWATCH_CSS_PATH = path.join(
+const STRIP_CSS_PATH = path.join(
   __dirname,
   "..",
   "..",
@@ -47,28 +47,28 @@ const SWATCH_CSS_PATH = path.join(
   "src",
   "features",
   "build-plan",
-  "AuthoritySwatch.module.css",
+  "MemoryStrip.module.css",
 );
-const SWATCH_CSS = fs.readFileSync(SWATCH_CSS_PATH, "utf8");
+const STRIP_CSS = fs.readFileSync(STRIP_CSS_PATH, "utf8");
 
-/** The declared `background` value for `.swatch[data-tier="TIER"]`, exactly
- * as CSS text — balanced-paren aware, so a multi-line
+/** The declared `background` value for `.tierMark[data-tier="TIER"]`,
+ * exactly as CSS text — balanced-paren aware, so a multi-line
  * `repeating-linear-gradient(...)` comes back whole. */
 function backgroundDeclarationFor(tier) {
   const re = new RegExp(
-    `\\.swatch\\[data-tier="${tier}"\\]\\s*\\{[^}]*?background:\\s*`,
+    `\\.tierMark\\[data-tier="${tier}"\\]\\s*\\{[^}]*?background:\\s*`,
   );
-  const m = re.exec(SWATCH_CSS);
+  const m = re.exec(STRIP_CSS);
   if (!m) {
     throw new Error(
-      `could not find .swatch[data-tier="${tier}"]'s background rule`,
+      `could not find .tierMark[data-tier="${tier}"]'s background rule`,
     );
   }
   let i = m.index + m[0].length;
   let depth = 0;
   let out = "";
-  for (; i < SWATCH_CSS.length; i++) {
-    const c = SWATCH_CSS[i];
+  for (; i < STRIP_CSS.length; i++) {
+    const c = STRIP_CSS[i];
     if (c === "(") depth++;
     if (c === ")") depth--;
     if (c === ";" && depth === 0) break;
@@ -94,7 +94,7 @@ function colorMixParts(value) {
 
 /** `[r,g,b]` for a `color-mix(in srgb, var(--name) P%, transparent)`
  * expression, composited at its own P% alpha against `theme`'s own
- * `--surface-bg` — the ground every swatch actually paints on. Shared by the
+ * `--surface-bg` — the ground every tier mark actually paints on. Shared by the
  * `locked` tier's whole background AND by an alpha-reduced hatch stroke, so
  * an alpha-reduced stroke is measured at the alpha it paints, not at full
  * strength. */
@@ -161,7 +161,7 @@ function colorExprOf(stop) {
  * stops is the bare keyword `transparent`: that is what actually lets the
  * panel ground show through in alternating bands. A gradient whose stops are
  * all opaque/translucent colour expressions (no bare `transparent` stop)
- * paints an even fill with no gap — visually a solid swatch — and must
+ * paints an even fill with no gap — visually a solid mark — and must
  * report "solid" so the pairwise ink check still runs on it. */
 function patternOf(decl) {
   if (!decl.startsWith("repeating-linear-gradient(")) return "solid";
@@ -170,7 +170,7 @@ function patternOf(decl) {
   return hasGapStop ? "hatch" : "solid";
 }
 
-/** `{ rgb, pattern }` — what a swatch tier actually paints with, in `theme`.
+/** `{ rgb, pattern }` — what a tier mark actually paints with, in `theme`.
  *
  *  rgb:
  *  - flat `var(--name)`: the opaque resolved colour.
@@ -184,7 +184,7 @@ function patternOf(decl) {
  *  pattern: from `patternOf` — `"hatch"` only when a stop is genuinely
  *  `transparent`; `"solid"` otherwise, including a color-mix and an
  *  all-opaque repeating gradient alike. */
-function swatchInk(theme, tier) {
+function tierInk(theme, tier) {
   const decl = backgroundDeclarationFor(tier);
   const pattern = patternOf(decl);
 
@@ -227,14 +227,4 @@ function swatchInk(theme, tier) {
   return { rgb: resolvedOpaqueRgb(theme, name, null), pattern };
 }
 
-module.exports = {
-  swatchInk,
-  // Exported for gutterInk.js (the memory chart's authority gutter, which
-  // reads `fill:` off a different stylesheet rather than `background:` off
-  // this one) to reuse rather than re-derive: the gutter and the swatch use
-  // the exact same two colour shapes, and a second hand-written regex is how
-  // the two would silently drift apart the first time either file's syntax
-  // changed.
-  varNameIn,
-  compositeColorMix,
-};
+module.exports = { tierInk, STRIP_CSS_PATH };

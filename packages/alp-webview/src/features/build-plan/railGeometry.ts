@@ -1,34 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// The rail's pure geometry: what a piecewise scale must land on, and the
-// mark that says a run was compressed.
+// The strip's pure geometry: which addresses a piecewise scale must land on,
+// and which edge labels fit beside each other.
 //
-// Extracted from `MemoryChart.tsx` when that file crossed its 800-line cap
-// (#484 phase 4). Both functions below are arithmetic over the manifest's own
-// numbers with no React and no DOM in them, which is the same reason
-// `memoryTableRows.ts` was split out of `MemoryTable.tsx`: logic that decides
-// WHICH addresses are real should be answerable on its own, not only through
-// a jsdom render of the picture drawn from it.
+// Both functions are arithmetic over the manifest's own numbers with no React
+// and no DOM in them, for the same reason `memoryRows.ts` is separate from the
+// component that renders it: logic that decides WHICH addresses are real
+// should be answerable on its own, not only through a jsdom render of the
+// picture drawn from it.
 //
 // READ-ONLY, same as the rest of the feature:
-// `test/memoryRegions.readOnly.test.js`'s VIEW_FILES covers this file too.
+// `test/memoryRegions.readOnly.test.js` covers this file too.
 
 import type { MemorySpan, SliceSize } from "../../types";
 import { budgetEnd, endOf, type ResolvedRegion } from "./regionWindow";
 
 /**
- * Every declared address a rail's piecewise scale must land on exactly, and
+ * Every declared address a strip's piecewise scale must land on exactly, and
  * the intervals something actually occupies — the two arguments
- * `layoutRail` (railScale.ts) turns into a piecewise `y(address)`.
+ * `layoutRail` (railScale.ts) turns into a piecewise position function.
  *
  * A DECLARED address is a span's base, a span's own end, a slot image's
- * `tan size` budget end, or a resolved region's own lo/hi — never a
- * `binaryTicks`-computed value, which is arithmetic convenience, not a fact
- * about anything real. `occupied` is built from the SAME sources as
- * `boundaries`, by construction: every occupied interval's own lo/hi is
- * pushed into `boundaries` in the same pass, which is what keeps
- * `layoutRail`'s own invariant (every occupied endpoint appears in
- * boundaries) true without a second, easy-to-drift bookkeeping pass.
+ * `tan size` budget end, or a resolved region's own lo/hi — never a computed
+ * power-of-two mark, which is arithmetic convenience, not a fact about
+ * anything real. `occupied` is built from the SAME sources as `boundaries`,
+ * by construction: every occupied interval's own lo/hi is pushed into
+ * `boundaries` in the same pass, which is what keeps `layoutRail`'s own
+ * invariant (every occupied endpoint appears in boundaries) true without a
+ * second, easy-to-drift bookkeeping pass.
  *
  * A span with a base but no size (a marker) contributes its base to
  * `boundaries` but no interval to `occupied` — a point has no width to
@@ -64,21 +63,32 @@ export function railBoundaries(
 }
 
 /**
- * A "torn edge" across the rail's width, marking a run of address space the
- * piecewise scale compressed rather than drew to scale. Ten teeth regardless
- * of `width`, so the mark reads the same at every rail width this panel
- * draws — a jagged rule is a convention read by its SHAPE, not by counting
- * its teeth.
+ * Which edge labels to print. Every edge keeps its tick LINE; a LABEL is
+ * omitted when it would sit closer than `minSpacing` to one already kept,
+ * so 0x80550000 / 0x80560000 / 0x80578000 / 0x80580000 never overprint into
+ * one unreadable smear. The window's own two ends are kept first — they
+ * bound the drawing — then every other edge in address order.
+ *
+ * `positionOf` is whatever axis the caller lays the edges along; the strip
+ * passes its clamped label centre so two labels pinned to the same end of
+ * the strip are measured where they are actually drawn.
  */
-export function zigzagPath(x: number, yMid: number, width: number): string {
-  const teeth = 10;
-  const amplitude = 3;
-  const step = width / teeth;
-  const points: string[] = [];
-  for (let i = 0; i <= teeth; i++) {
-    const px = x + i * step;
-    const py = yMid + (i % 2 === 0 ? -amplitude : amplitude);
-    points.push(`${i === 0 ? "M" : "L"}${px},${py}`);
+export function thinEdgeLabels(
+  addrs: readonly number[],
+  positionOf: (address: number) => number,
+  minSpacing: number,
+): Set<number> {
+  if (addrs.length === 0) return new Set();
+  const ends = [addrs[0], addrs[addrs.length - 1]];
+  const kept: number[] = [];
+  const keptAddrs = new Set<number>();
+  for (const a of [...ends, ...addrs]) {
+    if (keptAddrs.has(a)) continue;
+    const p = positionOf(a);
+    if (kept.every((k) => Math.abs(k - p) >= minSpacing)) {
+      keptAddrs.add(a);
+      kept.push(p);
+    }
   }
-  return points.join(" ");
+  return keptAddrs;
 }

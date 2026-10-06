@@ -239,6 +239,24 @@
         "icon": "$(list-tree)"
       },
       {
+        "command": "alp.buildPlan.refresh",
+        "title": "Refresh build plan",
+        "category": "Alp",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "alp.buildPlan.build",
+        "title": "Build (tan build)",
+        "category": "Alp",
+        "icon": "$(play)"
+      },
+      {
+        "command": "alp.buildPlan.materialise",
+        "title": "Materialise build plan",
+        "category": "Alp",
+        "icon": "$(save-all)"
+      },
+      {
         "command": "alp.openModelsPanel",
         "title": "Alp: Models",
         "category": "Alp"
@@ -434,6 +452,18 @@
           "when": "false"
         },
         {
+          "command": "alp.buildPlan.refresh",
+          "when": "activeWebviewPanelId == 'alp-ide.buildPlan'"
+        },
+        {
+          "command": "alp.buildPlan.build",
+          "when": "activeWebviewPanelId == 'alp-ide.buildPlan'"
+        },
+        {
+          "command": "alp.buildPlan.materialise",
+          "when": "activeWebviewPanelId == 'alp-ide.buildPlan'"
+        },
+        {
           "command": "alp.openModelsPanel",
           "when": "false"
         },
@@ -447,6 +477,21 @@
           "command": "alp.openConfigurator",
           "when": "resourceFilename == board.yaml && activeEditor == 'workbench.editors.files.textFileEditor'",
           "group": "navigation"
+        },
+        {
+          "command": "alp.buildPlan.build",
+          "when": "activeWebviewPanelId == 'alp-ide.buildPlan'",
+          "group": "navigation@1"
+        },
+        {
+          "command": "alp.buildPlan.materialise",
+          "when": "activeWebviewPanelId == 'alp-ide.buildPlan'",
+          "group": "navigation@2"
+        },
+        {
+          "command": "alp.buildPlan.refresh",
+          "when": "activeWebviewPanelId == 'alp-ide.buildPlan'",
+          "group": "navigation@3"
         }
       ],
       "explorer/context": [

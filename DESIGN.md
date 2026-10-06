@@ -278,27 +278,30 @@ two 4% chrome bars, 1.111–1.202 for the 8% card header. The percentage is the 
 `.footer` both use it), 8% one level deeper for a card header (`.advHead`).
 
 **The Authority-Swatch Rule (#484).** Write authority in the Build Plan
-panel's Memory tab is drawn achromatically, in exactly two places: an SVG
-gutter down the side of the memory rail, and a swatch at the head of every
-table row. Three tiers — `yours`, `locked`, `unproven` — all derive from
+panel's memory strip is drawn achromatically, in one place: a 3px mark
+along the bottom edge of each SoM region band, and only when the SoM
+declares write authority at all (otherwise the page says once that it does
+not, and draws no mark). Three tiers — `yours`, `locked`, `unproven` — all derive from
 `{colors.text-primary}`, and they are separated by fill density and by a
 hatch, never by hue: `yours` is solid ink, `locked` a 71% flat fill, and
 `unproven` a `-45deg` hatch, 2px on and 2px off, at full ink. Hue belongs to
-the six-colour chart series, which stays with the spans the rail draws; an
+the six-colour chart series, which stays with the placed images the strip
+draws; an
 authority tier that borrowed one would be claiming to report state (the
 Status-Only Color Rule). The hatch is also why `yours` and `unproven` may
 share a colour outright: pattern carries that distinction, so it survives a
 greyscale display and does not rest on lightness alone.
 
-The three-item legend sits permanently — not on hover, not collapsed. A
-vocabulary the reader has to discover is a vocabulary that gets misread. Two
-copies of it render today: one above the chart, one at the head of the table.
+The legend sits permanently in the Memory heading — not on hover, not
+collapsed — and lists only the tiers the strip actually draws. A vocabulary
+the reader has to discover is a vocabulary that gets misread; one that names
+a tier nothing on screen carries is noise. It renders once.
 
 Two criteria, measured across the five out-of-the-box themes
 `test/helpers/vscodeThemes.js` carries: Dark+, Light+, 2026 Dark, High
 Contrast Dark and High Contrast Light. Both are computed from the tokens the
-stylesheets themselves declare — `AuthoritySwatch.module.css` for the row
-swatch, `MemoryChart.module.css` for the rail gutter — with each
+stylesheet itself declares — `.tierMark` in `MemoryStrip.module.css`, which
+both the band marks and the legend marks use — with each
 `color-mix()` resolved against that theme's own defaults. The built
 `dist/main.css` answers a separate question the source cannot: a CSS Modules
 class name is hashed, so only the compiled output shows that every
@@ -312,8 +315,7 @@ class name is hashed, so only the compiled output shows that every
   pattern — only `yours` against `locked`, both flat fills — needs its ink
   1.5:1 apart, because density is the only channel it has left.
 
-`test/buildPlan.swatchContrast.test.js` holds both the row swatch and the
-rail gutter to both criteria, and pins the set of `[data-tier]` rules to the
+`test/buildPlan.tierContrast.test.js` holds the tier mark to both criteria, and pins the set of `[data-tier]` rules to the
 `AuthorityTier` union, so a renamed or dropped tier fails the build instead
 of quietly stopping being measured.
 
@@ -457,7 +459,8 @@ that a border and a tonal shift should have solved.
 declare what it does to the pointer. `transparent` is `rgba(0, 0, 0, 0)`,
 not `none`, and an alpha-zero fill is still *painted* — so under the SVG
 default `pointer-events: visiblePainted` an invisible overlay hit-tests above
-everything beneath it. The Memory tab's rail shipped exactly that: a
+everything beneath it. The vertical memory rail this panel used to draw
+shipped exactly that: a
 full-width `fill: transparent` rect, emitted last, existing only to catch the
 pointer for an address readout, swallowing every click meant for a band
 underneath while those bands advertised `cursor: pointer`. Either value is a
@@ -467,7 +470,8 @@ silently inherits `visiblePainted`.
 `test/buildPlan.pointerEvents.test.js` enforces this over every
 `*.module.css` under the build-plan feature, from a globbed and floored file
 list rather than a typed-out one, and separately holds the classes that exist
-to be drawn *over* the rail rather than hit — today the authority gutter — to
+to be drawn *over* the strip rather than hit — today the tier mark, the
+used-bytes sliver and the cell field — to
 `pointer-events: none` by name. A stylesheet cannot see document order, so
 the gate cannot check the other half of the remedy; what it can do is force
 the author to state the intent.

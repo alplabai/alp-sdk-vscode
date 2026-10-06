@@ -206,21 +206,6 @@
   --chart-4: var(--vscode-charts-purple, #b180d7);
   --chart-5: var(--vscode-charts-yellow, #cca700);
   --chart-6: var(--vscode-charts-red, #f14c4c);
-  /* The band/marker LABEL used to fill with its own series colour, painted
-   * on top of that series' own 30%-opacity band fill (MemoryChart.module.css)
-   * — a self-defeating pairing that failed 4.5:1 for all six series, both
-   * themes, without exception. No flat colour reads reliably against all six
-   * of its own 30%-tints in both themes: a series colour IS that tint's hue,
-   * so the two are close by construction. tab.activeForeground is VS Code's
-   * own opaque, always-defined, theme-flipping pair (white in Dark+, #333333
-   * in Light+) built for text on a prominent fill; against all six
-   * composited band tints (with the terminal.ansiCyan chart-3 above) it
-   * clears a 6.00:1 floor in Dark+ (chart-2) and a 7.40:1 floor in Light+
-   * (chart-4) — every series, both themes, comfortably past 4.5:1. The
-   * series colour keeps
-   * carrying the band's own fill and stroke; only the label's fill moved
-   * here. */
-  --chart-label-fg: var(--vscode-tab-activeForeground, #ffffff);
 }
 
 /* ── Motion ─────────────────────────────────────────────────────────────── */

@@ -62,7 +62,7 @@ release, alp-sdk#2047). If this extension's bundled
 editor underlines `memory:` as an unknown property.
 
 - This is a stale BUNDLED SCHEMA, not a bad manifest — the file itself is
-  fine and the Build Plan panel's Memory tab reads it normally.
-- Confirm by opening the panel: if the Memory tab shows a "SoM regions"
-  table, the manifest parsed correctly regardless of the squiggle.
+  fine and the Build Plan panel's Memory section reads it normally.
+- Confirm by opening the panel: if the Memory strip draws the SoM's regions
+  as bands, the manifest parsed correctly regardless of the squiggle.
 - Safe to ignore until the extension's next vendored-schema bump.

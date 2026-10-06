@@ -1,0 +1,523 @@
+/* The memory strip: one horizontal run of address space, regions along the
+ * top lane, placed images along the lower lane, declared edges ticked
+ * underneath. Every length is set inline from the measured width
+ * (stripLayout.ts); this file only paints. Nothing here is a card: the
+ * strip's boxes ARE the data, and the detail line beneath is plain text.
+ *
+ * READ-ONLY, same gate as the rest of the feature. */
+
+.strip {
+  position: relative;
+  padding: 0 var(--space-4);
+}
+
+.lanes {
+  position: relative;
+}
+
+/* The axis behind both lanes: an extent is transparent, a run nothing
+ * occupies is hatched so a reader sees it was compressed, never dropped. */
+.axis {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 26px;
+}
+
+.seg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.seg[data-segment="gap"] {
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--text-secondary) 45%, transparent) 0 2px,
+    transparent 2px 7px
+  );
+  cursor: help;
+}
+
+.lane {
+  position: relative;
+  height: 26px;
+}
+
+/* Tall enough for the name, the figure beneath it, and four rows of cells
+ * (CELL_ROWS × CELL_PITCH_PX in slotUsage.ts) under both. */
+.lane[data-lane="placed"] {
+  height: 84px;
+  margin-top: var(--space-2);
+}
+
+/* A SoM region: a quiet band in the grey of secondary text, outlined in the
+ * one stroke token that clears 3:1 in every theme (tokens.css,
+ * --border-chart). The authority tier, when the SoM declares one, is the
+ * 3px rule along its bottom edge (.tierMark). */
+.region {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-chart);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+  color: var(--text-primary);
+  font-family: var(--text-mono);
+  font-size: var(--font-size-base);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.region:hover {
+  background: color-mix(in srgb, var(--text-secondary) 22%, transparent);
+}
+
+.region[aria-disabled="true"] {
+  cursor: default;
+}
+
+/* Selection is a 2px ring in the text colour, not the focus colour: the
+ * focus ring is VS Code's own and must keep meaning "keyboard focus". */
+.region[aria-pressed="true"],
+.span[aria-pressed="true"] {
+  box-shadow: inset 0 0 0 2px var(--text-primary);
+}
+
+/* Yours: solid. Locked: half-tone — 71% is the lowest whole percentage
+ * that clears 3:1 against the panel ground in every covered theme
+ * (test/buildPlan.tierContrast.test.js). Not yours or not proven: a hatch,
+ * so the difference survives a greyscale display and does not rest on
+ * lightness alone. */
+.tierMark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  pointer-events: none;
+}
+
+.tierMark[data-tier="yours"] {
+  background: var(--text-primary);
+}
+
+.tierMark[data-tier="locked"] {
+  background: color-mix(in srgb, var(--text-primary) 71%, transparent);
+}
+
+.tierMark[data-tier="unproven"] {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--text-primary) 0 2px,
+    transparent 2px 4px
+  );
+}
+
+/* The same mark, inline, in the legend. */
+.tierMark[data-legend] {
+  position: static;
+  display: inline-block;
+  width: 14px;
+}
+
+/* A placed image: tinted in its series colour, the same series its core's
+ * meters use, with the bytes it actually occupies as a 4px fill along the
+ * bottom (.used) — the row meter's own language, so the two read as one.
+ * 12%: the strongest tint at which --text-primary still clears 4.5:1 over
+ * every series in Light+ (test/buildPlan.chartContrast.test.js). */
+.span {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border: 1px solid var(--border-chart);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--chart-1) 12%, transparent);
+  color: var(--text-primary);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: var(--font-size-base);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 1px;
+  --series: var(--chart-1);
+}
+
+.span:hover {
+  box-shadow: inset 0 0 0 1px var(--border-chart);
+}
+
+.span[data-series="2"] {
+  background: color-mix(in srgb, var(--chart-2) 12%, transparent);
+  --series: var(--chart-2);
+}
+
+.span[data-series="3"] {
+  background: color-mix(in srgb, var(--chart-3) 12%, transparent);
+  --series: var(--chart-3);
+}
+
+.span[data-series="4"] {
+  background: color-mix(in srgb, var(--chart-4) 12%, transparent);
+  --series: var(--chart-4);
+}
+
+.span[data-series="5"] {
+  background: color-mix(in srgb, var(--chart-5) 12%, transparent);
+  --series: var(--chart-5);
+}
+
+.span[data-series="6"] {
+  background: color-mix(in srgb, var(--chart-6) 12%, transparent);
+  --series: var(--chart-6);
+}
+
+/* An image larger than its slot: the box and its figure in the error
+ * colour, so the overflow reads before the detail line is opened. */
+.span[data-over] {
+  border-color: var(--status-err);
+}
+
+.span[data-over] .spanUse {
+  color: var(--status-err);
+}
+
+/* A base with no extent: a hairline at its address, named beside it. */
+.span[data-marker] {
+  min-width: 2px;
+  padding: 0;
+  border: none;
+  border-left: 2px solid var(--border-chart);
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.spanName,
+.spanUse {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spanName {
+  font-family: var(--text-mono);
+}
+
+.spanUse {
+  color: var(--text-secondary);
+}
+
+.markerName {
+  position: absolute;
+  left: var(--space-2);
+  top: var(--space-2);
+  font-family: var(--text-mono);
+}
+
+.used {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  background: var(--chart-1);
+  pointer-events: none;
+}
+
+.used[data-series="2"] {
+  background: var(--chart-2);
+}
+
+.used[data-series="3"] {
+  background: var(--chart-3);
+}
+
+.used[data-series="4"] {
+  background: var(--chart-4);
+}
+
+.used[data-series="5"] {
+  background: var(--chart-5);
+}
+
+.used[data-series="6"] {
+  background: var(--chart-6);
+}
+
+/* The slot as a field of cells, pinned to the box's bottom-left corner. The
+ * mask cuts a 1px gap after every 7px square, at the same 8px pitch the
+ * field is sized in (CELL_PITCH_PX), so free cells show as faint squares and
+ * lit ones as solid squares of the core's series colour. */
+.cells {
+  position: absolute;
+  left: var(--space-4);
+  bottom: var(--space-4);
+  background: color-mix(in srgb, var(--series) 26%, transparent);
+  pointer-events: none;
+  -webkit-mask-image:
+    linear-gradient(to right, currentColor 7px, transparent 7px),
+    linear-gradient(to bottom, currentColor 7px, transparent 7px);
+  -webkit-mask-size: 8px 8px;
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right, currentColor 7px, transparent 7px),
+    linear-gradient(to bottom, currentColor 7px, transparent 7px);
+  mask-size: 8px 8px;
+  mask-composite: intersect;
+}
+
+/* Lit cells: full columns from the left, then the next column from the
+ * bottom up — blocks settling in Tetris. */
+.cellsLit {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 100%;
+  background: var(--series);
+  pointer-events: none;
+}
+
+.ticks {
+  position: relative;
+  height: 26px;
+  margin-top: var(--space-2);
+}
+
+.tick {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 5px;
+  background: var(--border-chart);
+}
+
+/* base, not sm: an address is read digit by digit (tokens.css). */
+.tickLabel {
+  position: absolute;
+  top: 8px;
+  transform: translateX(-50%);
+  font-family: var(--text-mono);
+  font-size: var(--font-size-base);
+  line-height: 1.1;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Declared but not placed: a dashed outline where a box would be. */
+.ghosts {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-4);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ghost {
+  height: 24px;
+  padding: 0 var(--space-4);
+  border: 1px dashed var(--border-chart);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--text-mono);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ghost:hover {
+  background: var(--surface-hover);
+}
+
+.ghost[aria-pressed="true"] {
+  border-style: solid;
+  border-color: var(--text-primary);
+  color: var(--text-primary);
+}
+
+.ghostStatus {
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+}
+
+.ghostStatus[data-kind="err"] {
+  color: var(--status-err);
+}
+
+.ghostStatus[data-kind="warn"] {
+  color: var(--status-warn);
+}
+
+/* The selected item, in full: every exact figure the boxes could not hold. */
+.detail {
+  margin: 0;
+  padding: var(--space-2) var(--space-4) 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-7);
+  font-size: var(--font-size-base);
+  min-height: 22px;
+}
+
+.pair {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.pair dt {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.pair dd {
+  margin: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.mono {
+  font-family: var(--text-mono);
+}
+
+.hex {
+  font-family: var(--text-mono);
+  color: var(--text-secondary);
+}
+
+/* A producer's reason, whole, in the UI font (a <pre> only for its
+ * whitespace) — the same quoted shape the Interconnect rows use. */
+.reason {
+  flex-basis: 100%;
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  border-left: 2px solid var(--status-err);
+  background: var(--vscode-textCodeBlock-background);
+  font-family: inherit;
+  font-size: var(--font-size-base);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+
+.reason[data-kind="warn"] {
+  border-left-color: var(--status-warn);
+}
+
+.detailActions {
+  flex-basis: 100%;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.ghostBtn {
+  height: 24px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-widget);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ghostBtn:hover {
+  background: var(--surface-hover);
+}
+
+.legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+}
+
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* A conflict the allocator never checks, stated beside the picture. */
+.problem {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0 var(--space-4);
+  font-size: var(--font-size-base);
+  color: var(--status-warn);
+  overflow-wrap: anywhere;
+}
+
+.problemIcon {
+  flex: none;
+  margin-top: 2px;
+}
+
+/* The section shell, restated from rows.module.css: a CSS-module gate
+ * (test/webview.cssModuleKeys.test.js) checks a component's `styles.X`
+ * against the ONE module it imports, so the strip carries its own copy of
+ * the four shell classes rather than reaching into another file unchecked. */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-5);
+  padding: 0 var(--space-4);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Stands where the detail line stands while nothing is selected, on the same
+ * inset, so the page does not jump when a selection comes back. */
+.detailHint {
+  margin: 0;
+  padding: var(--space-2) var(--space-4) 0;
+  min-height: 22px;
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+}
+
+.sectionNote {
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+}
