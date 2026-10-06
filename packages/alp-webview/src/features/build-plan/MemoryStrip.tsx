@@ -28,7 +28,7 @@ import {
   copyFindingText,
   openDeclaringFile,
 } from "./blockedFindingActions";
-import { formatOffsetRange, formatRange } from "./format";
+import { formatBytes, formatOffsetRange, formatRange } from "./format";
 import {
   buildRows,
   buildUnplacedRows,
@@ -36,6 +36,7 @@ import {
   type Row,
   type UnplacedRow,
 } from "./memoryRows";
+import { CELL_PITCH_PX, CELL_ROWS, type CellFill } from "./slotUsage";
 import {
   buildStrip,
   FALLBACK_STRIP_WIDTH,
@@ -210,6 +211,39 @@ function GhostDetail({ ghost }: { ghost: UnplacedRow }) {
   );
 }
 
+/** A slot's cells: lit from the base (left) column by column, each column
+ *  from the bottom up. Decorative — the exact bytes are in the text above
+ *  it and in the detail line — so it is hidden from assistive tech. */
+function CellField({ cells }: { cells: CellFill }) {
+  return (
+    <span
+      className={styles.cells}
+      style={{
+        width: cells.cols * CELL_PITCH_PX,
+        height: CELL_ROWS * CELL_PITCH_PX,
+      }}
+      title={`${cells.filled} of ${cells.total} cells lit · one cell ≈ ${formatBytes(cells.bytesPerCell)}`}
+      aria-hidden="true"
+      data-filled={cells.filled}
+    >
+      <span
+        className={styles.cellsLit}
+        style={{ width: cells.fullCols * CELL_PITCH_PX }}
+      />
+      {cells.partial > 0 && (
+        <span
+          className={styles.cellsLit}
+          style={{
+            left: cells.fullCols * CELL_PITCH_PX,
+            width: CELL_PITCH_PX,
+            height: cells.partial * CELL_PITCH_PX,
+          }}
+        />
+      )}
+    </span>
+  );
+}
+
 function Legend({ tiers }: { tiers: AuthorityTier[] }) {
   return (
     <ul className={styles.legend} aria-label="Write authority">
@@ -232,10 +266,16 @@ export function MemoryStrip({
   memory,
   budgets,
   sku,
+  picked: pickedFromOutside,
+  onPick,
 }: {
   memory: MemoryView;
   budgets: Map<string, SliceSize>;
   sku: string;
+  /** The selection when the page owns it — a click on a core row picks
+   *  that core's slot here. Undefined leaves it to this component. */
+  picked?: string | null;
+  onPick?: (id: string) => void;
 }) {
   const stripRef = useRef<HTMLDivElement>(null);
   const width = useMeasuredWidth(stripRef);
@@ -247,7 +287,10 @@ export function MemoryStrip({
     ...unresolvedRegionRows(regions),
   ];
   const order = selectableOrder(model, ghosts);
-  const [picked, setPicked] = useState<string | null>(null);
+  const [pickedHere, setPickedHere] = useState<string | null>(null);
+  const picked =
+    pickedFromOutside !== undefined ? pickedFromOutside : pickedHere;
+  const setPicked = onPick ?? setPickedHere;
   // The first placed image is selected until the reader picks: the detail
   // line is where the exact figures live, and an empty one says nothing.
   const selected =
@@ -393,13 +436,17 @@ export function MemoryStrip({
                         )}
                       </>
                     )}
-                    {s.usedPx !== null && (
-                      <span
-                        className={styles.used}
-                        data-series={s.series}
-                        style={{ width: s.usedPx }}
-                        aria-hidden="true"
-                      />
+                    {s.cells !== null ? (
+                      <CellField cells={s.cells} />
+                    ) : (
+                      s.usedPx !== null && (
+                        <span
+                          className={styles.used}
+                          data-series={s.series}
+                          style={{ width: s.usedPx }}
+                          aria-hidden="true"
+                        />
+                      )
                     )}
                   </button>
                 );

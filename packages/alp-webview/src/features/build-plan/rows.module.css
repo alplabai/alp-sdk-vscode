@@ -79,6 +79,36 @@
   min-width: 0;
 }
 
+/* A core with a slot on the strip: its name is a button that picks it
+ * there. It keeps the look of plain text and says it is clickable on hover. */
+.ident[data-locate] {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ident[data-locate]:hover .name {
+  text-decoration: underline;
+}
+
+.ident[data-locate]:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+/* The core picked on the memory strip, marked the way the Explorer marks a
+ * selected row when focus is elsewhere. */
+.item[data-selected] > .row {
+  background: var(
+    --vscode-list-inactiveSelectionBackground,
+    var(--surface-hover)
+  );
+}
+
 /* The identifier is the one mono thing on the row; it carries no background
  * because the row already is the surface. */
 .name {

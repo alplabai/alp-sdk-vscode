@@ -45,8 +45,10 @@
   height: 26px;
 }
 
+/* Tall enough for the name, the figure beneath it, and four rows of cells
+ * (CELL_ROWS × CELL_PITCH_PX in slotUsage.ts) under both. */
 .lane[data-lane="placed"] {
-  height: 48px;
+  height: 84px;
   margin-top: var(--space-2);
 }
 
@@ -150,8 +152,9 @@
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 1px;
+  --series: var(--chart-1);
 }
 
 .span:hover {
@@ -160,22 +163,27 @@
 
 .span[data-series="2"] {
   background: color-mix(in srgb, var(--chart-2) 12%, transparent);
+  --series: var(--chart-2);
 }
 
 .span[data-series="3"] {
   background: color-mix(in srgb, var(--chart-3) 12%, transparent);
+  --series: var(--chart-3);
 }
 
 .span[data-series="4"] {
   background: color-mix(in srgb, var(--chart-4) 12%, transparent);
+  --series: var(--chart-4);
 }
 
 .span[data-series="5"] {
   background: color-mix(in srgb, var(--chart-5) 12%, transparent);
+  --series: var(--chart-5);
 }
 
 .span[data-series="6"] {
   background: color-mix(in srgb, var(--chart-6) 12%, transparent);
+  --series: var(--chart-6);
 }
 
 /* A base with no extent: a hairline at its address, named beside it. */
@@ -239,6 +247,38 @@
 
 .used[data-series="6"] {
   background: var(--chart-6);
+}
+
+/* The slot as a field of cells, pinned to the box's bottom-left corner. The
+ * mask cuts a 1px gap after every 7px square, at the same 8px pitch the
+ * field is sized in (CELL_PITCH_PX), so free cells show as faint squares and
+ * lit ones as solid squares of the core's series colour. */
+.cells {
+  position: absolute;
+  left: var(--space-4);
+  bottom: var(--space-4);
+  background: color-mix(in srgb, var(--series) 26%, transparent);
+  pointer-events: none;
+  -webkit-mask-image:
+    linear-gradient(to right, currentColor 7px, transparent 7px),
+    linear-gradient(to bottom, currentColor 7px, transparent 7px);
+  -webkit-mask-size: 8px 8px;
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right, currentColor 7px, transparent 7px),
+    linear-gradient(to bottom, currentColor 7px, transparent 7px);
+  mask-size: 8px 8px;
+  mask-composite: intersect;
+}
+
+/* Lit cells: full columns from the left, then the next column from the
+ * bottom up — blocks settling in Tetris. */
+.cellsLit {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 100%;
+  background: var(--series);
 }
 
 .ticks {

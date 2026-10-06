@@ -17,7 +17,7 @@
 // are the panel's editor-title commands (`alp.buildPlan.*` in package.json),
 // not buttons here: VS Code's own toolbar is where a panel's actions go.
 
-import type { ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { EmptyState, Icon, Skeleton } from "../../shared/ui";
 import type {
   ManifestHwInfo,
@@ -178,6 +178,29 @@ export function BuildPlanView() {
   // alarm.
   const planNote = plan ? null : error;
 
+  // The memory strip's selection lives here so a core row can drive it: a
+  // click on a core's name picks that core's slot, and the core whose slot
+  // is picked is marked in the list.
+  const [memoryPick, setMemoryPick] = useState<string | null>(null);
+  const memoryRef = useRef<HTMLDivElement>(null);
+  const slotByCore = new Map(
+    (memory?.spans ?? [])
+      .filter((s) => s.kind === "slot_image" && s.base !== null)
+      .map((s) => [s.label, s.id] as const),
+  );
+  const pickedCore =
+    [...slotByCore].find(([, id]) => id === memoryPick)?.[0] ?? null;
+  const locateCore = (coreId: string) => {
+    const slot = slotByCore.get(coreId);
+    if (slot === undefined) return null;
+    return () => {
+      setMemoryPick(slot);
+      // `nearest`: no jump when the strip is already on screen. Optional
+      // call: jsdom (the render harness) has no scrollIntoView.
+      memoryRef.current?.scrollIntoView?.({ block: "nearest" });
+    };
+  };
+
   return (
     <div className={styles.root}>
       <header className={styles.header}>
@@ -217,14 +240,20 @@ export function BuildPlanView() {
               seriesByCore={seriesByCore}
               sizesError={sizesError}
               flashSlice={flashSlice}
+              selectedCore={pickedCore}
+              onLocate={locateCore}
             />
           )}
           {manifest && memory && (
-            <MemoryStrip
-              memory={memory}
-              budgets={sizeByCore}
-              sku={manifest.hw_info.sku}
-            />
+            <div ref={memoryRef}>
+              <MemoryStrip
+                memory={memory}
+                budgets={sizeByCore}
+                sku={manifest.hw_info.sku}
+                picked={memoryPick}
+                onPick={setMemoryPick}
+              />
+            </div>
           )}
           {manifest && manifest.ipc.length > 0 && (
             <InterconnectRows

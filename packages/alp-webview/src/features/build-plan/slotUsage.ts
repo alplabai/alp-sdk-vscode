@@ -2,7 +2,7 @@
 //
 // How much of a firmware slot an image actually occupies — pure arithmetic, no
 // React and no CSS, shared by the memory strip (which draws the used bytes as
-// a slim fill along the slot) and the selected-item detail (which prints the
+// lit cells across the slot) and the selected-item detail (which prints the
 // same figure), so the two can never report different footprints for one
 // image.
 //
@@ -71,4 +71,57 @@ export function usedFillLength(
   if (used <= 0 || total <= 0 || slotLength <= 0) return 0;
   const proportional = (used / total) * slotLength;
   return Math.min(slotLength, Math.max(MIN_USED_PX, proportional));
+}
+
+/** One cell's pitch on the strip: a 7px square plus the 1px gap after it.
+ *  The CSS mask that cuts the gaps (`.cells` in MemoryStrip.module.css)
+ *  repeats at this same pitch; change one, change both. */
+export const CELL_PITCH_PX = 8;
+
+/** Cells stacked in one column of a slot's field. */
+export const CELL_ROWS = 4;
+
+/**
+ * A slot drawn as a field of small cells, filled the way blocks settle in
+ * Tetris: column by column from the slot's base (left), each column from the
+ * bottom up. The quantisation is the point — "how full" reads at a glance
+ * from the count of lit cells, where a 3.6% sliver of bar was invisible —
+ * so the exact bytes stay in the text beside it, never in the cells.
+ */
+export interface CellFill {
+  /** Columns the field holds at the slot's drawn width. */
+  cols: number;
+  /** Cells in the whole field (`cols * CELL_ROWS`). */
+  total: number;
+  /** Lit cells. Never 0 for a non-empty image, never more than `total`. */
+  filled: number;
+  /** Columns lit top to bottom. */
+  fullCols: number;
+  /** Cells lit in the next column, from the bottom. */
+  partial: number;
+  /** Bytes one cell stands for, rounded to a whole byte. */
+  bytesPerCell: number;
+}
+
+/** The cell field for `used` of `total` bytes across `fieldWidth` pixels,
+ *  or null when nothing was measured or the field cannot hold one column. */
+export function cellFill(
+  used: number | null,
+  total: number | null,
+  fieldWidth: number,
+): CellFill | null {
+  if (used === null || total === null || total <= 0) return null;
+  const cols = Math.floor(fieldWidth / CELL_PITCH_PX);
+  if (cols < 1) return null;
+  const cells = cols * CELL_ROWS;
+  const proportional = Math.round((used / total) * cells);
+  const filled = used <= 0 ? 0 : Math.min(cells, Math.max(1, proportional));
+  return {
+    cols,
+    total: cells,
+    filled,
+    fullCols: Math.floor(filled / CELL_ROWS),
+    partial: filled % CELL_ROWS,
+    bytesPerCell: Math.round(total / cells),
+  };
 }

@@ -78,3 +78,29 @@ test("splitBytes keeps the rounded figure and the exact hex apart", async () => 
   // formatBytes is unchanged for every existing caller.
   assert.equal(formatBytes(0x2a0000), "2.63 MiB (0x2a0000)");
 });
+
+test("cellFill lights cells column by column from the base, bottom up", async () => {
+  const { cellFill, CELL_ROWS, CELL_PITCH_PX } = await load("slotUsage.ts");
+  // 0x17df4 of 0x2a0000 (m55_he on AEN801) across 100 columns.
+  const fill = cellFill(0x17df4, 0x2a0000, 100 * CELL_PITCH_PX);
+  assert.equal(fill.cols, 100);
+  assert.equal(fill.total, 100 * CELL_ROWS);
+  assert.equal(fill.filled, Math.round((0x17df4 / 0x2a0000) * 400));
+  assert.equal(fill.fullCols * CELL_ROWS + fill.partial, fill.filled);
+  assert.equal(fill.bytesPerCell, Math.round(0x2a0000 / 400));
+});
+
+test("cellFill never hides a non-empty image and never overflows", async () => {
+  const { cellFill, CELL_PITCH_PX } = await load("slotUsage.ts");
+  assert.equal(cellFill(1, 0x2a0000, 10 * CELL_PITCH_PX).filled, 1);
+  const full = cellFill(0x2a0000, 0x2a0000, 10 * CELL_PITCH_PX);
+  assert.equal(full.filled, full.total);
+  assert.equal(cellFill(0, 0x2a0000, 10 * CELL_PITCH_PX).filled, 0);
+});
+
+test("cellFill draws nothing for an unmeasured image or a field too narrow", async () => {
+  const { cellFill, CELL_PITCH_PX } = await load("slotUsage.ts");
+  assert.equal(cellFill(null, 0x2a0000, 800), null);
+  assert.equal(cellFill(100, null, 800), null);
+  assert.equal(cellFill(100, 0x2a0000, CELL_PITCH_PX - 1), null);
+});

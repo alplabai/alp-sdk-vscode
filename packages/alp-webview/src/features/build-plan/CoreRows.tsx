@@ -61,14 +61,27 @@ function Row({
   row,
   series,
   flashSlice,
+  selected,
+  onLocate,
 }: {
   row: CoreRow;
   series: number;
   flashSlice: (coreId: string) => void;
+  /** True while this core's slot is the one picked on the memory strip. */
+  selected: boolean;
+  /** Picks this core's slot on the memory strip; absent when the core has
+   *  no placed slot to point at. */
+  onLocate?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const ident = (
+    <>
+      <span className={styles.name}>{row.id}</span>
+      <span className={styles.sub}>{row.subtitle}</span>
+    </>
+  );
   return (
-    <li className={styles.item}>
+    <li className={styles.item} data-selected={selected || undefined}>
       <div className={styles.row}>
         <div className={styles.lead}>
           <button
@@ -89,10 +102,22 @@ function Row({
             aria-label={row.statusLabel}
             title={row.statusLabel}
           />
-          <div className={styles.ident}>
-            <span className={styles.name}>{row.id}</span>
-            <span className={styles.sub}>{row.subtitle}</span>
-          </div>
+          {onLocate ? (
+            // The name is the handle: clicking it shows where this core's
+            // image sits on the memory strip below.
+            <button
+              type="button"
+              className={styles.ident}
+              data-locate=""
+              aria-current={selected || undefined}
+              aria-label={`Show ${row.id} on the memory strip`}
+              onClick={onLocate}
+            >
+              {ident}
+            </button>
+          ) : (
+            <div className={styles.ident}>{ident}</div>
+          )}
         </div>
         <div className={styles.body}>
           {row.problem !== null ? (
@@ -150,6 +175,8 @@ export function CoreRows({
   seriesByCore,
   sizesError,
   flashSlice,
+  selectedCore,
+  onLocate,
 }: {
   slices: ManifestSlice[];
   sizeByCore: ReadonlyMap<string, SliceSize>;
@@ -158,6 +185,11 @@ export function CoreRows({
   /** Why `tan size` produced nothing, verbatim; null when it did. */
   sizesError: string | null;
   flashSlice: (coreId: string) => void;
+  /** The core whose slot is picked on the memory strip, if any. */
+  selectedCore: string | null;
+  /** Picks a core's slot on the memory strip; only cores with a placed
+   *  slot get one, so it returns null for the rest. */
+  onLocate: (coreId: string) => (() => void) | null;
 }) {
   const rows = slices.map((s) => coreRowOf(s, sizeByCore.get(s.core_id)));
   const active = slices.filter((s) => s.os !== "off").length;
@@ -188,6 +220,8 @@ export function CoreRows({
             row={row}
             series={seriesByCore.get(row.id) ?? 1}
             flashSlice={flashSlice}
+            selected={row.id === selectedCore}
+            onLocate={onLocate(row.id) ?? undefined}
           />
         ))}
       </ul>

@@ -34,7 +34,16 @@ import {
   resolvedRegions,
   type Window,
 } from "./regionWindow";
-import { slotUsageOf, usedFillLength } from "./slotUsage";
+import {
+  type CellFill,
+  cellFill,
+  slotUsageOf,
+  usedFillLength,
+} from "./slotUsage";
+
+/** The cell field's inset from the slot box's edges, in CSS pixels — the
+ *  `--space-4` the field is positioned with in MemoryStrip.module.css. */
+export const CELL_INSET_PX = 8;
 
 /** What the strip draws at before its column has been measured, and what
  *  it keeps drawing at when the measurement answers 0 (no `ResizeObserver`,
@@ -87,6 +96,10 @@ export interface StripSpan {
   /** Length of the used fill along the span, in CSS pixels; null when
    *  `tan size` measured nothing or the span is not a slot image. */
   usedPx: number | null;
+  /** The slot as a field of cells (see `cellFill`); null when nothing was
+   *  measured or the slot is too narrow for one column, in which case the
+   *  strip falls back to the `usedPx` sliver. */
+  cells: CellFill | null;
   /** True for a base with no extent: drawn as a hairline, not a box. */
   marker: boolean;
   title: string;
@@ -195,6 +208,10 @@ export function buildStrip(
       usage !== null && usage.used !== null && usage.total !== null
         ? usedFillLength(usage.used, usage.total, spanWidth)
         : null;
+    const cells =
+      usage !== null
+        ? cellFill(usage.used, usage.total, spanWidth - 2 * CELL_INSET_PX)
+        : null;
     stripSpans.push({
       id: span.id,
       name: span.label,
@@ -202,6 +219,7 @@ export function buildStrip(
       width: spanWidth,
       series: series.get(span.label) ?? 1,
       usedPx,
+      cells,
       marker: reach === null,
       title:
         reach !== null
