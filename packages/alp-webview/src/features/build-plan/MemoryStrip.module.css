@@ -186,6 +186,16 @@
   --series: var(--chart-6);
 }
 
+/* An image larger than its slot: the box and its figure in the error
+ * colour, so the overflow reads before the detail line is opened. */
+.span[data-over] {
+  border-color: var(--status-err);
+}
+
+.span[data-over] .spanUse {
+  color: var(--status-err);
+}
+
 /* A base with no extent: a hairline at its address, named beside it. */
 .span[data-marker] {
   min-width: 2px;

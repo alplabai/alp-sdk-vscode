@@ -37,6 +37,7 @@ import {
 import {
   type CellFill,
   cellFill,
+  overflowsSlot,
   slotUsageOf,
   usedFillLength,
 } from "./slotUsage";
@@ -100,6 +101,10 @@ export interface StripSpan {
    *  measured or the slot is too narrow for one column, in which case the
    *  strip falls back to the `usedPx` sliver. */
   cells: CellFill | null;
+  /** True when the measured image is larger than the slot it is placed
+   *  in — the box then says so in the error colour, since a full field of
+   *  cells alone reads as merely "full". */
+  over: boolean;
   /** True for a base with no extent: drawn as a hairline, not a box. */
   marker: boolean;
   title: string;
@@ -220,6 +225,7 @@ export function buildStrip(
       series: series.get(span.label) ?? 1,
       usedPx,
       cells,
+      over: usage !== null && overflowsSlot(usage),
       marker: reach === null,
       title:
         reach !== null

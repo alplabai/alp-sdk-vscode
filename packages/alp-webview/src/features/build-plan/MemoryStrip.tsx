@@ -285,6 +285,7 @@ export function MemoryStrip({
   sku,
   picked: pickedFromOutside,
   onPick,
+  onResolve,
 }: {
   memory: MemoryView;
   budgets: Map<string, SliceSize>;
@@ -294,7 +295,11 @@ export function MemoryStrip({
    *  placed image; `null` is "nothing selected", which the page sets when
    *  the reader clicks empty space or presses Escape. */
   picked?: string | null;
-  onPick?: (id: string) => void;
+  onPick?: (id: string | null) => void;
+  /** Told what is actually selected after every change, the default
+   *  included, so the page can mark the matching core without re-deriving
+   *  this component's default. */
+  onResolve?: (id: string | null) => void;
 }) {
   const [stripRef, width] = useMeasuredWidth();
   const uid = useId();
@@ -322,6 +327,9 @@ export function MemoryStrip({
       : picked !== null && order.includes(picked)
         ? picked
         : null;
+  useEffect(() => {
+    onResolve?.(selected ?? null);
+  }, [selected, onResolve]);
   const rows = buildRows(regions, memory.spans, budgets, selected ?? null);
   const selectedRow = rows.find((r) => r.selected) ?? null;
   const selectedGhost = ghosts.find((g) => g.id === selected) ?? null;
@@ -444,6 +452,7 @@ export function MemoryStrip({
                     className={styles.span}
                     data-series={s.series}
                     data-marker={s.marker || undefined}
+                    data-over={s.over || undefined}
                     title={s.title}
                     style={{ left: s.left, width: s.width }}
                     {...itemProps(s.id, row?.accessibleName ?? s.title)}
