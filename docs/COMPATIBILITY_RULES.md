@@ -181,6 +181,75 @@ long as the consumed contracts hold. Record each assessed SDK release here.
       consults the provider per validation pass and exposes no "revalidate now".
       Every other document picks up the new schema at once.
 
+- **alp-sdk v0.17.0-rc2 — compatible; both schemas re-vendored, `ownership` and
+  `memory` now in the vendored contract** (assessed 2026-10-11, PRE-RELEASE
+  tag). Tag `v0.17.0-rc2`, commit `84a6e0d21`. `vendoredSchemas.ts` stays the
+  single source for the tag and both hashes
+  (board `3a1770d9…`, system-manifest `581d3540…`). Re-vendored ahead of the
+  stable tag so #484's edit half has a contract to build on; re-assess when
+  `v0.17.0` is cut. `SUPPORTED_CLI_VERSION` is **not** moved (stays `0.6.0`).
+  - `system-manifest-v1.schema.json` (+120/-4). Root keys go **8 → 10**, still
+    `additionalProperties: false`: `schema_version, generated_by, hw_info,
+    slices, ipc, ownership, helper_mcus, boot_order, storage, memory`. The
+    read-only tripwire in `test/memoryRegions.readOnly.test.js` **fired as
+    designed** and now pins the ten keys.
+    - `memory[]` — the resolved region pane (alp-sdk#1365). Row is closed
+      (`additionalProperties: false`): required `name`, `source`
+      (`som_preset | soc_derived`), `kind` (`flash | ram | unclassified |
+      unresolved`), `status` (`ok | unresolved`); optional `base`,
+      `size_bytes`, `write_authority` (`customer_image | vendor_image |
+      customer_runtime | secure_enclave | none | composite`),
+      `accessible_from[]`, `reason`. An `unresolved` row must carry `reason`
+      and no `base`; an `ok` row must carry `base`. An ABSENT `memory:` means
+      an older producer or a pending layout, never "no regions". Already
+      parsed by #663; the field set matches `memoryView.ts`.
+    - `ownership` — **new**, `{<E1M instance>: "a55" | "m33"}`, omitted when
+      the SoM has no assignable resources (absent means "none", not "all
+      default"). Handled by a typed `ownership?: Record<string, string>` on
+      `SystemManifest` (core model + webview mirror), parsed by
+      `parseSystemManifest`; **no view renders it** (values are `string`, not
+      the two-core enum, so a core added upstream is tolerated).
+    - `slices[]` — `flash_method` / `flash_args` are no longer unconditionally
+      required: required unless `os: off` or the slice carries a `reason`.
+      Reserved `flash_method: none` = the flasher cannot flash it. New
+      optional `flash_method_resolved` (written by tan, never the emitter);
+      modelled on `ManifestSlice` in both copies.
+    - The root `description` now states that the closed root is a PRODUCER gate
+      and "tolerate unknown fields" is CONSUMER advice; do not relax one for
+      the other.
+  - `board.schema.json` (+191/-14). Top-level property set goes **21 → 24**,
+    still `additionalProperties: false`: new `camera_connectors`, `cameras`,
+    `ownership` (`{<instance>: a55|m33}` override of the SoM default). All three
+    were added to `BOARD_KEY_ORDER` and `BoardConfig` so the C1 round-trip
+    data-loss gate keeps them; the webview records them in `KNOWN_UNMIRRORED`
+    (preserved by the index signature, no UI). New `$defs.camera_connector`.
+    Other changes, in order of consequence:
+    - `models[].compile.drpai.spec` **removed**; `input_shape`, `input_name`,
+      `images` are now REQUIRED, `product` optional. `ModelEntry.compile.drpai`
+      is a new `DrpaiCompile` in both copies. The Configurator's DRP-AI toggle
+      now seeds the three required keys and its warning checks all three (the
+      only UI-adjacent edit; it kept the file compiling, no new affordance).
+    - `ota.server.tls_ca_bundle` **removed** (no emitter read it). Dropped
+      from `OtaServer` in both copies; `test/board.otaServer.schemaDrift.test.js`
+      (#589) did exactly the job it was written for.
+    - `som.sku` pattern drops `NX9...`: `E1M-NX9101` is no longer a valid SKU.
+    - `cores.<id>.link: auto | itcm` (AEN RAM-run), `cores.<id>.toolchain`
+      override, `app:` now optional (inherits the preset), `mux_select`
+      on route entries, `boot.modules` / `security.ps` / `ipc[].cacheable`
+      description edits. Not modelled; round-tripped by the index signatures.
+  - **Every `$ref` is still `#/$defs/...`**, so `schemaSafety.ts` still serves
+    an SDK's own copy.
+  - SoM catalogue — **11 → 13 SKUs**, forced by the submodule move (the
+    membership gate compares against `alp-sdk-upstream/metadata/e1m_modules`):
+    `E1M-NX9101` removed; `E1M-AEN803`, `E1M-V2N103`, `E1M-V2M103` added. The
+    two Renesas additions are same-PCB memory tiers, so they join the Renesas
+    tan-floor set in `test/alpCli.somCliFloor.test.js`.
+  - Kconfig catalogue — both artefacts regenerated: metadata 222 → 221
+    symbols, `alp-kconfig-symbols.txt` 350 → 383.
+  - Fixtures — `test/fixtures/system-manifest.aen801.yaml` still conforms
+    (`flash_method` present on its active slices); the conformance gate passed
+    unchanged.
+
 - **alp-sdk v0.16.0 — compatible; both schemas re-vendored, one product change
   required** (assessed 2026-09-06). Tag `v0.16.0`, commit
   `eb96112ba7d1cc3b4084c985962ea31772177d74`. Both vendored schemas now track

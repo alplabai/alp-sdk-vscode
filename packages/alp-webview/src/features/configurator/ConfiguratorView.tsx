@@ -472,10 +472,14 @@ function deepxPathMissing(m: ModelEntry): boolean {
   return !!d && (!d.config.trim() || !d.calibration.trim());
 }
 
-/** DRP-AI NPU compile target enabled but missing its spec path. */
+/** DRP-AI NPU compile target enabled but missing a required input. */
 function drpaiPathMissing(m: ModelEntry): boolean {
   const d = m.compile?.drpai;
-  return !!d && !d.spec.trim();
+  if (!d) return false;
+  const shapeEmpty = Array.isArray(d.input_shape)
+    ? d.input_shape.length === 0
+    : !d.input_shape.trim();
+  return shapeEmpty || !d.input_name.trim() || !d.images.trim();
 }
 
 /** The runtime a core naturally runs (its SoM-topology default). */
@@ -1600,8 +1604,8 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                   }`}
                   title={
                     drpaiPathMissing(m)
-                      ? "DRP-AI is enabled but its spec path is empty — fill it in the YAML, or `alp generate` fails with file-not-found."
-                      : "Compile for the Renesas DRP-AI NPU — fill the spec path in YAML"
+                      ? "DRP-AI is enabled but input_shape, input_name or images is empty — fill them in the YAML, or `alp generate` fails with file-not-found."
+                      : "Compile for the Renesas DRP-AI NPU — fill input_shape, input_name and images in YAML"
                   }
                 >
                   <input
@@ -1612,8 +1616,12 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                         const mm = d.models![i];
                         mm.compile = mm.compile || {};
                         if (e.target.checked)
-                          // Schema requires the spec path; seed empty for the user to fill.
-                          mm.compile.drpai = mm.compile.drpai || { spec: "" };
+                          // Schema requires these three; seed empty for the user to fill.
+                          mm.compile.drpai = mm.compile.drpai || {
+                            input_shape: "",
+                            input_name: "",
+                            images: "",
+                          };
                         else {
                           delete mm.compile.drpai;
                           if (!mm.compile.deepx_dxm1) delete mm.compile;

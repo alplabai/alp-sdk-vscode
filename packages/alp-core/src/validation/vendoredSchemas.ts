@@ -19,102 +19,41 @@
  */
 
 /** The alp-sdk tag `schemas/*.json` were vendored from. */
-export const VENDORED_SDK_TAG = "v0.16.0";
+export const VENDORED_SDK_TAG = "v0.17.0-rc2";
 
 /**
  * sha256 of `schemas/board.schema.json` over its LF-normalized bytes.
  *
- * The v0.16.0 bump moves this file in six places, five of them description
- * text. The TOP-LEVEL PROPERTY SET IS UNCHANGED -- the same 21 keys as
- * v0.15.0, still `additionalProperties: false` -- so `BOARD_KEY_ORDER`
- * (`packages/alp-core/src/board/models.ts`) has nothing new to absorb and the
- * C1 round-trip data-loss gate is unaffected. Every `$ref` is still
- * `#/$defs/...`, so `schemaSafety.ts`'s `^#`-only acceptance still takes the
- * SDK's own copy rather than silently falling back to this one.
- *
- * The ONE structural change, and the only one that changes what a written
- * board.yaml means:
- *  1. `boot.swap_algorithm` LOSES its `"default": "scratch"`. There is now no
- *     fixed schema default: the SDK derives it from the target's real slot
- *     layout, and on a SINGLE-SLOT target -- E1M-AEN801, whose disjoint-slot0
- *     `memory_map:` has no slot1/scratch region (#1069/#1413) -- setting ANY
- *     of the three values explicitly is a build-time `OrchestratorError`,
- *     because there is no partition for them to swap into. `ConfiguratorView`
- *     no longer substitutes a default of its own: it renders the absent key as
- *     `(SDK default)` and lets the SDK derive the mode
- *     (`test/configurator.swapAlgorithmDefault.test.js` holds that from both
- *     sides). What it still cannot do is offer only the values the target
- *     accepts -- the derivation keys off the SoM's `memory_map:`, which no
- *     wire into this extension carries -- so an explicit pick on a single-slot
- *     target still meets the `OrchestratorError` at build time. Tracked
- *     by #658.
- *
- * The five description-only edits, recorded because a reader diffing the
- * bytes will otherwise re-derive them:
- *  2. `boot.sim_console` drops the `RENODE_MODE=real` naming (same behaviour).
- *  3. `boot.modules` keys may now ALSO be Zephyr log modules the SDK wires
- *     (`i2c`, `spi`, `gpio`, `adc`, `net_tcp`, ...), not only `alp_*` module
- *     names; the emitted `CONFIG_<MODULE>_LOG_LEVEL_<LEVEL>=y` is live only
- *     where that choice symbol exists and is downgraded to a hint comment
- *     otherwise, so the fragment always configures.
- *  4. `storage[].flash_device`: a `memory_map:` region marked
- *     `carveout: false` is a partition INSIDE a flash-class node and is
- *     refused as a target (#1484); and no target resolves to a genuinely
- *     working Devicetree label today -- a region's label DEFAULTS to the
- *     region name when the preset sets no `dt_label:` override (neither
- *     `mram_main` nor `ocram_low` has one), and as of alp-sdk#1556 the
- *     resolver blocks with a reason rather than decorating the fabricated
- *     label. `on_module.ospi_memories:` keys are not yet gated the same way.
- *  5. `ota.poll_interval` names its unit (SECONDS) and warns that
- *     `provider: hawkbit` converts to `CONFIG_HAWKBIT_POLL_INTERVAL`, which
- *     Zephyr declares in MINUTES with `range 1 43200` -- so a hawkbit
- *     project's value must be a whole number of minutes between 60 s and
- *     2592000 s, and anything else is refused at emit.
- *  6. `models[].source` adds `.pte` (an ExecuTorch `torch.export` program):
- *     it passes through for CPU, but no on-device ExecuTorch runtime backend
- *     exists yet, so the blob is producible and not yet invocable (#1260).
+ * The v0.17.0-rc2 bump is the largest since v0.15.0 and the first to move the
+ * TOP-LEVEL PROPERTY SET: 21 keys become 24, still `additionalProperties:
+ * false`. The three new keys -- `camera_connectors`, `cameras`, `ownership` --
+ * are added to `BOARD_KEY_ORDER` (`packages/alp-core/src/board/models.ts`) so
+ * the C1 round-trip data-loss gate keeps them; no view edits them. Every
+ * `$ref` is still `#/$defs/...`, so `schemaSafety.ts` still takes the SDK's
+ * own copy. Two removals changed what a written board.yaml means:
+ * `ota.server.tls_ca_bundle` is gone (no emitter ever read it) and
+ * `models[].compile.drpai.spec` is replaced by REQUIRED `input_shape`,
+ * `input_name`, `images` (+ optional `product`). `som.sku` loses `E1M-NX9...`.
+ * `docs/COMPATIBILITY_RULES.md` section 5 lists the full change set.
  */
 export const BOARD_SCHEMA_SHA256 =
-  "1549c70885a8eb184834baecb874084d239acde986050fdcf2d5173fd094d419";
+  "3a1770d9320fa7498ac9a567c943dbc8397f2539a921f04200bb36ac26ae49a7";
 
 /**
  * sha256 of `schemas/system-manifest-v1.schema.json` over its LF-normalized
  * bytes.
  *
- * v0.16.0 moves ONE object, `helper_mcus[]`, and it is a REQUIREDNESS change,
- * not prose:
- *  - `required` goes from `["name", "chip"]` to
- *    `["name", "chip", "flash_policy"]`.
- *  - `flash_policy` is new: `enum ["customer", "factory", "recovery_only"]`,
- *    stating WHO may invoke `flash_method` and WHEN. The schema's own wording
- *    is explicit that there is no fallback -- "REQUIRED -- there is no
- *    absent-means-`customer` default". `factory`: Alp Lab programs it in
- *    production, never a customer flash target. `recovery_only`: Alp Lab
- *    programs it in production and the customer may flash it ONLY to recover
- *    a bricked device, with Alp Lab-supplied binaries.
- *  - `update_channel` is new and deliberately UNENUMERATED here (the
- *    SoM-preset schema owns the vocabulary, so a consumer tolerates a channel
- *    added upstream). It is INDEPENDENT of `flash_policy`, and the array's
- *    own description says so: each declared key "is projected here
- *    independently ... a consumer must not read one key's presence as
- *    excluding another's".
- *
- * v0.16.0 ships 11 SoM presets. The 10 that declare a helper --
- * E1M-AEN301/401/501/601/701/801, E1M-V2M101/102, E1M-V2N101/102 -- ALL declare
- * `flash_policy: recovery_only`; E1M-NX9101 declares `helper_firmware: []` and
- * so contributes no entry at all. `tan flash` is the enforcing gate and it holds: the policy is
- * checked AHEAD of any `flash_method` presence
- * (`python/tan/core/flash_plan.py::helper_flash_gate`, tan-cli#611). This
- * extension's job is therefore disclosure, not enforcement -- see
- * `packages/alp-core/src/flash/consent.ts`.
- *
- * The ROOT property set is unchanged (the same eight keys), so the
- * read-only tripwire in `test/memoryRegions.readOnly.test.js` still passes:
- * alp-sdk's schema-only `memory` root key is on an unmerged branch, not on
- * this tag.
+ * v0.17.0-rc2 grows the ROOT property set from eight keys to ten, still
+ * `additionalProperties: false`: `ownership` (resolved `{instance: core}`
+ * map, omitted when the SoM has no assignable resources) and `memory` (the
+ * resolved region pane, rows closed with required name/source/kind/status).
+ * `slices[].flash_method` / `flash_args` stop being unconditionally required
+ * (required unless `os: off` or a `reason` is present) and
+ * `flash_method_resolved` is new. The read-only tripwire in
+ * `test/memoryRegions.readOnly.test.js` pins the ten keys.
  */
 export const SYSTEM_MANIFEST_SCHEMA_SHA256 =
-  "abbe4a444ed088642cd85335a68714f1092528f976f77b94b499763286386628";
+  "581d3540c57ee38bf5b519fd3ddceb5493e6131a1ae1cb49ef25d60082056c0c";
 
 /** Which vendored schema a provenance comparison is about. */
 export type VendoredSchemaId = "board" | "systemManifest";
@@ -124,7 +63,7 @@ export type VendoredSchemaId = "board" | "systemManifest";
  *
  * `vendored` is relative to the extension install root; `sdk` is relative to a
  * resolved `<sdkRoot>`. Both files are present at every alp-sdk tag this
- * extension supports (verified v0.11.0..v0.16.0), but the reader still treats
+ * extension supports (verified v0.11.0..v0.17.0-rc2), but the reader still treats
  * a missing file as a normal outcome rather than an error -- a customer can
  * point `alpSdk.sdkPath` at any directory.
  */

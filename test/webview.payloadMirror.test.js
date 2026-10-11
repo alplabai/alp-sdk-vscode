@@ -131,6 +131,7 @@ const MODELS = [
   { mirror: "BootSigning", file: BOARD_REL },
   { mirror: "Boot", file: BOARD_REL },
   { mirror: "OtaServer", file: BOARD_REL },
+  { mirror: "DrpaiCompile", file: BOARD_REL },
   { mirror: "Ota", file: BOARD_REL },
   { mirror: "IpcEntry", file: BOARD_REL },
   { mirror: "ModelEntry", file: BOARD_REL },
@@ -254,6 +255,14 @@ const KNOWN_UNMIRRORED = {
     "unstarted PinmuxConfigurator work, which will need a real mirrored model.",
   "BoardConfig.pins?":
     "Pin references, same story as e1m_routes: preserved, never rendered.",
+  "BoardConfig.camera_connectors?":
+    "Camera connectors (alp-sdk v0.17.0-rc2). Modelled in core so the C1 " +
+    "round-trip keeps them; no panel renders or edits them, and the mirror's " +
+    "index signature preserves the key.",
+  "BoardConfig.cameras?":
+    "Camera modules fitted to connectors (rc2). Same story as camera_connectors.",
+  "BoardConfig.ownership?":
+    "Per-product core ownership override (rc2). Preserved, not rendered.",
   "BoardConfig.features?":
     "An opaque feature bag (Record<string, unknown>) the SDK resolves. Nothing " +
     "in the webview can meaningfully render an untyped map.",

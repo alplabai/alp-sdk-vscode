@@ -49,10 +49,15 @@ export interface ManifestSlice {
   status: SliceStatus | string;
   log_path?: string;
   reason?: string;
-  /** Schema-required, but omitted by the emitter for off/pending slices. */
+  /** Required by the schema on every slice that is not `os: off` and has no
+   *  `reason`; may be omitted otherwise. Reserved value `none` = the flasher
+   *  cannot flash this slice (read it as "nothing to flash"). */
   flash_method?: string;
   /** Method-specific (shape varies by flash_method); kept opaque. */
   flash_args?: Record<string, unknown>;
+  /** Backend the flasher actually dispatched to, when it differs from
+   *  `flash_method`. Written by the flasher (tan), never by the emitter. */
+  flash_method_resolved?: string;
 }
 
 export interface ManifestIpcLink {
@@ -127,11 +132,16 @@ export interface SystemManifest {
   helper_mcus: ManifestHelperMcu[];
   /** Inter-image boot sequencing — opaque until a SoM declares boot_order. */
   boot_order: unknown[];
+  /** Resolved per-product core ownership, `{<E1M instance>: <core>}` (rc2).
+   *  Absent means the SoM declares no assignable resources, NOT "all default".
+   *  Values are `a55 | m33` at rc2, kept `string` so a core added upstream is
+   *  tolerated. Parsed but not rendered by any view yet. */
+  ownership?: Record<string, string>;
   /** Resolved storage partitions — present only when the project declares storage. */
   storage?: unknown[];
   /** The SoM's own region table (#484 phase 2) — present only from an
    *  alp-sdk that carries alp-sdk#1365's `memory[]` pane (landed in
-   *  alp-sdk#2030; not yet in a tagged release, alp-sdk#2047) and only
+   *  alp-sdk#2030; vendored schema since v0.17.0-rc2) and only
    *  when it resolves at least one region for this SoM. `unknown[]` at
    *  this boundary for the same reason `storage` is: every field is
    *  narrowed from scratch in `memoryView.ts`, never cast. */

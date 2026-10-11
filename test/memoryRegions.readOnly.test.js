@@ -22,15 +22,14 @@
 // lands it, rather than quietly outliving its reason.
 //
 // #484 PHASE 2 landed read-only backdrop+table rendering FROM `memory[]`
-// (alp-sdk#1365 / alp-sdk#2030) WITHOUT re-vendoring this schema — that
-// stays #662, tag-only. So the tripwire below has NOT fired: the vendored
-// copy still declares the same eight root keys, even though a real
-// manifest from a new-enough SDK now carries a ninth (`memory`). D5 was
-// re-taken against that landed contract anyway, because `write_authority`
-// ships optional on both sides (no schema-required, no default) — the
-// precondition below was never about the KEY existing, only about
-// authority being unambiguous once it does. It still is not, so the map
-// stays read-only.
+// (alp-sdk#1365 / alp-sdk#2030). #662 then re-vendored the schema from
+// alp-sdk v0.17.0-rc2, which declares `memory` (and `ownership`) as root
+// keys, so the tripwire below HAS fired and now pins the ten rc2 keys. The
+// D5 decision is re-taken in the commit after that vendor: editability keys
+// on the row's `kind` and `write_authority`, both of which the rc2 `memory[]`
+// row declares (`write_authority` stays optional there, so an absent
+// authority must still read as locked). Until that lands the map stays
+// read-only.
 //
 // ---------------------------------------------------------------------------
 // WHAT THIS GATE GUARANTEES, AND WHAT IT DELIBERATELY DOES NOT
@@ -1024,8 +1023,8 @@ test("the memory view offers no editing affordance", async () => {
 });
 
 test("the contract still cannot tell a customer band from a secure one", () => {
-  // The tripwire. `system-manifest-v1` carries no region view today; when it
-  // grows one, this fails and the read-only decision above must be re-taken
+  // The tripwire. `system-manifest-v1` pins its root keys here; when they
+  // change, this fails and the read-only decision above must be re-taken
   // with the new data in hand — including whether `owner` is schema-REQUIRED,
   // because an omitted owner that renders as unlocked is the same fail-open
   // the whole design exists to avoid.
@@ -1042,15 +1041,17 @@ test("the contract still cannot tell a customer band from a secure one", () => {
       "hw_info",
       "slices",
       "ipc",
+      "ownership",
       "helper_mcus",
       "boot_order",
       "storage",
+      "memory",
     ],
     "system-manifest-v1 grew or lost a root key. If a region/memory view " +
       "landed, re-read #484 D5: the map may become editable only over " +
       "board.yaml (ipc[].carve_out_kb, storage[].size_kib / offset_kib), " +
-      "never over the SoM preset, and only once `owner` arrives " +
-      "schema-required with no default.",
+      "never over the SoM preset, and editability is taken from the row's " +
+      "`kind` + `write_authority` (see the commit after the rc2 vendor).",
   );
   assert.equal(schema.additionalProperties, false);
 });

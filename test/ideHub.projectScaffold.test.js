@@ -45,7 +45,6 @@ test("E1M_MODULES contains all known silicon families", () => {
   const families = new Set(E1M_MODULES.map((m) => m.family));
   assert.ok(families.has("alif-ensemble"), "missing alif-ensemble family");
   assert.ok(families.has("renesas-rzv2n"), "missing renesas-rzv2n family");
-  assert.ok(families.has("nxp-imx9"), "missing nxp-imx9 family");
 });
 
 test("E1M_MODULES every entry has id, displayName, family", () => {
@@ -83,12 +82,6 @@ test("E1M_MODULES contains flagship E1M-AEN801", () => {
   const flagship = E1M_MODULES.find((m) => m.id === "E1M-AEN801");
   assert.ok(flagship, "E1M-AEN801 not found");
   assert.equal(flagship.family, "alif-ensemble");
-});
-
-test("E1M_MODULES contains E1M-NX9101 NXP entry", () => {
-  const nxp = E1M_MODULES.find((m) => m.id === "E1M-NX9101");
-  assert.ok(nxp, "E1M-NX9101 not found");
-  assert.equal(nxp.family, "nxp-imx9");
 });
 
 // ---------------------------------------------------------------------------

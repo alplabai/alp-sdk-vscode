@@ -45,6 +45,16 @@ export function parseSystemManifest(text: string): SystemManifest {
     );
   }
 
+  const stringRecord = (v: unknown): Record<string, string> | undefined => {
+    if (typeof v !== "object" || v === null || Array.isArray(v)) {
+      return undefined;
+    }
+    const out: Record<string, string> = {};
+    for (const [k, val] of Object.entries(v)) {
+      if (typeof val === "string") out[k] = val;
+    }
+    return out;
+  };
   const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
   return {
     schema_version: version,
@@ -54,6 +64,7 @@ export function parseSystemManifest(text: string): SystemManifest {
     ipc: arr(doc.ipc) as SystemManifest["ipc"],
     helper_mcus: arr(doc.helper_mcus) as SystemManifest["helper_mcus"],
     boot_order: arr(doc.boot_order),
+    ownership: stringRecord(doc.ownership),
     storage: Array.isArray(doc.storage) ? doc.storage : undefined,
     memory: Array.isArray(doc.memory) ? doc.memory : undefined,
   };

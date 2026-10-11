@@ -21,6 +21,11 @@ export const E1M_MODULES: E1mModule[] = [
     family: "alif-ensemble",
   },
   {
+    id: "E1M-AEN803",
+    displayName: "E1M-AEN803 (Alif Ensemble E8, both OSPI memories fitted)",
+    family: "alif-ensemble",
+  },
+  {
     id: "E1M-AEN301",
     displayName: "E1M-AEN301 (Alif Ensemble E3)",
     family: "alif-ensemble",
@@ -56,6 +61,11 @@ export const E1M_MODULES: E1mModule[] = [
     family: "renesas-rzv2n",
   },
   {
+    id: "E1M-V2N103",
+    displayName: "E1M-V2N103 (Renesas RZ/V2N, 4 GB RAM / 16 GB eMMC)",
+    family: "renesas-rzv2n",
+  },
+  {
     id: "E1M-V2M101",
     displayName: "E1M-V2M101 (Renesas RZ/V2N + DEEPX DX-M1)",
     family: "renesas-rzv2n-deepx",
@@ -66,8 +76,9 @@ export const E1M_MODULES: E1mModule[] = [
     family: "renesas-rzv2n-deepx",
   },
   {
-    id: "E1M-NX9101",
-    displayName: "E1M-NX9101 (NXP i.MX 93)",
-    family: "nxp-imx9",
+    id: "E1M-V2M103",
+    displayName:
+      "E1M-V2M103 (Renesas RZ/V2N + DEEPX DX-M1, 4 GB RAM / 16 GB eMMC)",
+    family: "renesas-rzv2n-deepx",
   },
 ];

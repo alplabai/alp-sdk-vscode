@@ -219,7 +219,6 @@ export interface Boot {
 export interface OtaServer {
   url: string;
   tenant?: string;
-  tls_ca_bundle?: string;
 }
 export interface Ota {
   provider: "mender" | "hawkbit" | "mcumgr" | "none";
@@ -247,6 +246,13 @@ export interface Diagnostics {
 }
 
 /** An AI model to compile + package into .alpmodel (board.schema.json `models`). */
+/** Mirrors `@alp-sdk/core/board/models`'s `DrpaiCompile`. */
+export interface DrpaiCompile {
+  input_shape: string | number[];
+  input_name: string;
+  images: string;
+  product?: string;
+}
 export interface ModelEntry {
   name: string;
   source: string;
@@ -255,7 +261,7 @@ export interface ModelEntry {
   /** Per-backend NPU compile configuration (paths to config/calibration/spec). */
   compile?: {
     deepx_dxm1?: { config: string; calibration: string };
-    drpai?: { spec: string };
+    drpai?: DrpaiCompile;
   };
 }
 
@@ -803,6 +809,7 @@ export interface ManifestSlice {
   reason?: string;
   flash_method?: string;
   flash_args?: Record<string, unknown>;
+  flash_method_resolved?: string;
 }
 export interface ManifestIpcLink {
   name: string;
@@ -834,6 +841,7 @@ export interface SystemManifest {
   ipc: ManifestIpcLink[];
   helper_mcus: ManifestHelperMcu[];
   boot_order: unknown[];
+  ownership?: Record<string, string>;
   storage?: unknown[];
 }
 /**

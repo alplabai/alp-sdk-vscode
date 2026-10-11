@@ -127,7 +127,6 @@ export interface Boot {
 export interface OtaServer {
   url: string;
   tenant?: string;
-  tls_ca_bundle?: string;
 }
 
 export interface OtaRollback {
@@ -186,6 +185,17 @@ export interface E1mRoutes {
 export type PinRef = string | { e1m: string; macro?: string; doc?: string };
 
 /** An AI model to compile + package into .alpmodel (board.schema.json `models`). */
+/** DRP-AI TVM compile inputs; all three of the first are REQUIRED (rc2). */
+export interface DrpaiCompile {
+  /** NCHW: a comma string ("1,3,224,224") or a list of positive integers. */
+  input_shape: string | number[];
+  input_name: string;
+  /** Calibration image directory, relative to board.yaml. */
+  images: string;
+  /** DRP-AI TVM PRODUCT value; the SDK defaults it to V2N. */
+  product?: string;
+}
+
 export interface ModelEntry {
   name: string;
   source: string;
@@ -194,7 +204,7 @@ export interface ModelEntry {
   /** Per-backend NPU compile configuration (paths to config/calibration/spec). */
   compile?: {
     deepx_dxm1?: { config: string; calibration: string };
-    drpai?: { spec: string };
+    drpai?: DrpaiCompile;
   };
 }
 
@@ -211,6 +221,13 @@ export interface BoardConfig {
   som: BoardSom;
   cores: Record<string, CoreEntry>;
   populated?: Record<string, boolean>;
+  /** Camera connectors the board exposes, keyed CAM0, CAM1, ... (rc2).
+   * Carried for round-trip only; no view edits it. */
+  camera_connectors?: Record<string, Record<string, unknown>>;
+  /** Camera modules fitted to those connectors (rc2). Round-trip only. */
+  cameras?: { connector: string; module: string; core?: string }[];
+  /** Per-product core ownership override, `{<E1M instance>: <core>}` (rc2). */
+  ownership?: Record<string, string>;
   e1m_routes?: E1mRoutes;
   pins?: PinRef[];
   chips?: string[];
@@ -238,6 +255,9 @@ export const BOARD_KEY_ORDER: (keyof BoardConfig)[] = [
   "som",
   "cores",
   "populated",
+  "camera_connectors",
+  "cameras",
+  "ownership",
   "e1m_routes",
   "pins",
   "chips",
