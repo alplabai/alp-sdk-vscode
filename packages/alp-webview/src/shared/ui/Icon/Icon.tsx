@@ -33,7 +33,8 @@ export type IconName =
   | "eye"
   | "swap"
   | "save"
-  | "layers";
+  | "layers"
+  | "lock";
 
 const PATHS: Record<IconName, JSX.Element> = {
   bolt: <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z" />,
@@ -199,6 +200,12 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
       <path d="M17 21v-8H7v8" />
       <path d="M7 3v5h8" />
+    </>
+  ),
+  lock: (
+    <>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
     </>
   ),
   layers: (

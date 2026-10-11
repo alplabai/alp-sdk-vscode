@@ -29,6 +29,7 @@ import {
   openDeclaringFile,
 } from "./blockedFindingActions";
 import { formatBytes, formatOffsetRange, formatRange } from "./format";
+import { lockLine } from "./targetLock";
 import {
   buildRows,
   buildUnplacedRows,
@@ -166,6 +167,32 @@ function RowDetail({ row }: { row: Row }) {
         </Pair>
       )}
       {row.authorityText && <Pair label="Authority">{row.authorityText}</Pair>}
+      {/* The host's fail-closed verdict on whether this region may be the
+          target of an edit. Shown, never acted on: no region is edited
+          from this view. */}
+      {row.targetLock && (
+        <Pair label="Target">
+          <span className={styles.lockLines}>
+            {(["ipc", "storage"] as const).map((field) => {
+              const lock = (row.targetLock as NonNullable<Row["targetLock"]>)[
+                field
+              ];
+              return (
+                <span
+                  key={field}
+                  data-target-lock={field}
+                  data-locked={lock.locked}
+                >
+                  {lock.locked && (
+                    <Icon name="lock" size={12} className={styles.lockIcon} />
+                  )}
+                  {lockLine(field, lock)}
+                </span>
+              );
+            })}
+          </span>
+        </Pair>
+      )}
       {/* A slot named after its only core says nothing new in a Cores pair. */}
       {row.cores.length > 0 &&
         !(row.cores.length === 1 && row.cores[0] === row.name) && (
@@ -430,6 +457,14 @@ export function MemoryStrip({
                           })}
                     >
                       {r.width >= NAME_MIN_PX && r.name}
+                      {row?.fullyLocked && r.width >= NAME_MIN_PX && (
+                        <Icon
+                          name="lock"
+                          size={10}
+                          className={styles.lockIcon}
+                          aria-label="locked: not an edit target"
+                        />
+                      )}
                       {r.tier && (
                         <span className={styles.tierMark} data-tier={r.tier} />
                       )}

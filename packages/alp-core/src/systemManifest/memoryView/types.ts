@@ -158,6 +158,27 @@ export interface MemoryRegion {
   cores: string[];
   /** Verbatim and in full. */
   reason: string | null;
+  /** Whether this region may be the TARGET of a customer edit, per field —
+   *  fail-closed, see `regionTargetLock`. Never derived from `source` or
+   *  from the region's name. */
+  targetLock: MemoryRegionTargetLock;
+}
+
+/** The board.yaml section an edit would land in: an IPC carve-out
+ *  (`ipc[]`) or a storage partition (`storage[]`). */
+export type TargetLockField = "ipc" | "storage";
+
+/** One fail-closed verdict. `reason` is always a non-empty sentence — for
+ *  an unlocked region it says what made it a target. */
+export interface TargetLock {
+  locked: boolean;
+  reason: string;
+}
+
+/** `MemoryRegion.targetLock`: one verdict per `TargetLockField`. */
+export interface MemoryRegionTargetLock {
+  ipc: TargetLock;
+  storage: TargetLock;
 }
 
 /**

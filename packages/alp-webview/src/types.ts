@@ -952,6 +952,23 @@ export interface MemoryRegion {
   authorityClass: MemoryAuthorityClass;
   cores: string[];
   reason: string | null;
+  /** Fail-closed, computed host-side by `regionTargetLock`. Read through
+   *  `lockOf` in `features/build-plan/targetLock.ts`, which treats an
+   *  absent verdict as locked. */
+  targetLock: MemoryRegionTargetLock;
+}
+
+/** Mirrors `@alp-sdk/core/systemManifest/memoryView`'s `TargetLockField`. */
+export type TargetLockField = "ipc" | "storage";
+
+export interface TargetLock {
+  locked: boolean;
+  reason: string;
+}
+
+export interface MemoryRegionTargetLock {
+  ipc: TargetLock;
+  storage: TargetLock;
 }
 
 export type MemoryConflictKind =

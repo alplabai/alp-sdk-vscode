@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Memory regions now say whether they can be an edit target, and refuse
+  by default.** Each region's detail line shows a lock verdict for an IPC
+  carve-out and a storage partition; a region opens only when the manifest
+  marks it `ok`, `customer_runtime`, fully resolved and of a fitting kind,
+  so the Secure-Enclave ATOC, a region with no declared authority and any
+  value this build does not recognise all stay locked.
+
 - **The Build Plan panel is one page again, drawn in VS Code's own
   language.** The summary strip, the "needs attention" list and the
   Slices / Memory / Notes tabs are gone. The page reads top to bottom:

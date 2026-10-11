@@ -161,8 +161,8 @@ export function partitions(manifest: SystemManifest): {
  * hide a resolved extent instead. Duplicate names are kept as separate
  * rows; only `findOutsideRegion`'s name-join refuses an ambiguous name.
  */
-export function regions(value: unknown): MemoryRegion[] {
-  const out: MemoryRegion[] = [];
+export function regions(value: unknown): Omit<MemoryRegion, "targetLock">[] {
+  const out: Omit<MemoryRegion, "targetLock">[] = [];
   for (const row of records(value)) {
     const name = asText(row.name);
     if (name === null) continue;

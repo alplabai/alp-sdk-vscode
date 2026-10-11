@@ -64,9 +64,14 @@ import {
 } from "./memoryView/analysis";
 import { asText } from "./memoryView/narrow";
 import { carveOuts, partitions, regions, slotSpans } from "./memoryView/spans";
+import { paneLockReason, targetLockOf } from "./memoryView/targetLock";
 import type { MemorySpan, MemoryView } from "./memoryView/types";
 
 export { authorityClassOf } from "./memoryView/authority";
+export {
+  regionTargetLock,
+  TARGET_LOCK_CLASSIFIED,
+} from "./memoryView/targetLock";
 export type * from "./memoryView/types";
 
 /** Ascending by base; the extents with no absolute base last, then by label. */
@@ -96,7 +101,13 @@ export function buildMemoryView(manifest: SystemManifest): MemoryView {
     ...ipc.spans,
     ...storage.spans,
   ].sort(byAddress);
-  const memoryRegions = regions(manifest.memory);
+  // Every region carries its fail-closed target lock; a manifest of an
+  // unknown schema_version locks them all (see `memoryView/targetLock.ts`).
+  const paneReason = paneLockReason(manifest.schema_version);
+  const memoryRegions = regions(manifest.memory).map((region) => ({
+    ...region,
+    targetLock: targetLockOf(region, paneReason),
+  }));
   return {
     sku: asText(manifest.hw_info?.sku) ?? "",
     spans,

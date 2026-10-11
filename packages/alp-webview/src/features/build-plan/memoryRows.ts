@@ -13,8 +13,11 @@ import type {
   MemorySpan,
   MemoryUnresolved,
   SliceSize,
+  TargetLock,
+  TargetLockField,
 } from "../../types";
 import { type AuthorityTier, tierOf } from "./authorityTier";
+import { locksOf } from "./targetLock";
 import {
   budgetEnd,
   duplicatedNames,
@@ -150,6 +153,11 @@ export interface Row {
    *  them at once. */
   inert: boolean;
   selected: boolean;
+  /** A region's fail-closed target-lock verdicts (host-computed, read by
+   *  `locksOf`); null for a span, which is never itself a target. */
+  targetLock: Record<TargetLockField, TargetLock> | null;
+  /** True when a region is locked for every field — the strip marks it. */
+  fullyLocked: boolean;
 }
 
 /** The size cells for a byte count that may be absent. `fromBudget` marks a
@@ -242,6 +250,7 @@ function regionRow(
         return users.length > 0 ? `used by ${users.join(", ")}` : null;
       })();
   const authorityText = authorityLabel(region);
+  const targetLock = locksOf(region);
   const kindText = kindLabel(region.kind);
   const size = sizeCells(region.sizeBytes, false);
   const accessibleName = joinAccessibleName([
@@ -277,6 +286,8 @@ function regionRow(
     accessibleName,
     inert: isDuplicated,
     selected: selectedId === region.id && !isDuplicated,
+    targetLock,
+    fullyLocked: targetLock.ipc.locked && targetLock.storage.locked,
   };
 }
 
@@ -385,6 +396,8 @@ function spanRow(
     accessibleName,
     inert: false,
     selected: selectedId === span.id,
+    targetLock: null,
+    fullyLocked: false,
   };
 }
 

@@ -118,6 +118,8 @@ const MODELS = [
   { mirror: "MemoryConflict", file: MEMORY_REL },
   { mirror: "MemoryView", file: MEMORY_REL },
   { mirror: "MemoryRegion", file: MEMORY_REL },
+  { mirror: "TargetLock", file: MEMORY_REL },
+  { mirror: "MemoryRegionTargetLock", file: MEMORY_REL },
 
   // ── board.yaml ──
   { mirror: "BoardConfig", file: BOARD_REL },
@@ -328,6 +330,7 @@ const ALIASES = [
   { mirror: "MemorySpanKind", file: MEMORY_REL },
   { mirror: "MemoryAuthorityClass", file: MEMORY_REL },
   { mirror: "MemoryConflictKind", file: MEMORY_REL },
+  { mirror: "TargetLockField", file: MEMORY_REL },
   // The three OPEN unions on `MemoryRegion` (#664). `(string & {})` is a
   // member like any other here: it is what keeps the union open, so a side
   // that drops it starts rejecting values the other side still emits, and a

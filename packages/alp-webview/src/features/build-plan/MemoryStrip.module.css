@@ -521,3 +521,16 @@
   font-size: var(--font-size-base);
   color: var(--text-secondary);
 }
+
+/* Target lock (#484): a small inline codicon-style glyph, no chrome. */
+.lockLines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lockIcon {
+  display: inline-block;
+  margin-inline-end: 4px;
+  vertical-align: -1px;
+  opacity: 0.8;
+}

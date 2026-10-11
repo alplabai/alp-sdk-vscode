@@ -1024,10 +1024,10 @@ test("the memory view offers no editing affordance", async () => {
 
 test("the contract still cannot tell a customer band from a secure one", () => {
   // The tripwire. `system-manifest-v1` pins its root keys here; when they
-  // change, this fails and the read-only decision above must be re-taken
-  // with the new data in hand — including whether `owner` is schema-REQUIRED,
-  // because an omitted owner that renders as unlocked is the same fail-open
-  // the whole design exists to avoid.
+  // change, this fails and the target-lock predicate (`regionTargetLock`)
+  // must be re-checked with the new data in hand — an omitted or unknown
+  // authority that renders as unlocked is the same fail-open the whole
+  // design exists to avoid.
   const schema = JSON.parse(
     read(joinPath(REPO, "schemas", "system-manifest-v1.schema.json")),
   );
@@ -1047,11 +1047,14 @@ test("the contract still cannot tell a customer band from a secure one", () => {
       "storage",
       "memory",
     ],
-    "system-manifest-v1 grew or lost a root key. If a region/memory view " +
-      "landed, re-read #484 D5: the map may become editable only over " +
-      "board.yaml (ipc[].carve_out_kb, storage[].size_kib / offset_kib), " +
-      "never over the SoM preset, and editability is taken from the row's " +
-      "`kind` + `write_authority` (see the commit after the rc2 vendor).",
+    "system-manifest-v1 grew or lost a root key. Re-read #484 D5 before " +
+      "accepting it: whether a memory[] region may be an edit TARGET is " +
+      "decided ONLY by the fail-closed allowlist `regionTargetLock` in " +
+      "packages/alp-core/src/systemManifest/memoryView/targetLock.ts " +
+      "(status ok + write_authority exactly customer_runtime + resolved " +
+      "base/size + a kind that fits the field), pinned by " +
+      "test/memoryRegions.targetLock.test.js. A new root key must not " +
+      "unlock anything by itself — check that predicate still holds.",
   );
   assert.equal(schema.additionalProperties, false);
 });
