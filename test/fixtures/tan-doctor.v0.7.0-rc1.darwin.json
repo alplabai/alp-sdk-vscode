@@ -64,7 +64,7 @@
         "name": "workspacePatches",
         "status": "warn",
         "scope": "project",
-        "detail": "alp-sdk's zephyr/patches.yml is not applied in /home/dev/.alp/sdk: mcuboot/0001-flash_map_extended-alif-mram-base.patch (ABSENT), zephyr/0001-clock_control_alif-master-source-expmst-i2s-setrate.patch (ABSENT), zephyr/0002-ipm-add-poll-out-poll-in.patch (ABSENT), zephyr/0003-kconfig-serialize-missing-deps.patch (ABSENT), hal_alif/0001-se-service-add-boot-cpu.patch (ABSENT), hal_alif/0002-se-service-add-public-send-request.patch (DRIFTED) in module(s) mcuboot, zephyr, alif. The build still succeeds, but features that need them fail at runtime (for example `alp_camera_open` returns ALP_ERR_NOSUPPORT). Fix: run `tan bootstrap` (or, from /home/dev/.alp/sdk: west patch --dst-module mcuboot apply; west patch --dst-module zephyr apply; west patch --dst-module alif apply).",
+        "detail": "alp-sdk's zephyr/patches.yml is not applied in /home/dev/.alp/sdk: mcuboot/0001-flash_map_extended-alif-mram-base.patch (ABSENT). Fix: run `tan bootstrap`.",
         "fix": "tan bootstrap"
       },
       {
@@ -167,7 +167,7 @@
     {
       "code": "doctor.workspace-patches",
       "severity": "warning",
-      "message": "alp-sdk's zephyr/patches.yml is not applied in /home/dev/.alp/sdk: mcuboot/0001-flash_map_extended-alif-mram-base.patch (ABSENT), zephyr/0001-clock_control_alif-master-source-expmst-i2s-setrate.patch (ABSENT), zephyr/0002-ipm-add-poll-out-poll-in.patch (ABSENT), zephyr/0003-kconfig-serialize-missing-deps.patch (ABSENT), hal_alif/0001-se-service-add-boot-cpu.patch (ABSENT), hal_alif/0002-se-service-add-public-send-request.patch (DRIFTED) in module(s) mcuboot, zephyr, alif. The build still succeeds, but features that need them fail at runtime (for example `alp_camera_open` returns ALP_ERR_NOSUPPORT). Fix: run `tan bootstrap` (or, from /home/dev/.alp/sdk: west patch --dst-module mcuboot apply; west patch --dst-module zephyr apply; west patch --dst-module alif apply)."
+      "message": "alp-sdk's zephyr/patches.yml is not applied in /home/dev/.alp/sdk: mcuboot/0001-flash_map_extended-alif-mram-base.patch (ABSENT). Fix: run `tan bootstrap`."
     },
     {
       "code": "doctor.python-floor",

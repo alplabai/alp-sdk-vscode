@@ -34,13 +34,13 @@
         "name": "workspace",
         "status": "pass",
         "scope": "project",
-        "detail": "Zephyr workspace at /home/dev/VSCodeProjects/zephyrproject"
+        "detail": "Zephyr workspace at /home/dev/zephyrproject"
       },
       {
         "name": "westResolved",
         "status": "pass",
         "scope": "project",
-        "detail": "west 1.5 resolved: /home/dev/VSCodeProjects/zephyrproject/.venv/bin/west."
+        "detail": "west 1.5 resolved: /home/dev/zephyrproject/.venv/bin/west."
       },
       {
         "name": "zephyrVersion",
@@ -53,20 +53,20 @@
         "name": "zephyrWorkspace",
         "status": "pass",
         "scope": "project",
-        "detail": "Zephyr 4.4.0 at `/home/dev/VSCodeProjects/zephyrproject`."
+        "detail": "Zephyr 4.4.0 at `/home/dev/zephyrproject`."
       },
       {
         "name": "workspacePatches",
         "status": "warn",
         "scope": "project",
-        "detail": "alp-sdk's zephyr/patches.yml is not applied in /home/dev/VSCodeProjects/zephyrproject: mcuboot/0001-flash_map_extended-alif-mram-base.patch (ABSENT), mcuboot/0002-bootutil_misc-reject-erased-swap_size-trailer.patch (ABSENT), mcuboot/0003-sim-swap-size-erased-collision-regression-test.patch (ABSENT), mcuboot/0004-scramble-scratch-trailer-and-backward-scramble-off-by-one.patch (ABSENT), mcuboot/0005-sim-scratch-trailer-no-erase-device-regression-test.patch (DRIFTED), zephyr/0001-clock_control_alif-master-source-expmst-i2s-setrate.patch (ABSENT), zephyr/0002-ipm-add-poll-out-poll-in.patch (ABSENT), zephyr/0003-kconfig-serialize-missing-deps.patch (ABSENT), zephyr/0004-imx335-2lane-link-freq-and-binning.patch (ABSENT), hal_alif/0001-se-service-add-boot-cpu.patch (UNRESOLVED), hal_alif/0002-se-service-add-public-send-request.patch (UNRESOLVED), hal_alif/0003-isp-add-sbggr10p-bggr10-input-mapping.patch (UNRESOLVED), hal_alif/0004-isp-fix-wbm-v10-config-prefix.patch (UNRESOLVED), hal_alif/0005-isp-port-ae-writeback-to-v4.4-video-ctrl.patch (UNRESOLVED), hal_alif/0006-isp-ov5647-ae-sensor-defaults.patch (UNRESOLVED), hal_alif/0007-isp-setcalib-load-once.patch (UNRESOLVED), hal_alif/0008-isp-ov5647-awb-ccm-calibration.patch (UNRESOLVED), hal_alif/0009-isp-setcalib-before-3a-callbacks.patch (UNRESOLVED), hal_alif/0010-isp-clamp-ae-writeback-to-ctrl-range.patch (UNRESOLVED), hal_alif/0011-isp-ov5647-ae-calib-envelope.patch (UNRESOLVED), hal_alif/0012-isp-srggb10p-input.patch (UNRESOLVED), hal_alif/0013-isp-imx296-ae-envelope.patch (UNRESOLVED), hal_alif/0014-isp-imx335-ae-envelope.patch (UNRESOLVED), hal_alif/0015-se-service-toc-entry-id-memcpy.patch (UNRESOLVED) in module(s) mcuboot, zephyr, alif. The build still succeeds, but features that need them fail at runtime (for example `alp_camera_open` returns ALP_ERR_NOSUPPORT). Fix: run `tan bootstrap` (or, from /home/dev/VSCodeProjects/zephyrproject: west patch --dst-module mcuboot apply; west patch --dst-module zephyr apply; west patch --dst-module alif apply).",
+        "detail": "alp-sdk's zephyr/patches.yml is not applied in /home/dev/zephyrproject: mcuboot/0001-flash_map_extended-alif-mram-base.patch (ABSENT). Fix: run `tan bootstrap`.",
         "fix": "tan bootstrap"
       },
       {
         "name": "zephyrBase",
         "status": "pass",
         "scope": "project",
-        "detail": "$ZEPHYR_BASE=/home/dev/zephyrproject/zephyr is ignored: tan always builds with the resolved west workspace's zephyr (/home/dev/VSCodeProjects/zephyrproject/zephyr). To build against another tree, run tan from that workspace or bootstrap it."
+        "detail": "$ZEPHYR_BASE=/home/dev/zephyrproject/zephyr is ignored: tan always builds with the resolved west workspace's zephyr (/home/dev/zephyrproject/zephyr). To build against another tree, run tan from that workspace or bootstrap it."
       },
       {
         "name": "zephyrSdkAvailableForHost",
@@ -90,14 +90,14 @@
         "name": "hostPython",
         "status": "fail",
         "scope": "host",
-        "detail": "Python 3.9 (`python3`) is below the effective floor 3.12, which comes from /home/dev/VSCodeProjects/zephyrproject/zephyr/cmake/modules/python.cmake. The build does not fail here -- it fails later, inside Zephyr's own CMake configure, with an error that names Zephyr rather than your Python.",
+        "detail": "Python 3.9 (`python3`) is below the effective floor 3.12, which comes from /home/dev/zephyrproject/zephyr/cmake/modules/python.cmake. The build does not fail here -- it fails later, inside Zephyr's own CMake configure, with an error that names Zephyr rather than your Python.",
         "fix": "Install Python 3.12+ and put it ahead of 3.9 on PATH, then re-run `tan bootstrap` so the workspace venv is built with it."
       },
       {
         "name": "pythonFloor",
         "status": "warn",
         "scope": "project",
-        "detail": "alp-sdk's metadata/bootstrap.json declares pythonMinVersion 3.10, but the build's effective floor is 3.12 (from /home/dev/VSCodeProjects/zephyrproject/zephyr/cmake/modules/python.cmake). Both `tan doctor` and `tan bootstrap` enforce the higher, effective floor, so a host this manifest would have accepted is refused up front rather than failing later at Zephyr's CMake configure.",
+        "detail": "alp-sdk's metadata/bootstrap.json declares pythonMinVersion 3.10, but the build's effective floor is 3.12 (from /home/dev/zephyrproject/zephyr/cmake/modules/python.cmake). Both `tan doctor` and `tan bootstrap` enforce the higher, effective floor, so a host this manifest would have accepted is refused up front rather than failing later at Zephyr's CMake configure.",
         "fix": "Known, Zephyr-scoped skew (alp-sdk#1078) -- raising `prerequisites.pythonMinVersion` to 3.12 was tried and reverted, because that key also gates Yocto-only and metadata-only projects, which do not need it. Building for Zephyr on a host below 3.12 needs a newer interpreter -- see the `hostPython` check above."
       },
       {
@@ -111,7 +111,7 @@
         "name": "west",
         "status": "pass",
         "scope": "host",
-        "detail": "`west` is not on bare PATH, but resolves through the workspace venv: /home/dev/VSCodeProjects/zephyrproject/.venv/bin/west -- the same binary `westResolved` above reports, and the one a real build actually spawns. This is the default state right after `tan bootstrap`, which deliberately does not put `west` on PATH; activating the venv (its `bin`/`Scripts` directory holds the `west` launcher) would additionally put it on bare PATH, for tools that spawn it directly rather than through tan."
+        "detail": "`west` is not on bare PATH, but resolves through the workspace venv: /home/dev/zephyrproject/.venv/bin/west -- the same binary `westResolved` above reports, and the one a real build actually spawns. This is the default state right after `tan bootstrap`, which deliberately does not put `west` on PATH; activating the venv (its `bin`/`Scripts` directory holds the `west` launcher) would additionally put it on bare PATH, for tools that spawn it directly rather than through tan."
       },
       {
         "name": "zephyrSdk",
@@ -188,17 +188,17 @@
     {
       "code": "doctor.workspace-patches",
       "severity": "warning",
-      "message": "alp-sdk's zephyr/patches.yml is not applied in /home/dev/VSCodeProjects/zephyrproject: mcuboot/0001-flash_map_extended-alif-mram-base.patch (ABSENT), mcuboot/0002-bootutil_misc-reject-erased-swap_size-trailer.patch (ABSENT), mcuboot/0003-sim-swap-size-erased-collision-regression-test.patch (ABSENT), mcuboot/0004-scramble-scratch-trailer-and-backward-scramble-off-by-one.patch (ABSENT), mcuboot/0005-sim-scratch-trailer-no-erase-device-regression-test.patch (DRIFTED), zephyr/0001-clock_control_alif-master-source-expmst-i2s-setrate.patch (ABSENT), zephyr/0002-ipm-add-poll-out-poll-in.patch (ABSENT), zephyr/0003-kconfig-serialize-missing-deps.patch (ABSENT), zephyr/0004-imx335-2lane-link-freq-and-binning.patch (ABSENT), hal_alif/0001-se-service-add-boot-cpu.patch (UNRESOLVED), hal_alif/0002-se-service-add-public-send-request.patch (UNRESOLVED), hal_alif/0003-isp-add-sbggr10p-bggr10-input-mapping.patch (UNRESOLVED), hal_alif/0004-isp-fix-wbm-v10-config-prefix.patch (UNRESOLVED), hal_alif/0005-isp-port-ae-writeback-to-v4.4-video-ctrl.patch (UNRESOLVED), hal_alif/0006-isp-ov5647-ae-sensor-defaults.patch (UNRESOLVED), hal_alif/0007-isp-setcalib-load-once.patch (UNRESOLVED), hal_alif/0008-isp-ov5647-awb-ccm-calibration.patch (UNRESOLVED), hal_alif/0009-isp-setcalib-before-3a-callbacks.patch (UNRESOLVED), hal_alif/0010-isp-clamp-ae-writeback-to-ctrl-range.patch (UNRESOLVED), hal_alif/0011-isp-ov5647-ae-calib-envelope.patch (UNRESOLVED), hal_alif/0012-isp-srggb10p-input.patch (UNRESOLVED), hal_alif/0013-isp-imx296-ae-envelope.patch (UNRESOLVED), hal_alif/0014-isp-imx335-ae-envelope.patch (UNRESOLVED), hal_alif/0015-se-service-toc-entry-id-memcpy.patch (UNRESOLVED) in module(s) mcuboot, zephyr, alif. The build still succeeds, but features that need them fail at runtime (for example `alp_camera_open` returns ALP_ERR_NOSUPPORT). Fix: run `tan bootstrap` (or, from /home/dev/VSCodeProjects/zephyrproject: west patch --dst-module mcuboot apply; west patch --dst-module zephyr apply; west patch --dst-module alif apply)."
+      "message": "alp-sdk's zephyr/patches.yml is not applied in /home/dev/zephyrproject: mcuboot/0001-flash_map_extended-alif-mram-base.patch (ABSENT). Fix: run `tan bootstrap`."
     },
     {
       "code": "bootstrap.python-too-old",
       "severity": "error",
-      "message": "Python 3.9 (`python3`) is below the effective floor 3.12, which comes from /home/dev/VSCodeProjects/zephyrproject/zephyr/cmake/modules/python.cmake. The build does not fail here -- it fails later, inside Zephyr's own CMake configure, with an error that names Zephyr rather than your Python."
+      "message": "Python 3.9 (`python3`) is below the effective floor 3.12, which comes from /home/dev/zephyrproject/zephyr/cmake/modules/python.cmake. The build does not fail here -- it fails later, inside Zephyr's own CMake configure, with an error that names Zephyr rather than your Python."
     },
     {
       "code": "doctor.python-floor",
       "severity": "warning",
-      "message": "alp-sdk's metadata/bootstrap.json declares pythonMinVersion 3.10, but the build's effective floor is 3.12 (from /home/dev/VSCodeProjects/zephyrproject/zephyr/cmake/modules/python.cmake). Both `tan doctor` and `tan bootstrap` enforce the higher, effective floor, so a host this manifest would have accepted is refused up front rather than failing later at Zephyr's CMake configure."
+      "message": "alp-sdk's metadata/bootstrap.json declares pythonMinVersion 3.10, but the build's effective floor is 3.12 (from /home/dev/zephyrproject/zephyr/cmake/modules/python.cmake). Both `tan doctor` and `tan bootstrap` enforce the higher, effective floor, so a host this manifest would have accepted is refused up front rather than failing later at Zephyr's CMake configure."
     },
     {
       "code": "bootstrap.prerequisites-missing",
