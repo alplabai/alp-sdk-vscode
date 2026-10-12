@@ -127,9 +127,12 @@
 // A misspelled flag is loud: click exits 2 with `No such option`, and the
 // caller gets no envelope at all. You find it the first time you run it.
 //
-// An INERT flag is silent. Twelve of `tan build`'s twenty-two options carry the
-// identical help string "Accepted by other commands; not implemented for
-// `build` yet (tan-cli#427)". `tan build --plan` PARSES — the Build Plan panel
+// An INERT flag is silent. Through tan 0.6.0, twelve of `tan build`'s
+// twenty-two options carried the identical help string "Accepted by other
+// commands; not implemented for `build` yet (tan-cli#427)"; at 0.7.0-rc1 four
+// of its nineteen option spellings are still inert, now marked "Retired --"
+// (`--plan`, `--manifest`, `--manifest-from`, `--no-auto-bootstrap`).
+// `tan build --plan` PARSES — the Build Plan panel
 // sent exactly that and then rejected the result three layers from the cause
 // (#541). `tan doctor --build` is the same shape under a different upstream
 // number: "Accepted for compatibility (tan-cli#290)" — so the Dependencies
@@ -434,10 +437,12 @@ test("every flag this extension sends is accepted by the command it is sent to",
 // ---------------------------------------------------------------------------
 
 // Checked per COMMAND, never against the global list, and that ordering is
-// load-bearing. `--verbose`, `--quiet`, `--no-color`, `--non-interactive` and
-// `--ci` are all global options AND all inert on `build`. A check that let
-// global membership pass first would clear every one of them and report
-// nothing, on a command where twelve options do nothing.
+// load-bearing. Through 0.6.0, `--verbose`, `--quiet`, `--no-color`,
+// `--non-interactive` and `--ci` were all global options AND all inert on
+// `build`; at 0.7.0-rc1 they are inert on other commands (`diff`, `inspect`,
+// `trace`, ...) and `build` itself has four retired inert flags. A check that
+// let global membership pass first would still clear every one of them and
+// report nothing.
 /**
  * What to print as the REASON a flag is dead.
  *
