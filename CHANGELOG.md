@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **The flash consent gate reads tan 0.7's new flash options with the
+  right arity (#701).** `--probe-serial`, `--probe-usb-path`, `--watch`,
+  `--raw`, `--wait` and `--jlink` now swallow their value, so
+  `tan flash --probe-serial 000801234567 --confirm` no longer reads the
+  serial as the APP_PATH and looks for a manifest beside it. This matters
+  when `alpSdk.cliPath` points at a tan newer than the 0.6.0 pin. They are
+  held apart from the pinned table, and the surface gate reds the re-pin
+  that vendors them until they are folded in.
+
 - **The Build Plan panel is one page again, drawn in VS Code's own
   language.** The summary strip, the "needs attention" list and the
   Slices / Memory / Notes tabs are gone. The page reads top to bottom:

@@ -38,6 +38,7 @@ const {
   isFlashArgv,
   readFlashArgv,
   FLASH_VALUE_TAKING_FLAGS,
+  FLASH_VALUE_TAKING_FLAGS_AHEAD_OF_PIN,
   ROOT_VALUE_TAKING_FLAGS,
 } = require("../packages/alp-core/dist/flash/argv.js");
 
@@ -414,6 +415,42 @@ test("the APP_PATH positional is read, because it moves the manifest", () => {
   assert.equal(argv.coreId, null);
 });
 
+test("tan 0.7's value-taking flash flags swallow their value (#701)", () => {
+  // `000801234567` is a J-Link serial, not a project directory. Read as
+  // APP_PATH it would send the manifest lookup somewhere that does not exist.
+  for (const [flag, value] of [
+    ["--probe-serial", "000801234567"],
+    ["--probe-usb-path", "3-4.2"],
+    ["--watch", "0x20000000:4@100"],
+    ["--raw", "image.bin@0x80000000"],
+    ["--wait", "5"],
+    ["--jlink", "/opt/SEGGER/JLinkExe"],
+  ]) {
+    const argv = readFlashArgv(["flash", flag, value, "--confirm"]);
+    assert.equal(argv.appPath, null, `${flag} left ${value} as APP_PATH`);
+    assert.equal(argv.isArmed, true, `${flag} swallowed --confirm`);
+  }
+});
+
+test("tan 0.7's flash switches leave the APP_PATH after them alone (#701)", () => {
+  // `--ram-console` reads like it takes a value and does not: it is a switch
+  // that only matters with `--ram`. Treating it as value-taking would swallow
+  // the real APP_PATH.
+  for (const flag of [
+    "--ram",
+    "--ram-console",
+    "--readback",
+    "--no-reset",
+    "--no-device-config",
+    "--assume-he",
+    "--atoc-unqueryable",
+    "--replace-atoc",
+  ]) {
+    const argv = readFlashArgv(["flash", flag, "examples/blinky"]);
+    assert.equal(argv.appPath, "examples/blinky", `${flag} ate APP_PATH`);
+  }
+});
+
 test("--flag=value, --build-root, --dry-run, --recover and --confirm all read", () => {
   const argv = readFlashArgv([
     "flash",
@@ -479,8 +516,13 @@ test("FLASH_VALUE_TAKING_FLAGS is exactly `tan flash`'s metavar'd options", () =
     .map(([name]) => name)
     .sort();
 
+  // The flags known AHEAD of the pin (#701) are set aside here and held to
+  // their own rule below; everything else must be exactly the pinned surface.
+  const pinned = [...FLASH_VALUE_TAKING_FLAGS]
+    .filter((name) => !FLASH_VALUE_TAKING_FLAGS_AHEAD_OF_PIN.has(name))
+    .sort();
   assert.deepEqual(
-    sortedSet(FLASH_VALUE_TAKING_FLAGS),
+    pinned,
     withValue,
     `packages/alp-core/src/flash/argv.ts's FLASH_VALUE_TAKING_FLAGS no longer ` +
       `matches \`tan flash\` at the ${SURFACE.version} pin. A flag this set ` +
@@ -503,6 +545,24 @@ test("FLASH_VALUE_TAKING_FLAGS is exactly `tan flash`'s metavar'd options", () =
   }
   assert.equal(withValue.length, 8);
   assert.equal(booleans.length, 5);
+});
+
+test("FLASH_VALUE_TAKING_FLAGS_AHEAD_OF_PIN names nothing the pin already has", () => {
+  // These are tan 0.7 options carried before the pin reaches 0.7. The re-pin
+  // that vendors them must move them into the pinned list and empty this set;
+  // left behind, they would let the pinned list drift without the test above
+  // noticing, because it subtracts this set before comparing.
+  const known = Object.keys(SURFACE.commands.flash.options);
+  for (const name of FLASH_VALUE_TAKING_FLAGS_AHEAD_OF_PIN) {
+    assert.equal(
+      known.includes(name),
+      false,
+      `${name} is in \`tan flash\` at the ${SURFACE.version} pin now. Move it ` +
+        "from FLASH_VALUE_TAKING_FLAGS_AHEAD_OF_PIN into the pinned list in " +
+        "packages/alp-core/src/flash/argv.ts.",
+    );
+    assert.ok(FLASH_VALUE_TAKING_FLAGS.has(name));
+  }
 });
 
 test("ROOT_VALUE_TAKING_FLAGS is exactly the metavar'd global options", () => {
