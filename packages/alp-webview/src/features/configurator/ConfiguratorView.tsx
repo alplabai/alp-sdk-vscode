@@ -21,7 +21,10 @@ import { consoleRecommendation } from "./consoleRecommendation";
 import {
   applyToolchainOverride,
   TOOLCHAIN_HINT,
-  TOOLCHAIN_LIST_ID,
+  TOOLCHAIN_INVALID_WARNING,
+  TOOLCHAIN_REJECTED_WARNING,
+  TOOLCHAIN_UNSUPPORTED_HINT,
+  toolchainListId,
   toolchainPlaceholder,
 } from "./toolchainOverride";
 import { coreSiliconClass, runtimeOptions } from "../../shared/coreRuntime";
@@ -115,6 +118,8 @@ export function TextInput({
   onChange,
   label,
   list,
+  disabled,
+  normalize,
 }: {
   value: string;
   placeholder?: string;
@@ -122,6 +127,11 @@ export function TextInput({
   label: string;
   /** A `<datalist>` id: suggestions without restricting what can be typed. */
   list?: string;
+  disabled?: boolean;
+  /** What the committed value looks like once `onChange`'s consumer has
+   *  cleaned it (e.g. trimmed). On blur the box shows that, so it never keeps
+   *  text the document does not hold. */
+  normalize?: (v: string) => string;
 }) {
   const [draft, setDraft] = useState(value);
   const focused = useRef(false);
@@ -136,11 +146,13 @@ export function TextInput({
       placeholder={placeholder}
       aria-label={label}
       list={list}
+      disabled={disabled}
       onFocus={() => {
         focused.current = true;
       }}
       onBlur={() => {
         focused.current = false;
+        if (normalize) setDraft(normalize(draft));
       }}
       onChange={(e) => {
         setDraft(e.target.value);
@@ -618,6 +630,15 @@ function applyCoreLibrarySelection(
   return next;
 }
 
+/** One suggestion list per distinct content: cores of the same runtime class
+ *  share a `<datalist>`, a Zephyr core never sees a Linux toolchain. */
+function distinctToolchainLists(cores: CorePanel[]): string[][] {
+  const byId = new Map<string, string[]>();
+  for (const c of cores)
+    byId.set(toolchainListId(c.toolchainSuggestions), c.toolchainSuggestions);
+  return [...byId.values()];
+}
+
 function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
   const { mutate, vm } = cfg;
   const ensure = (d: BoardConfig) => {
@@ -625,6 +646,9 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
     d.cores[core.id] = d.cores[core.id] || {};
     return d.cores[core.id];
   };
+  // A key already in the file stays editable (so it can be cleared) even when
+  // the schema rejects it.
+  const hasKey = core.toolchain !== undefined || core.toolchainInvalid;
 
   if (core.inheritedFromTopology) {
     return (
@@ -747,18 +771,36 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
               />
             </Field>
           </Row>
-          <Field label="Toolchain" hint={TOOLCHAIN_HINT}>
+          <Field
+            label="Toolchain"
+            hint={
+              vm?.toolchainSupported === false && !hasKey
+                ? TOOLCHAIN_UNSUPPORTED_HINT
+                : TOOLCHAIN_HINT
+            }
+          >
             <TextInput
               label={`Toolchain for ${core.id}`}
               value={core.toolchain || ""}
-              placeholder={toolchainPlaceholder(core.defaultToolchain)}
-              list={TOOLCHAIN_LIST_ID}
+              placeholder={toolchainPlaceholder(
+                core.defaultToolchain,
+                core.inTopology,
+              )}
+              list={toolchainListId(core.toolchainSuggestions)}
+              disabled={vm?.toolchainSupported === false && !hasKey}
+              normalize={(v) => v.trim()}
               onChange={(v) =>
                 mutate((d) => applyToolchainOverride(ensure(d), v), {
                   debounce: true,
                 })
               }
             />
+            {core.toolchainInvalid ? (
+              <div className={styles.warn}>{TOOLCHAIN_INVALID_WARNING}</div>
+            ) : null}
+            {vm?.toolchainSupported === false && hasKey ? (
+              <div className={styles.warn}>{TOOLCHAIN_REJECTED_WARNING}</div>
+            ) : null}
           </Field>
           <Field label="Connectivity (IoT)">
             <div className={styles.chips}>
@@ -842,11 +884,13 @@ function CoresSection({ cfg }: { cfg: UseConfigurator }) {
       {vm.cores.map((core) => (
         <CoreCard key={core.id} core={core} cfg={cfg} />
       ))}
-      <datalist id={TOOLCHAIN_LIST_ID}>
-        {vm.toolchains.map((id) => (
-          <option key={id} value={id} />
-        ))}
-      </datalist>
+      {distinctToolchainLists(vm.cores).map((ids) => (
+        <datalist key={toolchainListId(ids)} id={toolchainListId(ids)}>
+          {ids.map((id) => (
+            <option key={id} value={id} />
+          ))}
+        </datalist>
+      ))}
     </div>
   );
 }

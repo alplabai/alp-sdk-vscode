@@ -4,10 +4,13 @@
 
 - **Pick a core's toolchain in the Board Configurator (#314).** Each core
   has an optional Toolchain field that writes `cores.<core>.toolchain` to
-  board.yaml, suggests the ids the SDK catalogue knows and shows the SoM
-  default as its placeholder; leaving it empty removes the key and keeps
-  that default. The toolchain the build plan resolves is shown on the
-  core's line in the Build Plan.
+  board.yaml, suggests the ids the SDK catalogue gives cores of the same
+  runtime (a Zephyr core is never offered a Linux toolchain) and shows the
+  SoM default as its placeholder; leaving it empty removes the key and keeps
+  that default. The field is disabled with a "needs alp-sdk >= 0.17.0" hint
+  when the project's SDK schema does not accept the key, and an empty or
+  non-string value already in the file is flagged. The toolchain the build
+  plan resolves is shown on the core's line in the Build Plan.
 
 - **A board.yaml value of `<<` or `=` no longer breaks the whole file.**
   PyYAML reads both bare as tags it cannot construct, so the SDK's

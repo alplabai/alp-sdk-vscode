@@ -51,8 +51,7 @@ import sys, json, yaml
 docs = json.load(sys.stdin)
 print(json.dumps([yaml.safe_load(d)["cores"]["m55_hp"]["toolchain"] for d in docs]))
 `;
-const pyAvailable =
-  spawnSync("python3", ["-c", "import yaml"]).status === 0;
+const pyAvailable = spawnSync("python3", ["-c", "import yaml"]).status === 0;
 
 test(
   "PyYAML safe_load reads << and = and every safe value back as the same string",

@@ -102,8 +102,8 @@ test("the view model carries the override, the SoM default and catalogue suggest
         capabilities: {},
         topologyCoreIds: ["a32_cluster", "m55_hp"],
         topology: [
-          { id: "a32_cluster", toolchain: "poky-glibc" },
-          { id: "m55_hp", toolchain: "arm-zephyr-eabi" },
+          { id: "a32_cluster", machine: "m", toolchain: "poky-glibc" },
+          { id: "m55_hp", board: "b", toolchain: "arm-zephyr-eabi" },
         ],
         onModule: [],
         preliminary: false,
@@ -116,8 +116,8 @@ test("the view model carries the override, the SoM default and catalogue suggest
         capabilities: {},
         topologyCoreIds: ["m33"],
         topology: [
-          { id: "m33", toolchain: "arm-zephyr-eabi" },
-          { id: "a53", toolchain: "aarch64-other" },
+          { id: "m33", board: "b", toolchain: "arm-zephyr-eabi" },
+          { id: "a53", image: "i", toolchain: "aarch64-other" },
         ],
         onModule: [],
         preliminary: false,
@@ -140,18 +140,101 @@ test("the view model carries the override, the SoM default and catalogue suggest
   assert.equal(byId.m55_hp.defaultToolchain, "arm-zephyr-eabi");
   assert.equal(byId.a32_cluster.toolchain, undefined);
   assert.equal(byId.a32_cluster.defaultToolchain, "poky-glibc");
-  // Suggestions come from the catalogue only, deduplicated: the selected
-  // SoM's own ids first (sorted), then every other SoM's (sorted) — so
-  // `aarch64-other` comes last although it sorts first.
-  assert.deepEqual(vm.toolchains, [
-    "arm-zephyr-eabi",
+  // Suggestions are per core: the SoM's own default first, then the ids other
+  // SoMs give a core of the SAME runtime class (Zephyr vs Linux) — never the
+  // other class's, which would break the build.
+  assert.deepEqual(byId.m55_hp.toolchainSuggestions, ["arm-zephyr-eabi"]);
+  assert.deepEqual(byId.a32_cluster.toolchainSuggestions, [
     "poky-glibc",
     "aarch64-other",
   ]);
+  assert.equal(byId.m55_hp.inTopology, true);
+  assert.equal(vm.toolchainSupported, true);
 });
 
-test("the placeholder names the SoM default, or says there is one", async () => {
+test("a core the SoM does not have gets no default and a plain flag", () => {
+  const catalogue = {
+    soms: [
+      {
+        sku: "E1M-AEN801",
+        displayName: "AEN801",
+        family: "x",
+        silicon: "x",
+        capabilities: {},
+        topologyCoreIds: ["m55_hp"],
+        topology: [{ id: "m55_hp", board: "b", toolchain: "arm-zephyr-eabi" }],
+        onModule: [],
+        preliminary: false,
+      },
+    ],
+    boards: [],
+    chips: [],
+    libraries: [],
+    socs: [],
+  };
+  const vm = buildConfiguratorViewModel(
+    {
+      som: { sku: "E1M-AEN801" },
+      cores: { m33_sm: { os: "zephyr", toolchain: "x" } },
+    },
+    catalogue,
+  );
+  const gone = vm.cores.find((c) => c.id === "m33_sm");
+  assert.equal(gone.inTopology, false);
+  assert.equal(gone.defaultToolchain, undefined);
+  assert.deepEqual(gone.toolchainSuggestions, ["arm-zephyr-eabi"]);
+});
+
+test("a present-but-empty or non-string toolchain is flagged, not shown as the default", () => {
+  const catalogue = {
+    soms: [],
+    boards: [],
+    chips: [],
+    libraries: [],
+    socs: [],
+  };
+  for (const bad of ["", null, 3, ["a"]]) {
+    const vm = buildConfiguratorViewModel(
+      { som: { sku: "S" }, cores: { m55_hp: { toolchain: bad } } },
+      catalogue,
+    );
+    const core = vm.cores[0];
+    assert.equal(core.toolchainInvalid, true, JSON.stringify(bad));
+    assert.equal(core.toolchain, undefined);
+  }
+  const ok = buildConfiguratorViewModel(
+    { som: { sku: "S" }, cores: { m55_hp: { toolchain: "llvm" } } },
+    catalogue,
+  );
+  assert.equal(ok.cores[0].toolchainInvalid, false);
+});
+
+test("the field is gated on the schema declaring core_entry.toolchain", () => {
+  const {
+    schemaDeclaresCoreToolchain,
+  } = require("../packages/alp-core/dist/validation/schemaProvenance.js");
+  const vendored = JSON.parse(
+    fs.readFileSync(path.join(ROOT, "schemas", "board.schema.json"), "utf-8"),
+  );
+  assert.equal(schemaDeclaresCoreToolchain(vendored), true);
+  const old = JSON.parse(JSON.stringify(vendored));
+  delete old.$defs.core_entry.properties.toolchain;
+  assert.equal(schemaDeclaresCoreToolchain(old), false);
+  assert.equal(schemaDeclaresCoreToolchain({}), false);
+
+  const empty = { soms: [], boards: [], chips: [], libraries: [], socs: [] };
+  const vm = buildConfiguratorViewModel({ som: { sku: "S" } }, empty, {
+    toolchainSupported: false,
+  });
+  assert.equal(vm.toolchainSupported, false);
+});
+
+test("the placeholder names the SoM default, or says there is none", async () => {
   const { toolchainPlaceholder } = await load();
+  assert.equal(
+    toolchainPlaceholder(undefined, false),
+    "not a core of this SoM; no default",
+  );
   assert.equal(
     toolchainPlaceholder("arm-zephyr-eabi"),
     "arm-zephyr-eabi (SoM default)",

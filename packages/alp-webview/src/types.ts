@@ -314,7 +314,10 @@ export interface CorePanel {
   iot: { wifi: boolean; mqtt: boolean; ble: boolean; tls: boolean };
   inferenceArenaKib?: number;
   hwConsole?: boolean;
+  inTopology: boolean;
   toolchain?: string;
+  toolchainInvalid: boolean;
+  toolchainSuggestions: string[];
   defaultToolchain?: string;
 }
 export interface ChipChoice {
@@ -349,7 +352,7 @@ export interface ConfiguratorViewModel {
   carriers: { selected?: string; options: BoardPreset[] };
   cores: CorePanel[];
   libraries: string[];
-  toolchains: string[];
+  toolchainSupported: boolean;
   chips: ChipChoice[];
   projectChips: string[];
   validation: ValidationResult;

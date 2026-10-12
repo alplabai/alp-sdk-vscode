@@ -127,6 +127,14 @@ export interface SchemaProvenance {
    * both served and newer than this extension's model.
    */
   readonly unknownBoardKeys: readonly string[];
+  /**
+   * Whether the board schema the editor validates against declares
+   * `$defs.core_entry.properties.toolchain` (alp-sdk#964, first in v0.17.0-rc1).
+   * Older SDKs make `core_entry` `additionalProperties: false`, so writing the
+   * key fails their validation. Falls back to the bundled schema (which
+   * declares it) whenever the SDK's copy is not served.
+   */
+  readonly boardDeclaresCoreToolchain: boolean;
 }
 
 /** Input to {@link buildSchemaProvenance}. */
@@ -265,6 +273,8 @@ export function buildSchemaProvenance(
     vendoredTag: VENDORED_SDK_TAG,
     comparisons,
     unknownBoardKeys: unknownBoardKeysIn(board?.served ?? null),
+    boardDeclaresCoreToolchain:
+      board?.served == null || schemaDeclaresCoreToolchain(board.served),
   };
 }
 
@@ -393,4 +403,15 @@ export function describeSchemaProvenance(
       `\`tan\` agree on what is valid.` +
       configuratorLoss(p),
   };
+}
+
+/** Does this board schema accept `cores.<id>.toolchain`? */
+export function schemaDeclaresCoreToolchain(
+  schema: Readonly<Record<string, unknown>>,
+): boolean {
+  const defs = schema["$defs"] as Record<string, any> | undefined;
+  const props = defs?.core_entry?.properties as
+    | Record<string, unknown>
+    | undefined;
+  return props != null && typeof props === "object" && "toolchain" in props;
 }

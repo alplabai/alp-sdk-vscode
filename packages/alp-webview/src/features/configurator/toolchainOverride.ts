@@ -22,9 +22,25 @@ export function applyToolchainOverride(core: CoreEntry, text: string): void {
 }
 
 /** Placeholder naming what an empty field means for this core. */
-export function toolchainPlaceholder(defaultToolchain?: string): string {
+export function toolchainPlaceholder(
+  defaultToolchain?: string,
+  inTopology = true,
+): string {
+  if (!inTopology) return "not a core of this SoM; no default";
   return defaultToolchain ? `${defaultToolchain} (SoM default)` : "SoM default";
 }
+
+/** Shown instead of the hint when the project's SDK predates the key. */
+export const TOOLCHAIN_UNSUPPORTED_HINT =
+  "Needs alp-sdk >= 0.17.0: this SDK's board schema does not accept cores.<id>.toolchain.";
+
+/** Shown when the file already carries the key and the schema rejects it. */
+export const TOOLCHAIN_REJECTED_WARNING =
+  "board.yaml sets cores.<id>.toolchain, which this SDK's board schema rejects (needs alp-sdk >= 0.17.0). Clear the field or update the SDK.";
+
+/** Shown when the key is present but empty or not a string. */
+export const TOOLCHAIN_INVALID_WARNING =
+  "board.yaml has an empty or non-string toolchain for this core, which is not the SoM default. Type a toolchain id, or clear the field to remove the key.";
 
 /** The hint under the field: where the effective value shows up. No timing
  *  is promised — the Build Plan can show a live projection as well as the
@@ -33,5 +49,12 @@ export const TOOLCHAIN_HINT =
   "Optional. Leave empty to keep the SoM default. The toolchain the build " +
   "plan resolves is shown on this core's line in the Build Plan.";
 
-/** One `<datalist>` for the whole Cores section; every field points at it. */
-export const TOOLCHAIN_LIST_ID = "alp-configurator-toolchains";
+/** `<datalist>` id for one suggestion list: cores offering the same list share
+ *  one datalist. Characters outside [A-Za-z0-9_-] are replaced, and a hash of
+ *  the exact list keeps two lists that sanitise alike apart. */
+export function toolchainListId(suggestions: readonly string[]): string {
+  const key = suggestions.join("\n");
+  let h = 5381;
+  for (let i = 0; i < key.length; i++) h = ((h * 33) ^ key.charCodeAt(i)) >>> 0;
+  return `alp-configurator-toolchains-${h.toString(36)}`;
+}

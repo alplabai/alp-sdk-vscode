@@ -1814,8 +1814,11 @@ async function main() {
       libraries: [],
       iot: { wifi: false, mqtt: false, ble: false, tls: false },
       defaultToolchain: "arm-zephyr-eabi",
+      inTopology: true,
+      toolchainInvalid: false,
+      toolchainSuggestions: ["arm-zephyr-eabi", "llvm"],
     });
-    const viewModel = (heInherited: boolean) => ({
+    const viewModel = (heInherited: boolean, supported = true) => ({
       sdkConnected: true,
       som: { selected: "E1M-AEN801", options: [] },
       hardware: null,
@@ -1827,15 +1830,21 @@ async function main() {
         corePanel("m55_he", heInherited),
       ],
       libraries: [],
-      toolchains: ["arm-zephyr-eabi", "llvm"],
+      toolchainSupported: supported,
       chips: [],
       projectChips: [],
       validation: { errors: [], warnings: [] },
     });
-    const render = (heInherited: boolean, board?: unknown) =>
+    const render = (
+      heInherited: boolean,
+      board?: unknown,
+      vmOverride?: (vm: ReturnType<typeof viewModel>) => unknown,
+    ) =>
       g.__ALP_POST_TO_WEBVIEW__({
         type: "configuratorRender",
-        viewModel: viewModel(heInherited),
+        viewModel: vmOverride
+          ? vmOverride(viewModel(heInherited))
+          : viewModel(heInherited),
         board: board ?? {
           som: { sku: "E1M-AEN801" },
           cores: { m55_hp: { app: "./src" } },
@@ -1894,14 +1903,14 @@ async function main() {
       ).map((o) => (o as HTMLOptionElement).value);
       if (lists.length !== 1) {
         problems.push(
-          `configurator-toolchain: expected one shared datalist, got ${lists.length}`,
+          `configurator-toolchain: expected one datalist for identical lists, got ${lists.length}`,
         );
       }
       if (
         JSON.stringify(options) !== JSON.stringify(["arm-zephyr-eabi", "llvm"])
       ) {
         problems.push(
-          `configurator-toolchain: suggestions ${JSON.stringify(options)} are not vm.toolchains`,
+          `configurator-toolchain: suggestions ${JSON.stringify(options)} are not the core's toolchainSuggestions`,
         );
       }
       const set = await typeInto(hp, "llvm");
@@ -1919,7 +1928,78 @@ async function main() {
           `configurator-toolchain: blanking did not remove the key: ${JSON.stringify(cleared)}`,
         );
       }
+      // Blur resyncs the box to what was committed (trimmed / empty).
+      await typeInto(hp, "  llvm ");
+      if (hp.value !== "llvm") {
+        problems.push(
+          `configurator-toolchain: box kept "${hp.value}" after blur, not the committed "llvm"`,
+        );
+      }
+      await typeInto(hp, "   ");
+      if (hp.value !== "") {
+        problems.push(
+          `configurator-toolchain: whitespace-only box kept "${hp.value}" after blur`,
+        );
+      }
+      await typeInto(hp, "");
     }
+
+    // SDK without the key: field disabled with the hint; a key already in the
+    // file stays editable and is flagged; an invalid key is flagged.
+    render(true, undefined, (vm) => ({ ...vm, toolchainSupported: false }));
+    await settle();
+    if (!field("m55_hp")?.disabled) {
+      problems.push(
+        "configurator-toolchain: field is enabled although the schema lacks the key",
+      );
+    }
+    if (!container.textContent?.includes("alp-sdk >= 0.17.0")) {
+      problems.push(
+        "configurator-toolchain: no 'needs alp-sdk >= 0.17.0' hint",
+      );
+    }
+    render(
+      true,
+      { som: { sku: "E1M-AEN801" }, cores: { m55_hp: { toolchain: "llvm" } } },
+      (vm) => ({
+        ...vm,
+        toolchainSupported: false,
+        cores: [{ ...vm.cores[0], toolchain: "llvm" }, vm.cores[1]],
+      }),
+    );
+    await settle();
+    if (
+      field("m55_hp")?.disabled ||
+      !container.textContent?.includes("rejects")
+    ) {
+      problems.push(
+        "configurator-toolchain: an existing key on a rejecting schema is not surfaced/editable",
+      );
+    }
+    render(true, undefined, (vm) => ({
+      ...vm,
+      cores: [{ ...vm.cores[0], toolchainInvalid: true }, vm.cores[1]],
+    }));
+    await settle();
+    if (!container.textContent?.includes("empty or non-string")) {
+      problems.push("configurator-toolchain: invalid key shows no warning");
+    }
+    // Two different suggestion lists get two datalists.
+    render(true, undefined, (vm) => ({
+      ...vm,
+      cores: [
+        vm.cores[0],
+        { ...vm.cores[1], toolchainSuggestions: ["poky-glibc"] },
+      ],
+    }));
+    await settle();
+    if (container.querySelectorAll("datalist").length !== 2) {
+      problems.push(
+        "configurator-toolchain: distinct suggestion lists did not get their own datalists",
+      );
+    }
+    render(true);
+    await settle();
 
     // The inherited core: no field until Override, then the same round trip.
     if (field("m55_he")) {
