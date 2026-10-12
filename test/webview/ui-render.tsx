@@ -1548,6 +1548,59 @@ async function main() {
     );
   }
 
+  // ── at the 0.7.0-rc1 pin the gap is the EXTENSION's `models.panel-not-wired` ──
+  // Every subcommand exists there, so tan never sends `model.unknown-subcommand`;
+  // the panel's own synthesised code must get the same treatment: no red
+  // alarm, the four unwired actions disabled, and a notice that does NOT tell
+  // the customer to update a tan that is not the problem.
+  {
+    const problemsBefore = problems.length;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const notWired = (sub: string) => ({
+      code: "models.panel-not-wired",
+      severity: "info",
+      message: `\`tan model ${sub}\` is implemented, but this panel has no call for it`,
+    });
+    const root = createRoot(container);
+    root.render(
+      React.createElement(AppProvider, null, React.createElement(ModelsView)),
+    );
+    await settle();
+    feedState();
+    await settle();
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "modelsData",
+      ok: false,
+      models: [],
+      toolchains: [],
+      issues: [notWired("list"), notWired("doctor")],
+    });
+    await settle();
+
+    const text = container.textContent ?? "";
+    if (container.querySelectorAll('[data-ok="false"]').length !== 0) {
+      problems.push("models-not-wired: a red alarm rendered for an info gap");
+    }
+    if (!text.includes("not available here yet")) {
+      problems.push("models-not-wired: the not-wired notice was not rendered");
+    }
+    if (text.includes("need a newer CLI")) {
+      problems.push("models-not-wired: blamed the CLI for the panel's own gap");
+    }
+    for (const want of ["Prep model", "Run model", "A/B compare"]) {
+      const hit = [...container.querySelectorAll("button")].find(
+        (b) => (b.textContent ?? "").trim() === want,
+      ) as HTMLButtonElement | undefined;
+      if (!hit || !hit.disabled) {
+        problems.push(`models-not-wired: "${want}" missing or clickable`);
+      }
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  models-not-wired: info notice, unwired actions disabled`,
+    );
+  }
+
   // ── the wizard's Cores step (#534) ──
   // `tan init --cores` splices companions APP-LESS, so before this step a
   // dual-M55 SoM — the Alif Ensemble line's defining topology — scaffolded as a

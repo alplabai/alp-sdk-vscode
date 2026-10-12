@@ -44,6 +44,7 @@ esbuild.buildSync({
   logLevel: "error",
 });
 const {
+  PANEL_NOT_WIRED_CODE,
   UNKNOWN_SUBCOMMAND_CODE,
   findUnsupportedSubcommand,
   withoutUnsupportedSubcommand,
@@ -167,4 +168,25 @@ test("withoutUnsupportedSubcommand returns a list for a malformed input", () => 
   for (const bad of [undefined, null, "nope", 42, {}]) {
     assert.deepEqual(withoutUnsupportedSubcommand(bad), [], String(bad));
   }
+});
+
+test("the extension's own not-wired code is spelled as pinnedSurface produces it", () => {
+  // The webview cannot import extension code, so the literal is held twice.
+  const {
+    MODEL_SUBCOMMAND_UNWIRED_CODE,
+  } = require("../out/alpCli/pinnedSurface.js");
+  assert.equal(PANEL_NOT_WIRED_CODE, MODEL_SUBCOMMAND_UNWIRED_CODE);
+});
+
+test("models.panel-not-wired is a capability gap too: found, and stripped from banners", () => {
+  // At the 0.7.0-rc1 pin all nine subcommands exist, so this is the code the
+  // panel really receives instead of tan's refusal.
+  const notWired = {
+    code: "models.panel-not-wired",
+    severity: "info",
+    message:
+      "`tan model list` IS implemented, but this panel has no call for it",
+  };
+  assert.equal(findUnsupportedSubcommand([OTHER, notWired]), notWired);
+  assert.deepEqual(withoutUnsupportedSubcommand([notWired, OTHER]), [OTHER]);
 });

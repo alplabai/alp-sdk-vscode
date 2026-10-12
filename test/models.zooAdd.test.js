@@ -67,6 +67,8 @@ function openPanel(opts) {
   const notified = [];
   const warnings = [];
   let onMessage = null;
+  const disposeHandlers = [];
+  let disposed = false;
 
   const modPath = require.resolve(path.join(root, "out", "models", "panel.js"));
   delete require.cache[modPath];
@@ -81,12 +83,17 @@ function openPanel(opts) {
               onMessage = handler;
               return { dispose() {} };
             },
+            // What VS Code does: a disposed webview THROWS (synchronously).
             postMessage: async (msg) => {
+              if (disposed) throw new Error("Webview is disposed");
               posted.push(msg);
               return true;
             },
           },
-          onDidDispose: () => ({ dispose() {} }),
+          onDidDispose: (handler) => {
+            disposeHandlers.push(handler);
+            return { dispose() {} };
+          },
           reveal() {},
           dispose() {},
         }),
@@ -100,6 +107,7 @@ function openPanel(opts) {
     "../alpCli/vscodeAdapter": {
       runAlpCommand: async (_ctx, args, cwd, options) => {
         spawns.push({ args: [...args], cwd, options });
+        if (args[1] === "add" && opts.holdAdd) await opts.holdAdd;
         const envelope =
           args[1] === "add" ? (opts.add ?? addedEnvelope) : zooEnvelope;
         return { outcome: { exitCode: 0, message: "", envelope } };
@@ -130,13 +138,25 @@ function openPanel(opts) {
       ? stubs[request]
       : originalLoad.call(this, request, ...rest);
   };
+  let mod;
   try {
-    require(modPath).showModelsPanel({ extensionUri: "/ext" });
+    mod = require(modPath);
+    mod.showModelsPanel({ extensionUri: "/ext" });
   } finally {
     Module._load = originalLoad;
     delete require.cache[modPath];
   }
   return {
+    /** VS Code closing the panel: handlers run, later posts throw. */
+    close: () => {
+      disposed = true;
+      for (const handler of disposeHandlers) handler();
+    },
+    /** Open the panel again on the SAME module instance (a reopen). */
+    reopen: () => {
+      disposed = false;
+      mod.showModelsPanel({ extensionUri: "/ext" });
+    },
     send: (msg) => onMessage(msg),
     spawns,
     posted,
@@ -282,7 +302,7 @@ test("an add sent before any zoo listing is refused", async () => {
 // A dirty board.yaml buffer would overwrite tan's splice on its next save
 // ---------------------------------------------------------------------------
 
-test("a dirty board.yaml stops the add when the customer does not save", async () => {
+test("dismissing the save prompt cancels the add SILENTLY", async () => {
   const doc = boardDoc(true);
   const panel = openPanel({
     workspaceRoot: WS,
@@ -294,9 +314,28 @@ test("a dirty board.yaml stops the add when the customer does not save", async (
   assert.equal(panel.warnings.length, 1, "the customer is asked");
   assert.equal(addSpawned(panel), false);
   assert.equal(doc.saved, false);
+  assert.deepEqual(panel.errors, [], "their own cancel is not an error");
+  assert.equal(
+    panel.posted.some((m) => m.type === "zooAddResult"),
+    false,
+  );
+});
+
+test("a save that FAILS stops the add and is reported as an error", async () => {
+  const doc = boardDoc(true);
+  doc.save = async () => false;
+  const panel = openPanel({
+    workspaceRoot: WS,
+    documents: [doc],
+    answer: "saveAndContinue",
+  });
+  await listThenAdd(panel);
+
+  assert.equal(addSpawned(panel), false);
+  assert.equal(panel.errors.length, 1);
   const result = panel.posted.find((m) => m.type === "zooAddResult");
   assert.equal(result.issues[0].code, "zooAdd.board-yaml-unsaved");
-  assert.match(result.issues[0].message, /save board\.yaml first/);
+  assert.match(result.issues[0].message, /could not be saved/);
 });
 
 test("choosing Save and Continue saves board.yaml BEFORE tan edits it", async () => {
@@ -330,4 +369,69 @@ test("a clean board.yaml, or a dirty OTHER file, asks nothing", async () => {
 
   assert.deepEqual(panel.warnings, []);
   assert.equal(addSpawned(panel), true);
+});
+
+// ---------------------------------------------------------------------------
+// The panel can close under an add; the outcome must still reach the customer
+// ---------------------------------------------------------------------------
+
+test("a failed add whose panel was closed mid-flight still raises the error toast", async () => {
+  // Arrange -- hold `tan model add` open, close the panel, then let it fail.
+  let release;
+  const holdAdd = new Promise((resolve) => (release = resolve));
+  const panel = openPanel({
+    workspaceRoot: WS,
+    add: refusedEnvelope,
+    holdAdd,
+  });
+  panel.send({ type: "requestZoo" });
+  await settle();
+  panel.send({ type: "addFromZoo", id: "kws" });
+  await settle();
+
+  // Act
+  panel.close();
+  release();
+  await settle();
+
+  // Assert -- `post` on a disposed webview throws; that must not eat the toast.
+  assert.equal(panel.errors.length, 1);
+  assert.match(panel.errors[0], /kws/);
+});
+
+test("a second add is refused while one is running, even from a reopened panel", async () => {
+  // Arrange
+  let release;
+  const holdAdd = new Promise((resolve) => (release = resolve));
+  const panel = openPanel({ workspaceRoot: WS, holdAdd });
+  panel.send({ type: "requestZoo" });
+  await settle();
+  panel.send({ type: "addFromZoo", id: "kws" });
+  await settle();
+
+  // Act -- close, reopen (a fresh instance), list, and click add again.
+  panel.close();
+  panel.reopen();
+  panel.send({ type: "requestZoo" });
+  await settle();
+  panel.send({ type: "addFromZoo", id: "kws" });
+  await settle();
+
+  // Assert
+  assert.equal(
+    panel.spawns.filter((s) => s.args[1] === "add").length,
+    1,
+    "the second add must not spawn while the first writes board.yaml",
+  );
+  assert.equal(
+    panel.posted.find((m) => m.type === "zooAddResult")?.issues[0].code,
+    "zooAdd.in-progress",
+  );
+  release();
+  await settle();
+
+  // Once the first finishes, adding works again.
+  panel.send({ type: "addFromZoo", id: "kws" });
+  await settle();
+  assert.equal(panel.spawns.filter((s) => s.args[1] === "add").length, 2);
 });

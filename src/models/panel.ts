@@ -65,10 +65,20 @@ const MODEL_BUILD_TIMEOUT_MS = 30 * 60 * 1000;
 // there, so it's unit-testable directly (test/models.service.test.js) without
 // this file's vscode dependency in the require chain.
 
+/** Whether a `tan model add` is running. MODULE-level, not per instance: the
+ *  panel can be closed and reopened while an add is still writing board.yaml,
+ *  and a fresh instance would otherwise start with its own `false` and let a
+ *  second add race the first. */
+let addInFlight = false;
+
 class ModelsPanel {
   private static current: ModelsPanel | undefined;
   private readonly panel: vscode.WebviewPanel;
   private readonly disposables: vscode.Disposable[] = [];
+  /** Set when VS Code disposes the panel. Touching `panel.webview` after that
+   *  throws "Webview is disposed", and an add that outlives its panel still has
+   *  an outcome to report. */
+  private isDisposed = false;
   /** Ids from the last successful `tan model zoo`, or `null` before one. */
   private zooIds: ReadonlySet<string> | null = null;
 
@@ -120,7 +130,15 @@ class ModelsPanel {
   }
 
   private post(msg: ExtToWebviewMessage): void {
-    void this.panel.webview.postMessage(msg);
+    if (this.isDisposed) return;
+    try {
+      void this.panel.webview.postMessage(msg);
+    } catch (error) {
+      // Disposed between the check and the call. The outcome is still reported
+      // by the caller's own toast; losing the in-panel echo is acceptable,
+      // losing the failure is not.
+      logChannel(`Models panel: post failed (${String(error)})`);
+    }
   }
 
   /** The model list + toolchain doctor. The pin has both, and this panel does
@@ -188,7 +206,10 @@ class ModelsPanel {
 
   /**
    * Whether board.yaml has unsaved edits open in VS Code, and if so whether
-   * the customer chose to save them first. `true` means safe to proceed.
+   * the customer chose to save them first. `"saved"` means safe to proceed
+   * (nothing was dirty, or the save succeeded); `"declined"` is the customer
+   * dismissing the prompt or declining — their own cancel, not an error;
+   * `"save-failed"` is a save VS Code refused, which is.
    *
    * tan splices `models:` into the file ON DISK. A dirty editor buffer (the
    * Configurator, or a text editor) would overwrite that splice on its next
@@ -196,12 +217,14 @@ class ModelsPanel {
    * re-add then refuses, because the file already exists. So this asks
    * first, and only a successful save lets the add run.
    */
-  private async boardYamlSaved(cwd: string): Promise<boolean> {
+  private async boardYamlSaved(
+    cwd: string,
+  ): Promise<"saved" | "declined" | "save-failed"> {
     const target = samePath(path.join(cwd, "board.yaml"));
     const dirty = vscode.workspace.textDocuments.find(
       (doc) => doc.isDirty && samePath(doc.uri.fsPath) === target,
     );
-    if (!dirty) return true;
+    if (!dirty) return "saved";
     const answer = await notify(
       planConfirm({
         message: "board.yaml has unsaved changes. Save it before adding?",
@@ -212,7 +235,8 @@ class ModelsPanel {
         confirm: { id: "saveAndContinue" },
       }),
     );
-    return answer === "saveAndContinue" && (await dirty.save());
+    if (answer !== "saveAndContinue") return "declined";
+    return (await dirty.save()) ? "saved" : "save-failed";
   }
 
   /** Add a curated zoo entry to board.yaml with `tan model add <id>` (#699),
@@ -257,37 +281,59 @@ class ModelsPanel {
       );
       return;
     }
-    if (!(await this.boardYamlSaved(cwd))) {
+    // Taken before the first await below and released in `finally`, so a
+    // second click (or a reopened panel) cannot start a second add while this
+    // one is still choosing, saving or writing board.yaml.
+    if (addInFlight) {
       this.refuseAdd(
-        "zooAdd.board-yaml-unsaved",
-        `Did not add ${id}: save board.yaml first, then add it again.`,
+        "zooAdd.in-progress",
+        `Another model is still being added. Wait for it to finish, then add ${id}.`,
       );
       return;
     }
-    this.post({ type: "zooAddStarted" });
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: `Alp: Adding ${id} from the zoo`,
-        cancellable: false,
-      },
-      async () => {
-        const { outcome } = await runAlpCommand(
-          this.context,
-          ["model", "add", id],
-          cwd,
-          { timeoutMs: MODEL_BUILD_TIMEOUT_MS },
+    addInFlight = true;
+    try {
+      const saved = await this.boardYamlSaved(cwd);
+      // Dismissing the prompt is the customer's own cancel: nothing failed, so
+      // nothing is reported. Only a save that did not happen is an error.
+      if (saved === "declined") return;
+      if (saved === "save-failed") {
+        this.refuseAdd(
+          "zooAdd.board-yaml-unsaved",
+          `Did not add ${id}: board.yaml could not be saved. Save it, then ` +
+            "add it again.",
         );
-        this.post(toZooAddResult(outcome));
-        if (outcome.envelope && outcome.envelope.ok) {
-          await this.refresh();
-        } else {
-          void reportError(
-            `Alp: could not add ${id} from the zoo — ${cliFailureMessage(outcome)}`,
+        return;
+      }
+      this.post({ type: "zooAddStarted" });
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Alp: Adding ${id} from the zoo`,
+          cancellable: false,
+        },
+        async () => {
+          const { outcome } = await runAlpCommand(
+            this.context,
+            ["model", "add", id],
+            cwd,
+            { timeoutMs: MODEL_BUILD_TIMEOUT_MS },
           );
-        }
-      },
-    );
+          // The outcome is reported whether or not the panel is still open:
+          // `post` is a no-op after dispose, but the toast is not.
+          this.post(toZooAddResult(outcome));
+          if (outcome.envelope && outcome.envelope.ok) {
+            await this.refresh();
+          } else {
+            void reportError(
+              `Alp: could not add ${id} from the zoo — ${cliFailureMessage(outcome)}`,
+            );
+          }
+        },
+      );
+    } finally {
+      addInFlight = false;
+    }
   }
 
   /** The static NPU-eligibility screen over every board.yaml model.
@@ -479,6 +525,7 @@ class ModelsPanel {
   }
 
   private dispose(): void {
+    this.isDisposed = true;
     ModelsPanel.current = undefined;
     this.panel.dispose();
     while (this.disposables.length) this.disposables.pop()?.dispose();

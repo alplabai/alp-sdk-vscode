@@ -4,6 +4,7 @@ import { Button, EmptyState, Icon, Spinner } from "../../shared/ui";
 import type { ModelsDataMessage } from "../../types";
 import { postMessage } from "../../vscode";
 import styles from "./ModelsView.module.css";
+import { PANEL_NOT_WIRED_CODE } from "./cliSurface";
 import type { BackendCoverage, ModelCoverage } from "./coverage";
 import {
   STATIC_SCREEN_CAVEAT,
@@ -548,12 +549,23 @@ export function ModelsView() {
 
       {cliModelSurfaceMissing && (
         <div className={styles.issues} data-ok="true">
-          <p>
-            <strong>These model tools need a newer CLI.</strong> The installed
-            tan implements only <code>model build</code>. NPU coverage, prep,
-            run, A/B compare and the model zoo are unavailable until it provides
-            them — building models still works.
-          </p>
+          {cliModelSurfaceMissing.code === PANEL_NOT_WIRED_CODE ? (
+            // The CLI HAS these subcommands; this panel does not call them yet
+            // (#524). Saying "newer CLI" here would send the customer to
+            // update a tan that is not the problem.
+            <p>
+              <strong>These model tools are not available here yet.</strong> NPU
+              coverage, prep, run and A/B compare are not wired into this panel
+              — building models and the model zoo still work.
+            </p>
+          ) : (
+            <p>
+              <strong>These model tools need a newer CLI.</strong> The installed
+              tan implements only <code>model build</code>. NPU coverage, prep,
+              run, A/B compare and the model zoo are unavailable until it
+              provides them — building models still works.
+            </p>
+          )}
           <ul className={styles.issuesList}>
             <li data-severity="info">{cliModelSurfaceMissing.message}</li>
           </ul>
