@@ -15,7 +15,9 @@
   screen now reads it off the step that will run: `Tier`, `Licence` and
   `Size` sit beside `Runs:`, per tool when a rollup row's tools disagree
   (`cmake: BSD-3-Clause; ninja: Apache-2.0`). A tier `C` (licence-gated)
-  line starts unchecked, so it is never fetched without its own click, and
+  line starts unchecked, so it is never fetched without its own click, as
+  does any tier the screen cannot read (a malformed value, or a doctor run
+  that reports the provenance block unreadable), and
   a tier `B` line says it requires elevation. Today alp-sdk declares tier
   `A` for all eight entries it covers and no sizes, so `Size` still reads
   "not reported", and rows with no entry (`west`, `zephyrSdk`, `setools`,
