@@ -53,10 +53,10 @@
  * Exactly the entries of `commands.flash.options` carrying a `metavar` in the
  * vendored surface (their metavars: PATH, PATH, CORE_ID, <text|json>, NAME,
  * PATH, PATH, PATH). The five booleans — `--confirm`, `--dry-run`, `--help`,
- * `--recover`, `--skip-missing-tools` — are deliberately absent: this set is
- * consulted only to decide whether to skip a token.
+ * `--recover`, `--skip-missing-tools` — are deliberately absent: these lists
+ * are consulted only to decide whether to skip a token.
  */
-export const FLASH_VALUE_TAKING_FLAGS: ReadonlySet<string> = new Set([
+const PINNED_FLASH_VALUE_TAKING_FLAGS = [
   "--board-yaml",
   "--build-root",
   "--core",
@@ -65,6 +65,45 @@ export const FLASH_VALUE_TAKING_FLAGS: ReadonlySet<string> = new Set([
   "--project",
   "--sdk-root",
   "--setools-dir",
+] as const;
+
+/**
+ * Value-taking `tan flash` options that tan 0.7.0-rc1 added AFTER the 0.6.0
+ * pin (#701), transcribed from `python/tan/commands/flash_cmd.py` at the
+ * `v0.7.0-rc1` tag: `--jlink PATH`, `--probe-serial SN`,
+ * `--probe-usb-path BUS-PORT`, `--raw FILE@ADDR`, `--wait SECONDS` and
+ * `--watch ADDR[:WORDS][@PERIOD-MS]`.
+ *
+ * WHY THEY ARE KNOWN BEFORE THE PIN MOVES: `alpSdk.cliPath` can point the
+ * extension at a newer tan than the pin, and there `--probe-serial
+ * 000801234567` would otherwise leave the serial to be read as APP_PATH.
+ * Against the pinned 0.6.0 they cost nothing — tan exits 2 with `No such
+ * option` before anything runs, whatever arity this file assumes.
+ *
+ * The 0.7 switches (`--ram`, `--ram-console`, `--readback`, `--no-reset`,
+ * `--no-device-config`, `--assume-he`, `--atoc-unqueryable`,
+ * `--replace-atoc`) need no entry: an unknown flag already reads as boolean.
+ * `--ram-console` in particular is a switch, not a value-taker.
+ *
+ * `test/flash.consent.test.js` asserts that no entry here is in the vendored
+ * surface yet, so the re-pin that vendors them reds the gate until they are
+ * moved into the pinned list above and this set is emptied.
+ */
+export const FLASH_VALUE_TAKING_FLAGS_AHEAD_OF_PIN: ReadonlySet<string> =
+  new Set([
+    "--jlink",
+    "--probe-serial",
+    "--probe-usb-path",
+    "--raw",
+    "--wait",
+    "--watch",
+  ]);
+
+/** Every `tan flash` option that consumes the next token: the pinned surface
+ *  plus the ones known to be coming. */
+export const FLASH_VALUE_TAKING_FLAGS: ReadonlySet<string> = new Set([
+  ...PINNED_FLASH_VALUE_TAKING_FLAGS,
+  ...FLASH_VALUE_TAKING_FLAGS_AHEAD_OF_PIN,
 ]);
 
 /**
