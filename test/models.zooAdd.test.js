@@ -57,8 +57,8 @@ const refusedEnvelope = {
  * @param opts.workspaceRoot what `collectProjectContext` resolves.
  * @param opts.add           the envelope `tan model add` answers with.
  * @param opts.documents     `vscode.workspace.textDocuments`.
- * @param opts.answer        what the modal warning returns (a button or
- *                           `undefined` for dismissed).
+ * @param opts.answer        the action id the modal confirm returns, or
+ *                           `undefined` for dismissed.
  */
 function openPanel(opts) {
   const spawns = [];
@@ -91,10 +91,6 @@ function openPanel(opts) {
           dispose() {},
         }),
         withProgress: async (_opts, task) => task({ report() {} }, {}),
-        showWarningMessage: async (message) => {
-          warnings.push(message);
-          return opts.answer;
-        },
       },
       ProgressLocation: { Notification: 15 },
       ViewColumn: { Active: 1 },
@@ -118,6 +114,11 @@ function openPanel(opts) {
     },
     "../notify/vscodeAdapter": {
       notifyAsync: (plan) => notified.push(plan),
+      // The save-first confirm, through the one presenter seam.
+      notify: async (plan) => {
+        warnings.push(plan);
+        return opts.answer;
+      },
       reportError: async (message) => errors.push(message),
     },
     "../util": { log() {} },
@@ -298,12 +299,12 @@ test("a dirty board.yaml stops the add when the customer does not save", async (
   assert.match(result.issues[0].message, /save board\.yaml first/);
 });
 
-test("choosing Save and Add saves board.yaml BEFORE tan edits it", async () => {
+test("choosing Save and Continue saves board.yaml BEFORE tan edits it", async () => {
   const doc = boardDoc(true);
   const panel = openPanel({
     workspaceRoot: WS,
     documents: [doc],
-    answer: "Save and Add",
+    answer: "saveAndContinue",
   });
   await listThenAdd(panel);
 

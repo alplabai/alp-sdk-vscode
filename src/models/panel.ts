@@ -38,8 +38,8 @@ import {
   type WebviewToExtMessage,
 } from "../ideHub/messages";
 import { buildWebviewHtml, runWebviewCommand } from "../ideHub/webviewHtml";
-import { planPrecondition } from "../notify/service";
-import { notifyAsync, reportError } from "../notify/vscodeAdapter";
+import { planConfirm, planPrecondition } from "../notify/service";
+import { notify, notifyAsync, reportError } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { log as logChannel } from "../util";
 import {
@@ -202,14 +202,17 @@ class ModelsPanel {
       (doc) => doc.isDirty && samePath(doc.uri.fsPath) === target,
     );
     if (!dirty) return true;
-    const SAVE = "Save and Add";
-    const answer = await vscode.window.showWarningMessage(
-      "board.yaml has unsaved changes. Adding a zoo model edits the file on " +
-        "disk, and saving your editor afterwards would overwrite that edit.",
-      { modal: true },
-      SAVE,
+    const answer = await notify(
+      planConfirm({
+        message: "board.yaml has unsaved changes. Save it before adding?",
+        modalDetail:
+          "Adding a zoo model edits board.yaml on disk. Saving your editor " +
+          "afterwards would overwrite that edit and leave the model file " +
+          "behind with nothing naming it.",
+        confirm: { id: "saveAndContinue" },
+      }),
     );
-    return answer === SAVE && (await dirty.save());
+    return answer === "saveAndContinue" && (await dirty.save());
   }
 
   /** Add a curated zoo entry to board.yaml with `tan model add <id>` (#699),
