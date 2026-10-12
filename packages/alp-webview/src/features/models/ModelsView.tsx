@@ -449,8 +449,8 @@ function ZooCard({
     <div className={styles.zooCard}>
       <div className={styles.zooCardHead}>
         <span className={styles.mono}>{entry.task}</span>
-        {entry.runs_here === true && <Badge variant="ok" label="runs here" />}
-        {entry.runs_here === false && (
+        {entry.runsHere === true && <Badge variant="ok" label="runs here" />}
+        {entry.runsHere === false && (
           <Badge variant="warn" label="not validated here" />
         )}
       </div>

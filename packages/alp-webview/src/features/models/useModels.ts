@@ -133,8 +133,8 @@ export interface ZooEntryView {
   task: string;
   description: string;
   license: string;
-  validated_soms: string[];
-  runs_here: boolean | null;
+  validatedSoms: string[];
+  runsHere: boolean | null;
 }
 
 interface State {

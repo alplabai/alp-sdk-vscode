@@ -108,7 +108,7 @@ as tan-cli#674, and the VS Code half needs the Models panel back, which is #524.
   `good` or `degraded` verdict).
 - Browse and add model-zoo entries. What follows is the INTENT, not anything
   present in a shipped component — the vendored alp-sdk has no
-  `metadata/model_zoo/` at all: curated `<id>.yaml` entries marked `runs_here`
+  `metadata/model_zoo/` at all: curated `<id>.yaml` entries marked `runsHere`
   for the SoM, fetched sha256-verified and appended
   to board.yaml `models:` without redistributing weights.
 - Host reference run and A/B compare — a host-backend (`cpu-host`) functional,
