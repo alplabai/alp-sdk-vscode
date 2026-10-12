@@ -94,7 +94,7 @@ Four mechanisms a neighboring embedded extension could not truthfully copy:
 
 ## Capabilities and Constraints
 
-- **Pinned CLI:** `SUPPORTED_CLI_VERSION = "0.7.0-rc1"` (`src/alpCli/service.ts:105`)
+- **Pinned CLI:** `SUPPORTED_CLI_VERSION = "0.7.0-rc1"` (`src/alpCli/service.ts:106`)
   — a prerelease again, on purpose: `tan model zoo`/`add` (tan-cli#1338),
   per-entry artifact provenance on `missingPrerequisites[]` (tan-cli#1066) and
   two newly frozen issue codes all wait on it, and it moves to `0.7.0` once

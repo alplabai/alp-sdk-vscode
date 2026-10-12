@@ -487,8 +487,9 @@ export function deferredBuildOptionMessage(
   command = "build",
 ): string {
   // Retired beats every other answer, and is checked BEFORE `inertKindOf`.
-  // The pinned recording still marks these `deferred`, so without this the
-  // branch below would hand the customer a closed issue and an implied wait.
+  // The recording marks these `retired` from 0.7.0-rc1 (through 0.6.0 it said
+  // `deferred`); this table is what supplies the replacement text the
+  // generic `retired` branch below cannot, so it is consulted first.
   if (command === "build" && flag in RETIRED_BUILD_OPTIONS) {
     return retiredBuildOptionMessage(flag, command);
   }
