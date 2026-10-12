@@ -9,6 +9,12 @@
 // drives the REAL handlers out of `out/models/panel.js` through the webview
 // message channel, and asserts on what was spawned and what was posted —
 // a source-level grep cannot tell a spawn from a synthesised answer.
+//
+// Two guards ride on `add` and are pinned here too: the id must be one the
+// last zoo listing returned (it arrives from the webview and goes into argv),
+// and a DIRTY board.yaml buffer stops the add unless the customer saves first
+// (tan's on-disk splice would otherwise be overwritten by that save, leaving
+// an orphaned model file that a re-add then refuses).
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -16,20 +22,57 @@ const path = require("node:path");
 const Module = require("node:module");
 
 const root = path.join(__dirname, "..");
+const WS = path.resolve("/ws");
 
-/** Open the panel with a stubbed host and return its message handler plus
- *  everything it spawned, posted and reported. */
-function openPanel({ workspaceRoot, envelope }) {
+const zooEnvelope = {
+  command: "model",
+  ok: true,
+  exitCode: 0,
+  project: { root: WS, boardYaml: path.join(WS, "board.yaml") },
+  data: {
+    schemaVersion: "1",
+    sku: null,
+    boardSku: "E1M-AEN801",
+    entries: [{ id: "kws", validatedSoms: ["E1M-AEN801"], runsHere: true }],
+  },
+  issues: [],
+};
+
+const addedEnvelope = { ...zooEnvelope, data: { added: "kws" } };
+
+const refusedEnvelope = {
+  command: "model",
+  ok: false,
+  exitCode: 2,
+  project: zooEnvelope.project,
+  data: null,
+  issues: [
+    { code: "model.failed", severity: "error", message: "already in models:" },
+  ],
+};
+
+/**
+ * Open the panel with a stubbed host.
+ *
+ * @param opts.workspaceRoot what `collectProjectContext` resolves.
+ * @param opts.add           the envelope `tan model add` answers with.
+ * @param opts.documents     `vscode.workspace.textDocuments`.
+ * @param opts.answer        what the modal warning returns (a button or
+ *                           `undefined` for dismissed).
+ */
+function openPanel(opts) {
   const spawns = [];
   const posted = [];
   const errors = [];
   const notified = [];
+  const warnings = [];
   let onMessage = null;
 
   const modPath = require.resolve(path.join(root, "out", "models", "panel.js"));
   delete require.cache[modPath];
   const stubs = {
     vscode: {
+      workspace: { textDocuments: opts.documents ?? [] },
       window: {
         createWebviewPanel: () => ({
           webview: {
@@ -48,6 +91,10 @@ function openPanel({ workspaceRoot, envelope }) {
           dispose() {},
         }),
         withProgress: async (_opts, task) => task({ report() {} }, {}),
+        showWarningMessage: async (message) => {
+          warnings.push(message);
+          return opts.answer;
+        },
       },
       ProgressLocation: { Notification: 15 },
       ViewColumn: { Active: 1 },
@@ -57,11 +104,13 @@ function openPanel({ workspaceRoot, envelope }) {
     "../alpCli/vscodeAdapter": {
       runAlpCommand: async (_ctx, args, cwd, options) => {
         spawns.push({ args: [...args], cwd, options });
+        const envelope =
+          args[1] === "add" ? (opts.add ?? addedEnvelope) : zooEnvelope;
         return { outcome: { exitCode: 0, message: "", envelope } };
       },
     },
     "../project/vscodeAdapter": {
-      collectProjectContext: () => ({ workspaceRoot }),
+      collectProjectContext: () => ({ workspaceRoot: opts.workspaceRoot }),
     },
     "../ideHub/webviewHtml": {
       buildWebviewHtml: () => "<html></html>",
@@ -92,6 +141,7 @@ function openPanel({ workspaceRoot, envelope }) {
     posted,
     errors,
     notified,
+    warnings,
   };
 }
 
@@ -99,28 +149,38 @@ const settle = async () => {
   for (let i = 0; i < 12; i += 1) await new Promise((r) => setImmediate(r));
 };
 
-const zooEnvelope = {
-  command: "model",
-  ok: true,
-  exitCode: 0,
-  project: { root: "/ws", boardYaml: "/ws/board.yaml" },
-  data: {
-    schemaVersion: "1",
-    sku: null,
-    boardSku: "E1M-AEN801",
-    entries: [{ id: "kws", validatedSoms: ["E1M-AEN801"], runsHere: true }],
-  },
-  issues: [],
+/** List the zoo, then add `id` — the order a real click arrives in. */
+async function listThenAdd(panel, id = "kws") {
+  panel.send({ type: "requestZoo" });
+  await settle();
+  panel.send({ type: "addFromZoo", id });
+  await settle();
+}
+
+/** A board.yaml editor buffer, dirty or clean, recording whether it saved. */
+const boardDoc = (isDirty, fsPath = path.join(WS, "board.yaml")) => {
+  const doc = {
+    isDirty,
+    uri: { fsPath },
+    saved: false,
+    save: async () => {
+      doc.saved = true;
+      return true;
+    },
+  };
+  return doc;
 };
 
+const addSpawned = (panel) => panel.spawns.some((s) => s.args[1] === "add");
+
 test("the zoo section spawns `tan model zoo` in the project, not a synthesised refusal", async () => {
-  const panel = openPanel({ workspaceRoot: "/ws", envelope: zooEnvelope });
+  const panel = openPanel({ workspaceRoot: WS });
   panel.send({ type: "requestZoo" });
   await settle();
 
   assert.deepEqual(
     panel.spawns.map((s) => [s.args, s.cwd]),
-    [[["model", "zoo"], "/ws"]],
+    [[["model", "zoo"], WS]],
   );
   const zoo = panel.posted.find((m) => m.type === "zooData");
   assert.equal(zoo.ok, true);
@@ -135,16 +195,12 @@ test("the zoo section spawns `tan model zoo` in the project, not a synthesised r
 });
 
 test("adding a zoo entry spawns `tan model add <id>` and refreshes on success", async () => {
-  const panel = openPanel({
-    workspaceRoot: "/ws",
-    envelope: { ...zooEnvelope, data: { added: "kws" } },
-  });
-  panel.send({ type: "addFromZoo", id: "kws" });
-  await settle();
+  const panel = openPanel({ workspaceRoot: WS });
+  await listThenAdd(panel);
 
   const add = panel.spawns.find((s) => s.args[1] === "add");
   assert.deepEqual(add.args, ["model", "add", "kws"]);
-  assert.equal(add.cwd, "/ws");
+  assert.equal(add.cwd, WS);
   assert.ok(add.options?.timeoutMs > 60_000, "a fetch can be a real download");
 
   const order = panel.posted.map((m) => m.type);
@@ -155,33 +211,17 @@ test("adding a zoo entry spawns `tan model add <id>` and refreshes on success", 
   const result = panel.posted.find((m) => m.type === "zooAddResult");
   assert.equal(result.ok, true);
   assert.equal(result.added, "kws");
-  assert.ok(
-    panel.spawns.some((s) => s.args[1] === "zoo"),
+  assert.equal(
+    panel.spawns.filter((s) => s.args[1] === "zoo").length,
+    2,
     "a successful add refreshes, so the gallery re-reads the zoo",
   );
   assert.deepEqual(panel.errors, []);
 });
 
 test("a refused add is reported, never silent", async () => {
-  const panel = openPanel({
-    workspaceRoot: "/ws",
-    envelope: {
-      command: "model",
-      ok: false,
-      exitCode: 2,
-      project: { root: "/ws", boardYaml: "/ws/board.yaml" },
-      data: null,
-      issues: [
-        {
-          code: "model.failed",
-          severity: "error",
-          message: "already in models:",
-        },
-      ],
-    },
-  });
-  panel.send({ type: "addFromZoo", id: "kws" });
-  await settle();
+  const panel = openPanel({ workspaceRoot: WS, add: refusedEnvelope });
+  await listThenAdd(panel);
 
   const result = panel.posted.find((m) => m.type === "zooAddResult");
   assert.equal(result.ok, false);
@@ -190,10 +230,8 @@ test("a refused add is reported, never silent", async () => {
 });
 
 test("with no folder open, add spawns nothing and says why", async () => {
-  const panel = openPanel({ workspaceRoot: undefined, envelope: zooEnvelope });
-  panel.send({ type: "addFromZoo", id: "kws" });
-  panel.send({ type: "requestZoo" });
-  await settle();
+  const panel = openPanel({ workspaceRoot: undefined });
+  await listThenAdd(panel);
 
   assert.deepEqual(
     panel.spawns,
@@ -210,4 +248,85 @@ test("with no folder open, add spawns nothing and says why", async () => {
     "no spinner for work that is not starting",
   );
   assert.equal(panel.posted.find((m) => m.type === "zooData").ok, false);
+});
+
+// ---------------------------------------------------------------------------
+// The id reaches argv only if the zoo listed it
+// ---------------------------------------------------------------------------
+
+test("an id the last zoo listing did not return is refused before argv", async () => {
+  const panel = openPanel({ workspaceRoot: WS });
+  await listThenAdd(panel, "--sdk-root=/elsewhere");
+
+  assert.equal(addSpawned(panel), false);
+  const result = panel.posted.find((m) => m.type === "zooAddResult");
+  assert.equal(result.ok, false);
+  assert.equal(result.issues[0].code, "zooAdd.unknown-id");
+  assert.equal(panel.errors.length, 1, "the click is never silent");
+});
+
+test("an add sent before any zoo listing is refused", async () => {
+  const panel = openPanel({ workspaceRoot: WS });
+  panel.send({ type: "addFromZoo", id: "kws" });
+  await settle();
+
+  assert.equal(addSpawned(panel), false);
+  assert.equal(
+    panel.posted.find((m) => m.type === "zooAddResult").issues[0].code,
+    "zooAdd.unknown-id",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// A dirty board.yaml buffer would overwrite tan's splice on its next save
+// ---------------------------------------------------------------------------
+
+test("a dirty board.yaml stops the add when the customer does not save", async () => {
+  const doc = boardDoc(true);
+  const panel = openPanel({
+    workspaceRoot: WS,
+    documents: [doc],
+    answer: undefined,
+  });
+  await listThenAdd(panel);
+
+  assert.equal(panel.warnings.length, 1, "the customer is asked");
+  assert.equal(addSpawned(panel), false);
+  assert.equal(doc.saved, false);
+  const result = panel.posted.find((m) => m.type === "zooAddResult");
+  assert.equal(result.issues[0].code, "zooAdd.board-yaml-unsaved");
+  assert.match(result.issues[0].message, /save board\.yaml first/);
+});
+
+test("choosing Save and Add saves board.yaml BEFORE tan edits it", async () => {
+  const doc = boardDoc(true);
+  const panel = openPanel({
+    workspaceRoot: WS,
+    documents: [doc],
+    answer: "Save and Add",
+  });
+  await listThenAdd(panel);
+
+  assert.equal(doc.saved, true);
+  assert.equal(addSpawned(panel), true);
+});
+
+test("the same file spelled differently is still recognised as board.yaml", async () => {
+  const doc = boardDoc(true, path.join(WS, "sub", "..", "board.yaml"));
+  const panel = openPanel({ workspaceRoot: WS, documents: [doc] });
+  await listThenAdd(panel);
+
+  assert.equal(panel.warnings.length, 1);
+  assert.equal(addSpawned(panel), false);
+});
+
+test("a clean board.yaml, or a dirty OTHER file, asks nothing", async () => {
+  const panel = openPanel({
+    workspaceRoot: WS,
+    documents: [boardDoc(false), boardDoc(true, path.join(WS, "prj.conf"))],
+  });
+  await listThenAdd(panel);
+
+  assert.deepEqual(panel.warnings, []);
+  assert.equal(addSpawned(panel), true);
 });

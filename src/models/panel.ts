@@ -28,6 +28,7 @@
 // passing `"prep p.tflite"` as ONE shell word makes it an unknown subcommand
 // and shows the classifiable exit-1 shape instead.)
 
+import * as path from "path";
 import * as vscode from "vscode";
 import { unsupportedModelSubcommand } from "../alpCli/pinnedSurface";
 import { SUPPORTED_CLI_VERSION } from "../alpCli/service";
@@ -68,6 +69,8 @@ class ModelsPanel {
   private static current: ModelsPanel | undefined;
   private readonly panel: vscode.WebviewPanel;
   private readonly disposables: vscode.Disposable[] = [];
+  /** Ids from the last successful `tan model zoo`, or `null` before one. */
+  private zooIds: ReadonlySet<string> | null = null;
 
   static show(context: vscode.ExtensionContext): ModelsPanel {
     if (ModelsPanel.current) {
@@ -165,11 +168,57 @@ class ModelsPanel {
       ["model", "zoo"],
       cwd,
     );
-    this.post(toZooData(outcome));
+    const zoo = toZooData(outcome);
+    // The ids tan just listed are the only ones `addFromZoo` will hand to
+    // argv. A failed listing clears them rather than keeping a stale set.
+    this.zooIds = zoo.ok ? new Set(zoo.entries.map((entry) => entry.id)) : null;
+    this.post(zoo);
+  }
+
+  /** Refuse an add before anything runs: the section shows why, and the
+   *  click is never silent. */
+  private refuseAdd(code: string, message: string): void {
+    this.post({
+      type: "zooAddResult",
+      ok: false,
+      issues: [{ code, severity: "error", message }],
+    });
+    void reportError(`Alp: ${message}`);
+  }
+
+  /**
+   * Whether board.yaml has unsaved edits open in VS Code, and if so whether
+   * the customer chose to save them first. `true` means safe to proceed.
+   *
+   * tan splices `models:` into the file ON DISK. A dirty editor buffer (the
+   * Configurator, or a text editor) would overwrite that splice on its next
+   * save, leaving `models/<id>` on disk with no entry naming it — and a
+   * re-add then refuses, because the file already exists. So this asks
+   * first, and only a successful save lets the add run.
+   */
+  private async boardYamlSaved(cwd: string): Promise<boolean> {
+    const target = samePath(path.join(cwd, "board.yaml"));
+    const dirty = vscode.workspace.textDocuments.find(
+      (doc) => doc.isDirty && samePath(doc.uri.fsPath) === target,
+    );
+    if (!dirty) return true;
+    const SAVE = "Save and Add";
+    const answer = await vscode.window.showWarningMessage(
+      "board.yaml has unsaved changes. Adding a zoo model edits the file on " +
+        "disk, and saving your editor afterwards would overwrite that edit.",
+      { modal: true },
+      SAVE,
+    );
+    return answer === SAVE && (await dirty.save());
   }
 
   /** Add a curated zoo entry to board.yaml with `tan model add <id>` (#699),
-   *  then refresh, so the new model shows in the list and the gallery.
+   *  then refresh, so the gallery re-reads the zoo. The model LIST is not
+   *  wired yet (#524), so the added model does not appear there.
+   *
+   *  `id` comes from the webview, so it is checked against the ids the last
+   *  `tan model zoo` returned before it reaches argv; an unknown id, or one
+   *  sent before any listing, is refused.
    *
    *  tan fetches the model (bundled, or a download verified against the
    *  manifest's sha256), writes it under `models/` and appends the entry to
@@ -195,6 +244,21 @@ class ModelsPanel {
           },
         ],
       });
+      return;
+    }
+    if (!this.zooIds?.has(id)) {
+      this.refuseAdd(
+        "zooAdd.unknown-id",
+        `${id} is not in the model zoo this panel last listed. Refresh the ` +
+          "zoo and try again.",
+      );
+      return;
+    }
+    if (!(await this.boardYamlSaved(cwd))) {
+      this.refuseAdd(
+        "zooAdd.board-yaml-unsaved",
+        `Did not add ${id}: save board.yaml first, then add it again.`,
+      );
       return;
     }
     this.post({ type: "zooAddStarted" });
@@ -434,4 +498,13 @@ export function showModelsPanel(context: vscode.ExtensionContext): void {
 export function triggerModelBuild(context: vscode.ExtensionContext): void {
   const panel = ModelsPanel.show(context);
   void panel.buildModel();
+}
+
+/** A path in the form two spellings of one file compare equal in: resolved,
+ *  and case-folded where the filesystem is case-insensitive by default. */
+function samePath(file: string): string {
+  const resolved = path.resolve(file);
+  return process.platform === "win32" || process.platform === "darwin"
+    ? resolved.toLowerCase()
+    : resolved;
 }
