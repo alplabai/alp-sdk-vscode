@@ -41,8 +41,8 @@
 // own board.yaml template ships the `ipc:` stanza commented out, and
 // `resolve_carve_outs()` returns `[]` for an empty list — and an always-on
 // default is blocked or half-proven on every current SKU family (all AEN
-// entries resolve `status: blocked` by design, `E1M-NX9101` has
-// `mailbox.controller: TBD`, V2N/V2M's mailbox is `driver_status: partial`).
+// entries resolve `status: blocked` by design, V2N/V2M's mailbox is
+// `driver_status: partial`).
 // The carve-out size the SDK itself would suggest is disputed in its own tree
 // (alp-sdk#1613: the template says 512, the catalog says 256, and 512 is
 // exactly the whole of `ocram_low` on V2N/V2M).

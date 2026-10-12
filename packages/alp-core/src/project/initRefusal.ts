@@ -4,7 +4,8 @@
 //
 // The New Project flow offers every template with every SoM, and 12 of the 44
 // pairs cannot be scaffolded. Measured against the pinned tan 0.6.0 with
-// alp-sdk v0.16.0-rc1:
+// alp-sdk v0.16.0-rc1 — kept as measured; alp-sdk v0.17.0 has since retired
+// E1M-NX9101 from the SKU list, so its two rows below no longer arise:
 //
 //   minimal-app      ok on all 11 SoMs
 //   zephyr-app       ok except E1M-NX9101   -> init.som-unsupported

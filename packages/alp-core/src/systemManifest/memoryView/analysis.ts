@@ -114,7 +114,7 @@ export function findConflicts(spans: MemorySpan[]): MemoryConflict[] {
 /** A region's own absolute extent, or null when it does not resolve one —
  *  the same half-open shape `extentOf` gives a span. */
 export function regionExtentOf(
-  region: MemoryRegion,
+  region: Pick<MemoryRegion, "status" | "base" | "sizeBytes">,
 ): { lo: number; hi: number } | null {
   if (region.status !== "ok" || region.base === null) return null;
   if (region.sizeBytes === null || region.sizeBytes <= 0) return null;

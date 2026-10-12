@@ -8,12 +8,13 @@
 //
 //   status === "ok"
 //   write_authority === "customer_runtime"   (present, exact spelling)
-//   base and size_bytes both resolved
+//   base and size_bytes both resolved, size non-zero
+//   no overlap with a row that is not customer_runtime; a unique name
 //   kind fits the field: ipc → "ram"; storage → "flash" | "unclassified"
 //
 // Everything else is locked, with a reason. The cost of a wrong unlock is not
-// a bad render: on E1M-AEN801 the Secure-Enclave ATOC sits at 0x80578000, 32
-// KiB above a customer `storage` band, and writing it can leave the part
+// a bad render: on E1M-AEN801 the Secure-Enclave ATOC sits at 0x80578000,
+// directly above a customer `storage` band, and writing it can leave the part
 // unbootable (alp-sdk#1289). So this file pins the allowlist from both ends:
 // against the vendored schema's own enums (a value upstream adds must be
 // classified here before it can mean anything), and as a full cartesian
@@ -76,7 +77,9 @@ function region(fields) {
 function expectUnlocked(t, field) {
   if (t.status !== "ok") return false;
   if (t.writeAuthority !== "customer_runtime") return false;
-  if (t.base === null || t.sizeBytes === null) return false;
+  if (t.base === null || t.sizeBytes === null || t.sizeBytes === 0) {
+    return false;
+  }
   if (field === "ipc") return t.kind === "ram";
   return t.kind === "flash" || t.kind === "unclassified";
 }
@@ -107,7 +110,7 @@ test("(b) cartesian: unlocked iff the allowlist tuple, for every field", () => {
   ];
   const kinds = [...memoryItem.properties.kind.enum, "made_up", ""];
   const bases = [0x80560000, null];
-  const sizes = [98304, null];
+  const sizes = [98304, null, 0];
   let cases = 0;
   let unlocked = 0;
   for (const status of statuses)
@@ -180,6 +183,7 @@ test("(b) a locked verdict names what locked it", () => {
   assert.match(reasonOf({ status: "unresolved" }), /unresolved/);
   assert.match(reasonOf({ base: null }), /base/);
   assert.match(reasonOf({ sizeBytes: null }), /size/);
+  assert.match(reasonOf({ sizeBytes: 0 }), /zero-size region/);
   assert.match(reasonOf({}, "ipc"), /ram/);
 });
 
@@ -320,4 +324,92 @@ test("whole-pane guard: an unknown schema_version locks every row", () => {
 test("whole-pane guard: no memory[] pane means no region can be a target", () => {
   const view = manifestWith(undefined);
   assert.equal(view.regions, undefined);
+});
+
+// ── Cross-row locks: a row is only as open as its neighbours allow ─────────
+
+/** The AEN `storage` and `atoc` rows, with `storage` sized `storageSize`. */
+function aenTail(storageSize) {
+  return [
+    {
+      name: "storage",
+      source: "som_preset",
+      kind: "flash",
+      status: "ok",
+      base: 0x80560000,
+      size_bytes: storageSize,
+      write_authority: "customer_runtime",
+    },
+    {
+      name: "atoc",
+      source: "som_preset",
+      kind: "flash",
+      status: "ok",
+      base: 0x80578000,
+      size_bytes: 32768,
+      write_authority: "secure_enclave",
+    },
+  ];
+}
+
+test("a customer_runtime row reaching ONE byte into atoc is locked for both fields", () => {
+  const view = manifestWith(aenTail(98305));
+  const storage = regionNamed(view, "storage");
+  for (const field of FIELDS) {
+    assert.equal(storage.targetLock[field].locked, true, field);
+    assert.match(
+      storage.targetLock[field].reason,
+      /overlaps atoc \(secure_enclave\)/,
+    );
+  }
+});
+
+test("exactly adjacent to atoc (half-open) stays a storage target", () => {
+  const storage = regionNamed(manifestWith(aenTail(98304)), "storage");
+  assert.equal(storage.targetLock.storage.locked, false);
+});
+
+test("an overlap with a row of undeclared authority locks too, and says so", () => {
+  const rows = aenTail(98304);
+  rows.push({
+    name: "shadow",
+    source: "soc_derived",
+    kind: "flash",
+    status: "ok",
+    base: 0x80560000 + 4096,
+    size_bytes: 4096,
+  });
+  const storage = regionNamed(manifestWith(rows), "storage");
+  assert.equal(storage.targetLock.storage.locked, true);
+  assert.match(
+    storage.targetLock.storage.reason,
+    /overlaps shadow \(write authority not declared\)/,
+  );
+});
+
+test("two customer_runtime rows overlapping each other do not lock each other", () => {
+  const rows = aenTail(98304);
+  rows.push({
+    ...rows[0],
+    name: "storage_b",
+    base: 0x80560000 + 4096,
+    size_bytes: 4096,
+  });
+  const view = manifestWith(rows);
+  assert.equal(regionNamed(view, "storage").targetLock.storage.locked, false);
+  assert.equal(regionNamed(view, "storage_b").targetLock.storage.locked, false);
+});
+
+test("a region name that occurs more than once locks every row of that name", () => {
+  const [storage, atoc] = aenTail(98304);
+  const twin = { ...storage, base: 0x90000000 };
+  const view = manifestWith([storage, atoc, twin]);
+  const named = view.regions.filter((r) => r.name === "storage");
+  assert.equal(named.length, 2);
+  for (const r of named) {
+    for (const field of FIELDS) {
+      assert.equal(r.targetLock[field].locked, true);
+      assert.match(r.targetLock[field].reason, /region name is ambiguous/);
+    }
+  }
 });

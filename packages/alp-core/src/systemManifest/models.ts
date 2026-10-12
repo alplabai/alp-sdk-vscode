@@ -82,9 +82,8 @@ export interface ManifestIpcLink {
  *
  * The schema states there is no absent-means-`customer` default, so a reader
  * must distinguish "no policy declared" from every declared value — see
- * `ManifestHelperMcu.flash_policy`. v0.16.0 ships 11 SoM presets; the 10 that
- * declare a helper all declare `recovery_only` (E1M-NX9101 declares
- * `helper_firmware: []`). Enforcement is tan's
+ * `ManifestHelperMcu.flash_policy`. v0.17.0-rc2 ships 13 SoM presets, and
+ * every one declares its helper `recovery_only`. Enforcement is tan's
  * (`flash_plan.py::helper_flash_gate`, tan-cli#611) and its ABSENT-policy
  * branch only skips when a method AND a channel are both declared -- which is
  * why this extension discloses the policy and never filters on it.

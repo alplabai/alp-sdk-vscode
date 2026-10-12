@@ -46,7 +46,7 @@ const BROKEN_SKUS = [
   "E1M-V2M103",
 ];
 
-test("every SKU #502 measured as broken is recognised as Renesas", () => {
+test("every Renesas SKU the #502 floor covers is recognised as Renesas", () => {
   // Arrange / Act / Assert
   for (const sku of BROKEN_SKUS) {
     assert.equal(isRenesasSku(sku), true, `${sku} must be recognised`);

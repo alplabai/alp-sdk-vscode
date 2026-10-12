@@ -37,10 +37,10 @@ export function lockOf(
           : NO_VERDICT.reason,
     };
   }
-  return {
-    locked: false,
-    reason: typeof reason === "string" ? reason : "",
-  };
+  // An OPEN verdict must say why it is open; one that does not is not a
+  // verdict this view trusts.
+  if (typeof reason !== "string" || reason.length === 0) return NO_VERDICT;
+  return { locked: false, reason };
 }
 
 /** Both verdicts, each read fail-closed. */

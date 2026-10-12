@@ -7,7 +7,8 @@
 //
 //   status === "ok"
 //   write_authority === "customer_runtime"   (present, exact spelling)
-//   base and size_bytes both resolved
+//   base and size_bytes both resolved, size non-zero
+//   no overlap with a row that is not customer_runtime; a unique name
 //   kind fits the field: ipc → "ram"; storage → "flash" | "unclassified"
 //
 // Everything else is LOCKED, and says why. This is an ALLOWLIST on purpose:
@@ -22,6 +23,7 @@
 // `test/memoryRegions.targetLock.test.js` pins this against the vendored
 // schema's enums and as a full cartesian product.
 
+import { intersects, regionExtentOf } from "./analysis";
 import type {
   MemoryRegion,
   MemoryRegionTargetLock,
@@ -117,6 +119,7 @@ export function regionTargetLock(
   if (authority) return authority;
   if (region.base === null) return locked("base address not resolved");
   if (region.sizeBytes === null) return locked("size not resolved");
+  if (region.sizeBytes === 0) return locked("zero-size region");
   const kind = kindLock(region.kind, field);
   if (kind) return kind;
   return {
@@ -125,14 +128,51 @@ export function regionTargetLock(
   };
 }
 
-/** Both verdicts, or both locked with `paneReason` when the whole pane is
- *  untrusted (see `paneLockReason`). */
+type UnlockedRegion = Omit<MemoryRegion, "targetLock">;
+
+/**
+ * A reason the row's NEIGHBOURS lock it, or null. A row is only as open as
+ * the rows around it allow:
+ *
+ *  - its name occurs more than once — `ipc[].carve_out_region` and
+ *    `storage[].flash_device` join BY NAME, so an ambiguous name cannot say
+ *    which extent an edit would land in;
+ *  - its extent intersects (half-open) any other row's resolved extent that
+ *    is not itself `customer_runtime` — growing into the AEN ATOC by one
+ *    byte is exactly the #1289 shape. A row with no resolved extent cannot
+ *    be intersected and is not counted here; it is locked on its own.
+ */
+export function neighbourLockReason(
+  region: UnlockedRegion,
+  all: readonly UnlockedRegion[],
+): string | null {
+  if (all.filter((r) => r.name === region.name).length > 1) {
+    return "region name is ambiguous";
+  }
+  const own = regionExtentOf(region);
+  if (own === null) return null;
+  for (const other of all) {
+    if (other === region || other.writeAuthority === "customer_runtime") {
+      continue;
+    }
+    const theirs = regionExtentOf(other);
+    if (theirs === null || !intersects(own, theirs)) continue;
+    const authority = other.writeAuthority ?? "write authority not declared";
+    return `overlaps ${other.name} (${authority})`;
+  }
+  return null;
+}
+
+/** Both verdicts. Locked with `paneReason` when the whole pane is untrusted
+ *  (see `paneLockReason`), then with the neighbour reason, then per row. */
 export function targetLockOf(
-  region: Omit<MemoryRegion, "targetLock">,
+  region: UnlockedRegion,
   paneReason: string | null,
+  all: readonly UnlockedRegion[] = [region],
 ): MemoryRegionTargetLock {
-  if (paneReason !== null) {
-    return { ipc: locked(paneReason), storage: locked(paneReason) };
+  const shared = paneReason ?? neighbourLockReason(region, all);
+  if (shared !== null) {
+    return { ipc: locked(shared), storage: locked(shared) };
   }
   return {
     ipc: regionTargetLock(region, "ipc"),

@@ -25,11 +25,11 @@
 // (alp-sdk#1365 / alp-sdk#2030). #662 then re-vendored the schema from
 // alp-sdk v0.17.0-rc2, which declares `memory` (and `ownership`) as root
 // keys, so the tripwire below HAS fired and now pins the ten rc2 keys. The
-// D5 decision is re-taken in the commit after that vendor: editability keys
-// on the row's `kind` and `write_authority`, both of which the rc2 `memory[]`
-// row declares (`write_authority` stays optional there, so an absent
-// authority must still read as locked). Until that lands the map stays
-// read-only.
+// D5 decision was re-taken after that vendor: whether a region may be an
+// edit TARGET is the fail-closed `regionTargetLock` (keyed on the row's
+// `status`, `kind` and exact `write_authority`, with an absent authority
+// locked), and the view itself still never writes — "Edit in Configurator"
+// only navigates to the Configurator, the one board.yaml writer.
 //
 // ---------------------------------------------------------------------------
 // WHAT THIS GATE GUARANTEES, AND WHAT IT DELIBERATELY DOES NOT
@@ -1060,7 +1060,7 @@ test("the memory view navigates, never writes", async () => {
   }
 });
 
-test("the contract still cannot tell a customer band from a secure one", () => {
+test("system-manifest-v1 root keys are pinned", () => {
   // The tripwire. `system-manifest-v1` pins its root keys here; when they
   // change, this fails and the target-lock predicate (`regionTargetLock`)
   // must be re-checked with the new data in hand — an omitted or unknown

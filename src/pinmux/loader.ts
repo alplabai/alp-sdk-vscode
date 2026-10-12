@@ -14,7 +14,6 @@ export type ReadFileFn = (filePath: string) => string;
  */
 const SKU_PINMUX_FAMILY: ReadonlyArray<readonly [RegExp, string]> = [
   [/^E1M-AEN/, "aen"],
-  [/^E1M-NX9/, "imx93"],
   [/^E1M-V2N/, "v2n"],
   // V2M is the same PCB/E1M edge as V2N (the M1 delta is SoM-internal DEEPX
   // nets, not an edge pinout), so it shares the v2n capability table.

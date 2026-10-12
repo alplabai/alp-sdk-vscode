@@ -70,3 +70,16 @@ test("region rows carry both verdicts; span rows carry none", async () => {
   assert.equal(bare[0].targetLock.ipc.locked, true, "absent → locked");
   assert.equal(bare[0].fullyLocked, true);
 });
+
+test("lockOf: an open verdict with no reason is not trusted — it reads as locked", async () => {
+  const { lockOf } = await load("features/build-plan/targetLock.ts");
+  for (const reason of [undefined, "", 42, null]) {
+    const r = region({
+      name: "storage",
+      targetLock: { storage: { locked: false, reason } },
+    });
+    const lock = lockOf(r, "storage");
+    assert.equal(lock.locked, true, String(reason));
+    assert.ok(lock.reason.length > 0);
+  }
+});

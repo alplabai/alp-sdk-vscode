@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { deepxPathMissing, drpaiPathMissing } from "./drpaiInputs";
 import { focusKeyOf, useFocusEntry } from "./focusEntry";
 import { Icon } from "../../shared/ui";
 import type {
@@ -474,24 +475,6 @@ function ProjectSection({ cfg }: { cfg: UseConfigurator }) {
       <HardwareCard vm={vm} />
     </div>
   );
-}
-
-/** DeepX NPU compile target enabled but missing its config/calibration path(s).
- *  A configurator-time gate so the user fixes it here instead of hitting a
- *  downstream `alp generate` file-not-found. */
-function deepxPathMissing(m: ModelEntry): boolean {
-  const d = m.compile?.deepx_dxm1;
-  return !!d && (!d.config.trim() || !d.calibration.trim());
-}
-
-/** DRP-AI NPU compile target enabled but missing a required input. */
-function drpaiPathMissing(m: ModelEntry): boolean {
-  const d = m.compile?.drpai;
-  if (!d) return false;
-  const shapeEmpty = Array.isArray(d.input_shape)
-    ? d.input_shape.length === 0
-    : !d.input_shape.trim();
-  return shapeEmpty || !d.input_name.trim() || !d.images.trim();
 }
 
 /** The runtime a core naturally runs (its SoM-topology default). */
