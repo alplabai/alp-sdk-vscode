@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **The flash consent gate reads tan 0.7's new flash options with the
+  right arity (#701).** `--probe-serial`, `--probe-usb-path`, `--watch`,
+  `--raw`, `--wait` and `--jlink` now swallow their value, so
+  `tan flash --probe-serial 000801234567 --confirm` no longer reads the
+  serial as the APP_PATH and looks for a manifest beside it. This matters
+  when `alpSdk.cliPath` points at a tan newer than the 0.6.0 pin. They are
+  held apart from the pinned table, and the surface gate reds the re-pin
+  that vendors them until they are folded in.
+
 - **The i.MX 93 mappings for E1M-NX9101 are gone (#700).** The module was
   never produced and alp-sdk removed it (alplabai/alp-sdk#2782). The
   Configurator's chip filter and the pinmux loader no longer map `E1M-NX9*`
