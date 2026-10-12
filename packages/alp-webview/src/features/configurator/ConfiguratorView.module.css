@@ -618,3 +618,9 @@
 .vBannerList li {
   margin-bottom: 2px;
 }
+
+/* #484: the field "Edit in Configurator" landed on, briefly. */
+.control[data-focus-flash] {
+  outline: 2px solid var(--vscode-focusBorder, currentColor);
+  outline-offset: 1px;
+}

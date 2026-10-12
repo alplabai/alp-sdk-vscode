@@ -26,8 +26,12 @@ import { notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { loadSdkCatalogue } from "../sdkCatalogue/vscodeAdapter";
 import { log } from "../util";
+import {
+  attachConfiguratorPanel,
+  CONFIGURATOR_VIEW_TYPE,
+} from "./focusRegistry";
 
-const VIEW_TYPE = "alp.boardConfigurator";
+const VIEW_TYPE = CONFIGURATOR_VIEW_TYPE;
 const EMPTY_BOARD: BoardConfig = { som: { sku: "" }, cores: {} };
 
 /**
@@ -145,10 +149,19 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
       void panel.webview.postMessage(msg);
     });
 
+    // #484: a Build Plan "Edit in Configurator" request for this file is
+    // delivered once the view has rendered the board it must find the entry
+    // in — i.e. right after the first `configuratorRender` below.
+    const focus = attachConfiguratorPanel(document.uri.fsPath, (message) => {
+      void panel.webview.postMessage(message satisfies ExtToWebviewMessage);
+    });
+    panel.onDidDispose(() => focus.dispose());
+
     panel.webview.onDidReceiveMessage((msg: WebviewToExtMessage) => {
       switch (msg.type) {
         case "ready":
           postRender(parse());
+          focus.ready();
           // Then ask tan for the library vocabulary it owns and re-render once
           // it answers. It runs ONCE per editor rather than inside postRender,
           // which fires on every keystroke that reaches the document — spawning

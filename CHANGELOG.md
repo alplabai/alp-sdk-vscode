@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Edit an IPC carve-out or storage partition size straight from the Build
+  Plan.** Each IPC link and storage partition has an "Edit in Configurator"
+  link that opens the Board Configurator on your board.yaml with that
+  entry's size field focused. The Build Plan itself never writes the file.
+  When the manifest isn't known to come from the last build, the row says
+  that tan's verdict will only update on the next build. The Configurator's
+  storage section now warns that resizing a partition can move the ones
+  after it, and data already on the device may be lost.
+
 - **Memory regions now say whether they can be an edit target, and refuse
   by default.** Each region's detail line shows a lock verdict for an IPC
   carve-out and a storage partition; a region opens only when the manifest

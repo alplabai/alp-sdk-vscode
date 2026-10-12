@@ -600,6 +600,18 @@ export interface NewProjectPreviewDataMessage {
   files: NewProjectFileChange[] | null;
 }
 
+/**
+ * Host → Configurator (#484): scroll to, focus and briefly highlight one
+ * entry's size field (`ipc[].carve_out_kb` / `storage[].size_kib`), found by
+ * `name`. A name board.yaml does not declare opens the section and says so;
+ * nothing is ever created.
+ */
+export interface ConfiguratorFocusEntryMessage {
+  type: "focusEntry";
+  section: "ipc" | "storage";
+  name: string;
+}
+
 export type ExtToWebviewMessage =
   | StateUpdateMessage
   | SdkReleasesLoadedMessage
@@ -608,6 +620,7 @@ export type ExtToWebviewMessage =
   | FocusSectionMessage
   | ConfiguratorRenderMessage
   | ConfiguratorSavedMessage
+  | ConfiguratorFocusEntryMessage
   | DependencyReportMessage
   | HardwareExplorerDataMessage
   | ProjectLocationPickedMessage
@@ -963,6 +976,18 @@ export interface ReloadProjectTemplatesMessage {
   sdkPath?: string;
 }
 
+/**
+ * Build Plan → host (#484): open the Board Configurator on the project's
+ * board.yaml at one ipc or storage entry, by `name`. Navigation only — it
+ * carries no value to write; the Configurator remains the one board.yaml
+ * writer. The host resolves the path itself (`collectProjectContext()`).
+ */
+export interface OpenInConfiguratorMessage {
+  type: "openInConfigurator";
+  section: "ipc" | "storage";
+  name: string;
+}
+
 export type WebviewToExtMessage =
   | ReadyMessage
   | RunCommandMessage
@@ -991,6 +1016,7 @@ export type WebviewToExtMessage =
   | FlashSliceMessage
   | OpenBoardYamlMessage
   | CopyTextMessage
+  | OpenInConfiguratorMessage
   | RequestModelsMessage
   | BuildModelMessage
   | CheckModelFitMessage

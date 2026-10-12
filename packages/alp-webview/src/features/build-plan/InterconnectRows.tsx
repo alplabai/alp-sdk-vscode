@@ -4,6 +4,11 @@
 // on its own row, with the resolver's reason — whole, verbatim — one
 // disclosure down, and the one action that can fix it (open the board
 // config) beside it. A resolved link names where its carve-out landed.
+//
+// Every link also offers "Edit in Configurator" (#484): it opens the Board
+// Configurator at this entry with its carve-out size focused. The status
+// and reason on the row are tan's verdict from the LAST build; a changed
+// size is judged only by the next one.
 
 import { useId, useState } from "react";
 import type { ManifestIpcLink, MemorySpan } from "../../types";
@@ -12,7 +17,8 @@ import {
   copyFindingText,
   openDeclaringFile,
 } from "./blockedFindingActions";
-import { formatRange } from "./format";
+import { ConfiguratorLink } from "./ConfiguratorLink";
+import { formatBytes, formatRange } from "./format";
 import { endOf } from "./regionWindow";
 import styles from "./rows.module.css";
 
@@ -35,10 +41,30 @@ function placedText(link: ManifestIpcLink, spans: MemorySpan[]): string | null {
   return span.region ? `${where} in ${span.region}` : where;
 }
 
-function Row({ link, spans }: { link: ManifestIpcLink; spans: MemorySpan[] }) {
+/** The carve-out size the last build resolved for this link, or null. */
+function requestText(
+  link: ManifestIpcLink,
+  spans: MemorySpan[],
+): string | null {
+  const span = spans.find((s) => s.id === `carve_out:${link.name}`);
+  return span && span.sizeBytes !== null
+    ? `carve-out ${formatBytes(span.sizeBytes)}`
+    : null;
+}
+
+function Row({
+  link,
+  spans,
+  fresh,
+}: {
+  link: ManifestIpcLink;
+  spans: MemorySpan[];
+  fresh: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const kind = kindOf(link.status);
   const placed = placedText(link, spans);
+  const request = requestText(link, spans);
   const statusWord = link.status ?? (placed ? "placed" : "ok");
   return (
     <li className={styles.item}>
@@ -55,6 +81,7 @@ function Row({ link, spans }: { link: ManifestIpcLink; spans: MemorySpan[] }) {
             <span className={styles.name}>{link.name}</span>
             <span className={styles.sub}>
               {link.kind} · {link.endpoints.join(" ↔ ")}
+              {request && ` · ${request}`}
             </span>
           </div>
         </div>
@@ -69,29 +96,28 @@ function Row({ link, spans }: { link: ManifestIpcLink; spans: MemorySpan[] }) {
             )}
           </span>
         </div>
-        {(link.reason || kind === "err") && (
-          <div className={styles.actions}>
-            {link.reason && (
-              <button
-                type="button"
-                className={styles.linkBtn}
-                aria-expanded={open}
-                onClick={() => setOpen((cur) => !cur)}
-              >
-                {open ? "Hide reason" : "Show reason"}
-              </button>
-            )}
-            {kind === "err" && (
-              <button
-                type="button"
-                className={styles.ghostBtn}
-                onClick={openDeclaringFile}
-              >
-                Open {BOARD_CONFIG_LABEL}
-              </button>
-            )}
-          </div>
-        )}
+        <div className={styles.actions}>
+          <ConfiguratorLink section="ipc" name={link.name} fresh={fresh} />
+          {link.reason && (
+            <button
+              type="button"
+              className={styles.linkBtn}
+              aria-expanded={open}
+              onClick={() => setOpen((cur) => !cur)}
+            >
+              {open ? "Hide reason" : "Show reason"}
+            </button>
+          )}
+          {kind === "err" && (
+            <button
+              type="button"
+              className={styles.ghostBtn}
+              onClick={openDeclaringFile}
+            >
+              Open {BOARD_CONFIG_LABEL}
+            </button>
+          )}
+        </div>
       </div>
       {open && link.reason && (
         <>
@@ -116,9 +142,12 @@ function Row({ link, spans }: { link: ManifestIpcLink; spans: MemorySpan[] }) {
 export function InterconnectRows({
   links,
   spans,
+  fresh,
 }: {
   links: ManifestIpcLink[];
   spans: MemorySpan[];
+  /** True only when the manifest is known to describe the last build. */
+  fresh: boolean;
 }) {
   const headingId = useId();
   const blocked = links.filter((l) => kindOf(l.status) === "err").length;
@@ -145,7 +174,7 @@ export function InterconnectRows({
       </div>
       <ul className={styles.list}>
         {links.map((link) => (
-          <Row key={link.name} link={link} spans={spans} />
+          <Row key={link.name} link={link} spans={spans} fresh={fresh} />
         ))}
       </ul>
     </section>

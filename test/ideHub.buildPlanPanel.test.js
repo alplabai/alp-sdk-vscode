@@ -96,6 +96,7 @@ function mountPanel({
   boardYamlPath = workspaceRoot ? path.join(workspaceRoot, "board.yaml") : null,
   showTextDocument: showTextDocumentOverride = null,
   clipboardWriteText: clipboardWriteTextOverride = null,
+  executeCommand: executeCommandOverride = null,
 } = {}) {
   const calls = [];
   const posted = [];
@@ -105,6 +106,9 @@ function mountPanel({
   const opened = [];
   const logs = [];
   const clipboard = [];
+  // #484: every `vscode.commands.executeCommand` call — how
+  // `openInConfigurator` opens the Configurator custom editor.
+  const executed = [];
   // #484: every plan `notifyAsync` was handed —
   // the user-visible half. A raw `log()` call alone reaches only the "Alp
   // SDK" output channel, which nothing surfaces on its own; this is what
@@ -189,6 +193,14 @@ function mountPanel({
           },
         }),
       },
+      commands: {
+        executeCommand:
+          executeCommandOverride ??
+          ((...args) => {
+            executed.push(args);
+            return Promise.resolve();
+          }),
+      },
       ViewColumn: { Active: 1 },
       Uri: {
         joinPath: () => ({}),
@@ -242,7 +254,10 @@ function mountPanel({
     opened,
     logs,
     clipboard,
+    executed,
     notifications,
+    openInConfigurator: (section, name) =>
+      onMessage({ type: "openInConfigurator", section, name }),
     requestBuildPlan: () => onMessage({ type: "requestBuildPlan" }),
     fileChanged: () => watcherHandlers.forEach((handler) => handler()),
     openBoardYaml: () => onMessage({ type: "openBoardYaml" }),
@@ -551,4 +566,85 @@ test("copyText notifies when the clipboard write is refused", async () => {
   assert.equal(plan.message, "Copying to the clipboard failed.");
   assert.match(plan.detail ?? "", /EBUSY/);
   assert.equal(plan.severity, "error");
+});
+
+// ── #484: `openInConfigurator` ──────────────────────────────────────────────
+//
+// Navigation only: the Build Plan never writes board.yaml. It asks the host to
+// open the Configurator (the one board.yaml writer) at an entry, and the host
+// resolves the path itself, under the same precondition `openBoardYaml` uses.
+
+const focusRegistry = () =>
+  require(path.join(root, "out", "configurator", "focusRegistry.js"));
+
+test("openInConfigurator opens the Configurator custom editor on the resolved board.yaml and queues the focus", async () => {
+  const boardYamlPath = path.join(WORKSPACE_ROOT, "config", "board.yaml");
+  const { executed, notifications, openInConfigurator } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+    boardYamlPath,
+  });
+  openInConfigurator("ipc", "alp_default_rpmsg");
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(notifications, []);
+  assert.equal(executed.length, 1);
+  const [command, uri, viewType] = executed[0];
+  assert.equal(command, "vscode.openWith");
+  assert.equal(uri.fsPath, boardYamlPath);
+  assert.equal(viewType, "alp.boardConfigurator");
+  assert.deepEqual(focusRegistry().takePendingFocus(boardYamlPath), {
+    section: "ipc",
+    name: "alp_default_rpmsg",
+  });
+});
+
+test("openInConfigurator raises the noBoardYaml precondition and opens nothing when no board.yaml resolves", async () => {
+  const { executed, notifications, openInConfigurator } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+    boardYamlPath: null,
+  });
+  assert.doesNotThrow(() => openInConfigurator("storage", "data"));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(executed, []);
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0].message, "No board.yaml in this folder yet.");
+  assert.equal(notifications[0].severity, "warning");
+});
+
+test("openInConfigurator notifies when the Configurator cannot be opened", async () => {
+  const boardYamlPath = path.join(WORKSPACE_ROOT, "board.yaml");
+  const { notifications, openInConfigurator } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+    boardYamlPath,
+    executeCommand: () => Promise.reject(new Error("no such editor")),
+  });
+  openInConfigurator("storage", "data");
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0].severity, "error");
+  assert.equal(
+    focusRegistry().takePendingFocus(boardYamlPath),
+    null,
+    "a failed open leaves no focus queued for a later, unrelated open",
+  );
+});
+
+test("openInConfigurator refuses a malformed request without opening anything", async () => {
+  const boardYamlPath = path.join(WORKSPACE_ROOT, "board.yaml");
+  const { executed, openInConfigurator } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+    boardYamlPath,
+  });
+  for (const [section, name] of [
+    ["slices", "m55_hp"],
+    ["ipc", ""],
+    ["ipc", 42],
+    ["__proto__", "x"],
+  ]) {
+    openInConfigurator(section, name);
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(executed, []);
 });

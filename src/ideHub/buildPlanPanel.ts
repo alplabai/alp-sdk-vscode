@@ -33,6 +33,12 @@ import {
 import { notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import {
+  CONFIGURATOR_VIEW_TYPE,
+  isFocusEntryTarget,
+  requestConfiguratorFocus,
+  takePendingFocus,
+} from "../configurator/focusRegistry";
+import {
   deferredBuildOptionMessage,
   retiredBuildOptionMessage,
 } from "../alpCli/pinnedSurface";
@@ -218,6 +224,9 @@ export class BuildPlanPanel {
         break;
       case "copyText":
         void this.copyText(msg.text);
+        break;
+      case "openInConfigurator":
+        void this.openInConfigurator(msg);
         break;
       case "openUrl":
         if (msg.url.startsWith("https://") || msg.url.startsWith("vscode://")) {
@@ -738,6 +747,50 @@ export class BuildPlanPanel {
       notifyAsync(
         planFailure({
           operation: "Opening board.yaml",
+          cause: String(err),
+        }),
+      );
+    }
+  }
+
+  /**
+   * Open the Board Configurator on the project's board.yaml at one ipc or
+   * storage entry (#484). NAVIGATION ONLY: the Build Plan never writes
+   * board.yaml — the Configurator is the one writer, and it opens with the
+   * entry's size field focused so the reader edits it there.
+   *
+   * The path is `collectProjectContext().boardYamlPath`, the same resolver
+   * and the same `noBoardYaml` precondition `openBoardYaml` uses; the
+   * webview names only the section and the entry, and both are narrowed by
+   * `isFocusEntryTarget` before anything opens. The focus is queued BEFORE
+   * the open (the panel may become ready during it) and withdrawn if the
+   * open fails, so a stale request never lands on a later, unrelated open.
+   */
+  private async openInConfigurator(msg: unknown): Promise<void> {
+    if (!isFocusEntryTarget(msg)) {
+      log(`[build-plan] openInConfigurator: malformed request ignored`);
+      return;
+    }
+    const boardYamlPath = collectProjectContext().boardYamlPath;
+    if (!boardYamlPath) {
+      notifyAsync(planPrecondition("noBoardYaml"));
+      return;
+    }
+    requestConfiguratorFocus(boardYamlPath, {
+      section: msg.section,
+      name: msg.name,
+    });
+    try {
+      await vscode.commands.executeCommand(
+        "vscode.openWith",
+        vscode.Uri.file(boardYamlPath),
+        CONFIGURATOR_VIEW_TYPE,
+      );
+    } catch (err) {
+      takePendingFocus(boardYamlPath);
+      notifyAsync(
+        planFailure({
+          operation: "Opening the board configurator",
           cause: String(err),
         }),
       );

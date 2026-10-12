@@ -283,6 +283,7 @@ export function BuildPlanView() {
                 picked={memoryPick}
                 onPick={setMemoryPick}
                 onResolve={setResolvedPick}
+                fresh={manifestProvenance?.freshness === "fresh"}
               />
             </div>
           )}
@@ -290,6 +291,7 @@ export function BuildPlanView() {
             <InterconnectRows
               links={manifest.ipc}
               spans={memory?.spans ?? []}
+              fresh={manifestProvenance?.freshness === "fresh"}
             />
           )}
           {manifest && manifest.helper_mcus.length > 0 && (

@@ -37,8 +37,10 @@
 //
 // THE PROPERTY, EXACTLY: no module in the Memory view's import closure
 // imports the host transport module (`src/vscode.ts`), except
-// `blockedFindingActions.ts` — which may send exactly the two message types
-// named below, read from the AST of its own `postMessage(...)` call sites.
+// `blockedFindingActions.ts` — which may send exactly the three message types
+// named below (two act on a finding, one navigates to the Configurator),
+// each with exactly its listed keys, read from the AST of its own
+// `postMessage(...)` call sites.
 //
 // That is NARROWER than "the memory view has no path back to the extension
 // host", which is what this header used to claim, and the gap is not
@@ -198,7 +200,7 @@ const TRANSPORT_MODULE = joinPath(SRC, "vscode.ts");
 /** The one file this gate lets use the host transport at all. The approved
  *  design is "open the declaring file, copy its text, both through host
  *  messages", which needs SOME transport; recording the exception here,
- *  scoped to this one file and the two message kinds below, is how that need
+ *  scoped to this one file and the message kinds below, is how that need
  *  is met without reopening "the memory view has no path back to the host"
  *  for the strip modules this gate exists to keep passive. */
 const SANCTIONED_HOST_FILE = joinPath(
@@ -216,7 +218,22 @@ const SANCTIONED_HOST_FILE = joinPath(
  *  that approved the two entries already here, and say in that review why
  *  the new message does not write memory-map data, the same case made for
  *  these two. */
-const SANCTIONED_MESSAGE_TYPES = ["openBoardYaml", "copyText"];
+const SANCTIONED_MESSAGE_TYPES = [
+  "openBoardYaml",
+  "copyText",
+  "openInConfigurator",
+];
+
+/** The exact property keys each sanctioned message may carry. None names a
+ *  value to write: `openInConfigurator` (#484) is NAVIGATION — it opens the
+ *  Board Configurator, the extension's one board.yaml writer, at an entry
+ *  chosen by section and name, and the reader edits there. A key outside
+ *  these sets (a size, an address, a `board`) is refused at the AST. */
+const SANCTIONED_MESSAGE_KEYS = {
+  openBoardYaml: ["type"],
+  copyText: ["type", "text"],
+  openInConfigurator: ["type", "section", "name"],
+};
 
 /** Names that may never be referenced by a module in the derived set. The
  *  global `acquireVsCodeApi` is the transport's own source, so reaching for
@@ -863,6 +880,17 @@ function checkPostMessageCall(call, file, ast, is) {
       "concatenation cannot be audited by this gate and is refused " +
       "outright, whatever it might evaluate to",
   );
+  const keys = argument.properties.map((p) => p.name?.text).sort();
+  const allowedKeys = SANCTIONED_MESSAGE_KEYS[initializer.text];
+  if (allowedKeys) {
+    assert.deepEqual(
+      keys,
+      [...allowedKeys].sort(),
+      `${where}: postMessage({ type: "${initializer.text}" }) carries keys ` +
+        `${JSON.stringify(keys)}, not exactly ${JSON.stringify(allowedKeys)} ` +
+        "— the memory view navigates and copies, it never posts a value to write",
+    );
+  }
   assert.ok(
     SANCTIONED_MESSAGE_TYPES.includes(initializer.text),
     `${where}: postMessage(...) posts message type "${initializer.text}", ` +
@@ -985,13 +1013,15 @@ test("the memory view has no path back to the host, except the one sanctioned ex
   }
 });
 
-test("the memory view offers no editing affordance", async () => {
+test("the memory view navigates, never writes", async () => {
   const graph = await moduleGraph();
   assertNothingWasDropped(graph);
 
   // A control that takes a value is the shape of an edit. Buttons and
-  // keyboard handlers are allowed and present (selecting a strip item);
-  // they change what is DRAWN, never what is stored.
+  // keyboard handlers are allowed and present (selecting a strip item, and
+  // "Edit in Configurator", which opens the Configurator at an entry and
+  // carries no value — see SANCTIONED_MESSAGE_KEYS); they change what is
+  // DRAWN or where the reader is taken, never what is stored.
   for (const file of graph.reachable) {
     const source = read(file);
     for (const forbidden of [

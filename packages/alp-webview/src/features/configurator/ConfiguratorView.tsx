@@ -1,4 +1,12 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { focusKeyOf, useFocusEntry } from "./focusEntry";
 import { Icon } from "../../shared/ui";
 import type {
   BoardConfig,
@@ -140,11 +148,14 @@ export function NumberInput({
   placeholder,
   onChange,
   label,
+  focusKey,
 }: {
   value: string;
   placeholder?: string;
   onChange: (v: string) => void;
   label: string;
+  /** `data-focus-entry`, so "Edit in Configurator" can land here (#484). */
+  focusKey?: string;
 }) {
   const [draft, setDraft] = useState(value);
   const focused = useRef(false);
@@ -158,6 +169,7 @@ export function NumberInput({
       value={draft}
       placeholder={placeholder}
       aria-label={label}
+      data-focus-entry={focusKey}
       onFocus={() => {
         focused.current = true;
       }}
@@ -1173,6 +1185,10 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
 
       {/* Storage */}
       <AdvCard title="Storage partitions">
+        <p className={styles.secHelp} data-resize-warning="">
+          Resizing a partition can move the partitions after it, and data
+          already on the device may be lost.
+        </p>
         <div className={styles.partList}>
           {storage.length === 0 ? (
             <span className={styles.selEmpty}>no partitions</span>
@@ -1194,6 +1210,7 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                 />
                 <NumberInput
                   label="Partition size KiB"
+                  focusKey={focusKeyOf("storage", p.name)}
                   value={p.size_kib != null ? String(p.size_kib) : ""}
                   placeholder="size KiB"
                   onChange={(v) =>
@@ -1484,6 +1501,7 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                 />
                 <NumberInput
                   label="IPC carve-out KiB"
+                  focusKey={focusKeyOf("ipc", e.name)}
                   value={e.carve_out_kb != null ? String(e.carve_out_kb) : ""}
                   placeholder="KiB"
                   onChange={(v) =>
@@ -1742,6 +1760,10 @@ function ReviewSection({ cfg }: { cfg: UseConfigurator }) {
 export function ConfiguratorView() {
   const cfg = useConfigurator();
   const [active, setActive] = useState<ConfiguratorSection>("project");
+  // #484: the Build Plan's "Edit in Configurator" lands in Advanced, where
+  // the IPC and storage entries are edited.
+  const openAdvanced = useCallback(() => setActive("advanced"), []);
+  const focusNotice = useFocusEntry(cfg.board, cfg.loaded, openAdvanced);
   const {
     sdkConnected,
     dirty,
@@ -1839,7 +1861,14 @@ export function ConfiguratorView() {
             </button>
           ))}
         </nav>
-        <main className={styles.main}>{renderSection()}</main>
+        <main className={styles.main}>
+          {focusNotice && (
+            <p className={styles.secHelp} role="status" data-focus-notice="">
+              {focusNotice}
+            </p>
+          )}
+          {renderSection()}
+        </main>
       </div>
 
       {validation.errors.length > 0 && (

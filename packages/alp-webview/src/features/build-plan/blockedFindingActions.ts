@@ -13,15 +13,17 @@
 // THIS FILE IS IN ITS SCOPE TOO — the gate bans the host TRANSPORT itself,
 // not just mutation, so relocating the two calls out of the three files
 // above closes nothing on its own. The gate instead names this file
-// explicitly and allows exactly the two message types below
-// (`openBoardYaml`, `copyText`) and nothing else — no dispatched command,
-// no third message type. That allowance is a deliberate ruling on the
+// explicitly and allows exactly the three message types below
+// (`openBoardYaml`, `copyText`, `openInConfigurator`), each with exactly
+// its own keys, and nothing else — no dispatched command, no value to
+// write. That allowance is a deliberate ruling on the
 // design (open-file/copy through host messages needs SOME transport)
 // balanced against the gate's own intent (no UNAUDITED path back to the
 // host); it is not a way around the gate.
 //
-// Neither action writes memory-map data — both act on a BLOCKED finding,
-// something the allocator already refused to place:
+// None of them writes memory-map data. The first two act on a BLOCKED
+// finding, something the allocator already refused to place; the third
+// only navigates to the Configurator:
 //
 //  - `openDeclaringFile` opens board.yaml in the editor, so the customer can
 //    fix the declaration themselves in a real editor, not through this view.
@@ -70,4 +72,18 @@ export function openDeclaringFile(): void {
 /** Ask the host to put `text` on the system clipboard. */
 export function copyFindingText(text: string): void {
   postMessage({ type: "copyText", text });
+}
+
+/**
+ * Ask the host to open the Board Configurator on the project's board config
+ * at one IPC link or storage partition, by name (#484). NAVIGATION ONLY: it
+ * carries no value to write — the Configurator, the extension's one writer
+ * of that file, opens with the entry's size field focused, and the reader
+ * edits there. The gate pins this call's keys to exactly these three.
+ */
+export function openEntryInConfigurator(
+  section: "ipc" | "storage",
+  name: string,
+): void {
+  postMessage({ type: "openInConfigurator", section, name });
 }

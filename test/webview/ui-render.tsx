@@ -20,7 +20,11 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { AppProvider } from "../../packages/alp-webview/src/shared/AppContext";
 import { ErrorBoundary } from "../../packages/alp-webview/src/shared/ui";
-import { TextInput } from "../../packages/alp-webview/src/features/configurator/ConfiguratorView";
+import {
+  NumberInput,
+  TextInput,
+} from "../../packages/alp-webview/src/features/configurator/ConfiguratorView";
+import { useFocusEntry } from "../../packages/alp-webview/src/features/configurator/focusEntry";
 import { OverviewView } from "../../packages/alp-webview/src/features/overview";
 import { SidebarHubView } from "../../packages/alp-webview/src/features/sidebar-hub";
 import { SetupFlowView } from "../../packages/alp-webview/src/features/setup-flow";
@@ -1995,6 +1999,124 @@ async function main() {
     checkHeadingOutline(container, "memory-aen", problems);
     console.log(
       `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-aen: bands, tiers, ghosts and verbatim reasons`,
+    );
+  }
+
+  // ── "Edit in Configurator" on the AEN ipc row: navigates, never writes (#484) ──
+  // The Interconnect row for the blocked `alp_default_rpmsg` link offers the
+  // link; clicking it posts exactly `openInConfigurator` with that name and
+  // nothing a host could write. With no provenance the verdict is not known
+  // to be the last build's, so the row says so; with a fresh one it does not.
+  {
+    const problemsBefore = problems.length;
+    const LAST_BUILD = "from the last build — rebuild after editing";
+    const manifest = parseSystemManifest(aenFixtureText);
+    const stale = await mountBuildPlan(manifest);
+    const link = stale.querySelector(
+      '[data-open-in-configurator="ipc:alp_default_rpmsg"]',
+    ) as HTMLButtonElement | null;
+    if (!link) {
+      problems.push(
+        "configurator-link: no Edit in Configurator on the ipc row",
+      );
+    } else {
+      if (!(stale.textContent || "").includes(LAST_BUILD)) {
+        problems.push(
+          "configurator-link: no last-build note without provenance",
+        );
+      }
+      const before = (g.__ALP_POSTED__ as unknown[]).length;
+      link.click();
+      await settle();
+      const posted = postedSince(before);
+      const open = posted.filter((m) => m.type === "openInConfigurator");
+      if (
+        open.length !== 1 ||
+        open[0].section !== "ipc" ||
+        open[0].name !== "alp_default_rpmsg" ||
+        Object.keys(open[0]).sort().join(",") !== "name,section,type"
+      ) {
+        problems.push(
+          `configurator-link: expected one bare openInConfigurator, got ${JSON.stringify(posted)}`,
+        );
+      }
+    }
+    stale.remove();
+    const fresh = await mountBuildPlan(manifest, [], {
+      writtenAt: new Date(0).toISOString(),
+      freshness: "fresh",
+      reason: null,
+    });
+    if ((fresh.textContent || "").includes(LAST_BUILD)) {
+      problems.push(
+        "configurator-link: last-build note shown on a fresh manifest",
+      );
+    }
+    fresh.remove();
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  configurator-link: ipc row navigates to the Configurator by name`,
+    );
+  }
+
+  // ── the Configurator lands on the entry it was sent to (#484) ──
+  // `focusEntry` opens the section, focuses the size field whose
+  // `data-focus-entry` matches, and flags it; an undeclared name shows a
+  // notice and creates nothing.
+  {
+    const problemsBefore = problems.length;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    let opened = 0;
+    const board = {
+      som: { sku: "E1M-AEN801" },
+      cores: {},
+      ipc: [{ name: "link0", kind: "rpmsg", endpoints: [] }],
+    };
+    const openSection = () => {
+      opened += 1;
+    };
+    function Probe() {
+      const notice = useFocusEntry(board as never, true, openSection);
+      return React.createElement(
+        "div",
+        null,
+        notice && React.createElement("p", { "data-notice": "" }, notice),
+        React.createElement(NumberInput, {
+          label: "IPC carve-out KiB",
+          value: "16",
+          onChange: () => {},
+          focusKey: "ipc:link0",
+        }),
+      );
+    }
+    createRoot(container).render(React.createElement(Probe));
+    await settle();
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "focusEntry",
+      section: "ipc",
+      name: "link0",
+    });
+    await settle();
+    const input = container.querySelector('[data-focus-entry="ipc:link0"]');
+    if (opened !== 1) problems.push("configurator-focus: section not opened");
+    if (!input || document.activeElement !== input) {
+      problems.push("configurator-focus: the carve-out field is not focused");
+    } else if (!input.hasAttribute("data-focus-flash")) {
+      problems.push("configurator-focus: the landed field is not highlighted");
+    }
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "focusEntry",
+      section: "storage",
+      name: "nvs",
+    });
+    await settle();
+    const notice = container.querySelector("[data-notice]")?.textContent || "";
+    if (!notice.includes('"nvs"') || !notice.includes("nothing was created")) {
+      problems.push(`configurator-focus: missing-entry notice was "${notice}"`);
+    }
+    container.remove();
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  configurator-focus: focusEntry lands on the field, never creates`,
     );
   }
 
