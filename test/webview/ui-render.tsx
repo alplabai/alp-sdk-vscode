@@ -1601,6 +1601,77 @@ async function main() {
     );
   }
 
+  // ── a REAL zoo / add failure survives the panel-not-wired gap ──
+  // At rc1 `list`/`doctor` always carry `models.panel-not-wired`, yet `zoo` and
+  // `add` are really spawned. The gap must not swallow their failures: before
+  // the fix `cliUnsupported` (panel-wide) hid both banners, so a failed zoo
+  // listing read as "No zoo entries available." and a failed add said nothing.
+  {
+    const problemsBefore = problems.length;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    root.render(
+      React.createElement(AppProvider, null, React.createElement(ModelsView)),
+    );
+    await settle();
+    feedState();
+    await settle();
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "modelsData",
+      ok: false,
+      models: [],
+      toolchains: [],
+      issues: [
+        {
+          code: "models.panel-not-wired",
+          severity: "info",
+          message: "list is implemented, but this panel has no call for it",
+        },
+      ],
+    });
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "zooData",
+      ok: false,
+      entries: [],
+      issues: [
+        {
+          code: "zoo.cli-error",
+          severity: "error",
+          message: "zoo listing exploded",
+        },
+      ],
+    });
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "zooAddResult",
+      ok: false,
+      issues: [
+        {
+          code: "model.failed",
+          severity: "error",
+          message: "add exploded",
+        },
+      ],
+    });
+    await settle();
+
+    const text = container.textContent ?? "";
+    if (!text.includes("zoo listing exploded")) {
+      problems.push("models-zoo-failure: the zoo error banner was swallowed");
+    }
+    if (text.includes("No zoo entries available.")) {
+      problems.push(
+        "models-zoo-failure: a failed listing read as an empty zoo",
+      );
+    }
+    if (!text.includes("add exploded")) {
+      problems.push("models-zoo-failure: the add error banner was swallowed");
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  models-zoo-failure: zoo/add errors render beside the not-wired notice`,
+    );
+  }
+
   // ── the wizard's Cores step (#534) ──
   // `tan init --cores` splices companions APP-LESS, so before this step a
   // dual-M55 SoM — the Alif Ensemble line's defining topology — scaffolded as a

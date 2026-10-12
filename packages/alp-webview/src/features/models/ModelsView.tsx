@@ -500,6 +500,8 @@ export function ModelsView() {
     addIssues,
     addFromZoo,
     cliModelSurfaceMissing,
+    zooUnsupported,
+    addUnsupported,
   } = useModels();
 
   // A capability gap, not a failure: the actions below cannot work against
@@ -632,7 +634,7 @@ export function ModelsView() {
         <h3 id="zoo-title" className={styles.sectionTitle}>
           Model zoo
         </h3>
-        {!addOk && !cliUnsupported && (
+        {!addOk && !addUnsupported && (
           <IssuesBanner
             ok={false}
             issues={
@@ -648,7 +650,7 @@ export function ModelsView() {
             }
           />
         )}
-        {!zooOk && !cliUnsupported ? (
+        {!zooOk && !zooUnsupported ? (
           <IssuesBanner
             ok={false}
             issues={
