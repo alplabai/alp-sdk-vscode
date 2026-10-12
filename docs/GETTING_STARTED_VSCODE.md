@@ -237,8 +237,8 @@ family — it shells `tan` and renders the JSON envelope, it does not re-impleme
 any model logic. The family is no longer what is missing: the pinned tan
 0.7.0-rc1 implements all nine subcommands the panel drives — `build`, `list`,
 `doctor`, `check`, `zoo`, `add`, `prep`, `run` and `ab` (tan-cli#674). The
-panel calls only `build`; for the rest it reports that the capability arrived
-and the panel is not wired to it yet. Rewiring them, and restoring the
+panel calls `build`, `zoo` and `add` (#699); for the rest it reports that the
+capability arrived and the panel is not wired to it yet. Rewiring them, and restoring the
 surface, is #524.
 
 The rest of this section is INTENT — what the panel shows once #524 restores

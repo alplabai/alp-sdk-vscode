@@ -167,11 +167,11 @@ Restoring the surface is tracked as #524.
 
 The CLI it shells is no longer the gap. The pinned `tan` (0.7.0-rc1)
 implements all nine `model` subcommands — `build`, `doctor`, `check`, `list`,
-`zoo`, `add`, `prep`, `run` and `ab` (tan-cli#674). The panel calls only
+`zoo`, `add`, `prep`, `run` and `ab` (tan-cli#674). The panel calls
 `build`, which compiles and packages the `models:` entries of `board.yaml` into
-`.alpmodel` packages (default output directory `build/models`); for the other
-eight it reports that the capability arrived and the panel is not yet wired to
-it. Rewiring them is #524, and keeping this documentation in step is #551.
+`.alpmodel` packages (default output directory `build/models`), and `zoo` /
+`add` for the model-zoo gallery (#699); for the other six it reports that the
+capability arrived and the panel is not yet wired to it. Rewiring them is #524, and keeping this documentation in step is #551.
 
 > **When the surface returns, two of its numbers still need reading carefully:**
 >

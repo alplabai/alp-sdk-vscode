@@ -16,10 +16,11 @@ First-class IDE support for projects built against the
   launch-profile planning, and support-bundle surfaces are available
   without embedding debugger implementation into the extension.
 * **Models / edge-AI panel — hidden at this pin.** A full-tab preview over the
-  `tan model` CLI whose build action runs `tan model build`. The pinned tan
+  `tan model` CLI whose build action runs `tan model build` and whose Model
+  Zoo gallery runs `tan model zoo` / `add` (#699). The pinned tan
   0.7.0-rc1 implements all nine `model` subcommands (tan-cli#674), but its
   NPU-coverage badge (`full-eligible` / `partial` / `cpu-only` /
-  `undetermined`), Prep Model, Run Model, A-B Compare and Model Zoo screens are not
+  `undetermined`), Prep Model, Run Model and A-B Compare screens are not
   wired to them yet, so the panel says so instead of running them; both of its commands,
   `Alp: Models` and `Alp: Build Model`, are hidden from the command palette
   (#525). The intent is to re-expose the whole surface once the panel is

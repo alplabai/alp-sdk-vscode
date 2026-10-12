@@ -807,6 +807,12 @@ const EXPECTED_PARTIAL = [
   'src/ideHub/newProjectFlowPanel.ts  ["explain", ...root]',
   'src/ideHub/newProjectFlowPanel.ts  ["presets", ...root]',
 
+  // #699: the zoo entry id is the webview's click, so it cannot be a literal.
+  // The command and subcommand still are, and `tan model` takes `[ID]` as its
+  // second positional at the 0.7.0-rc1 pin, so the arity is right by
+  // construction: exactly one value after `add`.
+  'src/models/panel.ts  ["model", "add", id]',
+
   'src/west.ts  ["clean", ...target.appArg]',
   'src/west.ts  ["flash", ...target.appArg]',
   'src/west.ts  ["image", ...target.appArg]',

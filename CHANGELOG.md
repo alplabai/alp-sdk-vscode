@@ -40,9 +40,9 @@
   The zoo entry types and the gallery card read `validatedSoms` and
   `runsHere`, which tan emits from 0.7.0-rc1 (tan-cli#1338), instead of
   `validated_soms` / `runs_here`, which it never emitted. `tan model add`'s
-  `data.added` was already right. The zoo and add sections still report the
-  gap at the 0.6.0 pin; the short-circuit goes when `SUPPORTED_CLI_VERSION`
-  moves to a tan release that has them.
+  `data.added` was already right. With the pin on 0.7.0-rc1 the zoo and add
+  sections spawn `tan model zoo` and `tan model add <id>` again instead of
+  reporting a gap, and with no folder open neither one runs.
 
 - **The Build Plan panel is one page again, drawn in VS Code's own
   language.** The summary strip, the "needs attention" list and the

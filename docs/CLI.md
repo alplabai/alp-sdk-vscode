@@ -87,9 +87,9 @@ The CLI should expose these top-level command families:
 - `tan presets`
 - `tan explain`
 - `tan size`
-- `tan model` (subcommands: `build`, `list`, `info`, `doctor`, `check`, `zoo`,
-  `add`, `prep`, `run`, `ab` — see §2.3; at 0.6.0 only `build` is
-  implemented, tan-cli#674)
+- `tan model` (subcommands: `build`, `doctor`, `check`, `list`, `zoo`, `add`,
+  `prep`, `run`, `ab` — see §2.3; all nine are implemented from 0.7.0-rc1,
+  tan-cli#674. There is no `info`.)
 
 `tan renode` was on this list until tan v0.6.0, which removed the verb, its
 modules and all 27 published `renode.*` issue codes (tan-cli#848). The
@@ -500,18 +500,14 @@ Suggested flags:
 value-add subcommands below each emit the standard envelope; their payloads live
 under `data`, warnings/errors under `issues`.
 
-Of everything in this section only `build` is implemented at the pinned
-0.6.0 — `check`, `zoo`, `add`, `prep`, `run` and `ab` (and `list`, `info`
-and `doctor`) exit 1 with `model.unknown-subcommand` — measured for every form,
-including one carrying a flag `tan model` really has (`tan model check --board
-board.yaml` refuses identically). The subcommand is rejected before any flag is
-read, so the Flags: blocks below describe arguments nothing parses yet. Some of
-those names ARE real options of `tan model` itself — `--board`, `--format` and
-`--out` are three — so they must not be read as a list of flags that do not
-exist. `tan model`'s own options are `--board`, `--board-yaml`, `--format`,
-`--help`, `--metadata-root`, `--out`, `--project` and `--sdk-root`, plus tan's
-global options. The contract below is what the family is meant to
-be; tan-cli#674 is the gap.
+Through tan 0.6.0 only `build` was implemented and every other subcommand
+exited 1 with `model.unknown-subcommand`. From 0.7.0-rc1 all of `build`,
+`doctor`, `check`, `list`, `zoo`, `add`, `prep`, `run` and `ab` exist
+(tan-cli#674); `info` does not. The Flags: blocks below are the contract the
+family was specified against, and have NOT been re-measured against 0.7.0-rc1
+— `tan model --help` is the authority for which option belongs to which
+subcommand. The extension spawns `build`, `zoo` and `add` (#699); wiring the
+rest is #524.
 
 #### `tan model check`
 

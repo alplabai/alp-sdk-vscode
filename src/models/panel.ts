@@ -5,45 +5,28 @@
 // webview-panel shape. No model/build logic lives in this file, only envelope
 // shaping + progress plumbing.
 //
-// ONE of the nine subcommands this panel presents is implemented by the pinned
-// tan, and it is `build`. The other eight — list, doctor, check, zoo, add,
-// prep, run, ab — are tan-cli#674 (#857 was closed as its duplicate; the old
-// pointer led to a closed issue), and this panel USED TO ESTABLISH THAT BY
-// SPAWNING THEM (#543): nine `runAlpCommand(["model", …])` calls whose only
-// possible answer was a refusal.
+// THREE of the nine subcommands this panel presents are spawned for real:
+// `build`, `zoo` and `add`. The pinned tan (0.7.0-rc1) implements all nine
+// (tan-cli#674), and `zoo`/`add` came back with the pin that carries
+// tan-cli#1338 (#699), reading the camelCase envelope that release emits
+// (`entries[].validatedSoms`/`runsHere`, `data.added`).
 //
-// It no longer spawns them, and it still reports the gap. `unsupportedModel-
-// Subcommand` (../alpCli/pinnedSurface) synthesises the refusal tan would have
-// returned, carrying tan's own `model.unknown-subcommand` code, so it flows
-// through the same `./service` shapers into the same one banner the webview
-// already renders (`cliSurface.ts` → `useModels`'s `cliModelSurfaceMissing`).
-// THE ALARM IS NOW DERIVED FROM THE PIN RATHER THAN PROBED FROM THE BINARY —
-// same message path, same banner, no subprocess. Two of the old probes could
-// not even be classified: `model add <id> --board …` and `model ab <a> <b>`
-// send more positionals than `tan model` takes, so click exited 2 with no
-// envelope at all and the webview got a bare failure instead of a capability
-// notice.
+// The other six — list, doctor, check, prep, run, ab — are answered from the
+// pin instead of spawned. They USED TO BE SPAWNED (#543), back when the pin
+// had only `build` and every call could only come back as a refusal, so the
+// spawns were taken out and `unsupportedModelSubcommand`
+// (../alpCli/pinnedSurface) synthesised the refusal instead. Now that the pin
+// has them, that same helper answers "this tan can, this panel does not call
+// it (#524)" under the extension-owned `models.panel-not-wired` code, so the
+// webview never raises a capability banner over a capable CLI.
 //
-// MEASURED SINCE, on the pinned 0.6.0 GA: it is FOUR, not two. `model prep
-// <path>` and `model run <path>` carry a path positional and die the same way
-// as `add` and `ab` — exit 2, no envelope. Whoever restores the spawns for
-// #524 has to handle that half; `cliSurface.ts` carries the per-subcommand
-// table. (Easy to measure wrongly: passing `"prep p.tflite"` as ONE shell word
-// makes it an unknown subcommand and shows the classifiable exit-1 shape
-// instead.)
-//
-// WHEN tan-cli#674 LANDS: `test/tan.pinnedSurface.test.js` goes red, and each
-// handler below gets its `runAlpCommand(["model", <verb>, …])` back. Restoring
-// the surface in the IDE is #524.
-//
-// Until someone does that rewiring, these calls DO NOT go on claiming the
-// capability is missing. `unsupportedModelSubcommand` consults
-// `MODEL_SUBCOMMANDS` itself, so the moment a verb joins the pin it starts
-// reporting the truth — "this tan can, this panel does not call it (#524)",
-// under an extension-owned code rather than tan's `model.unknown-subcommand`,
-// so the webview stops raising a capability banner over a capable CLI. The
-// eight verb strings below stay hardcoded because the verb IS the call site's
-// identity; what is no longer hardcoded is the verdict about it.
+// Whoever restores those six spawns for #524 has to handle one more thing,
+// measured on the 0.6.0 GA pin: `model prep <path>`, `run <path>` and `ab <a>
+// <b>` carry path positionals, and an older tan reached through
+// `alpSdk.cliPath` dies on them at click exit 2 with no envelope.
+// `cliSurface.ts` carries the per-subcommand table. (Easy to measure wrongly:
+// passing `"prep p.tflite"` as ONE shell word makes it an unknown subcommand
+// and shows the classifiable exit-1 shape instead.)
 
 import * as vscode from "vscode";
 import { unsupportedModelSubcommand } from "../alpCli/pinnedSurface";
@@ -137,11 +120,11 @@ class ModelsPanel {
     void this.panel.webview.postMessage(msg);
   }
 
-  /** The model list + toolchain doctor. Both subcommands are tan-cli#674, so
-   *  the pair is answered from the pin instead of from two spawns — the same
-   *  `modelsData` message, `ok: false`, carrying the refusal that raises the
-   *  capability banner. `checkFit`/`refreshZoo` still run: they post their own
-   *  sections, and the banner is derived once from whichever arrives first. */
+  /** The model list + toolchain doctor. The pin has both, and this panel does
+   *  not call them yet (#524), so the pair is answered from the pin instead of
+   *  from two spawns — the same `modelsData` message, `ok: false`, carrying
+   *  the "not wired" issue. `checkFit`/`refreshZoo` still run: they post their
+   *  own sections. */
   private async refresh(): Promise<void> {
     this.post(
       toModelsData(
@@ -153,56 +136,120 @@ class ModelsPanel {
     void this.refreshZoo();
   }
 
-  /** The curated zoo gallery. `tan model zoo` is tan-cli#674, so the section
-   *  reports the gap from the pin rather than spawning for it. Zoo logic lives
-   *  in tan/alp-sdk; nothing about it is re-derived here. */
+  /** The curated zoo gallery, from `tan model zoo` (#699). Zoo logic lives in
+   *  tan/alp-sdk; nothing about it is re-derived here — `runsHere` is tan's
+   *  verdict against the project board's `som.sku`.
+   *
+   *  Resolved through `collectProjectContext`, never `workspaceFolders[0]`
+   *  (`docs/ARCHITECTURE_RULES.md` §3, #605). With no folder open nothing is
+   *  spawned: tan would read `board.yaml` from the extension host's own cwd. */
   private async refreshZoo(): Promise<void> {
-    this.post(toZooData(unsupportedModelSubcommand("zoo")));
+    const cwd = collectProjectContext().workspaceRoot;
+    if (!cwd) {
+      this.post({
+        type: "zooData",
+        ok: false,
+        entries: [],
+        issues: [
+          {
+            code: "zoo.no-workspace",
+            severity: "info",
+            message: "Open a folder to browse the model zoo.",
+          },
+        ],
+      });
+      return;
+    }
+    const { outcome } = await runAlpCommand(
+      this.context,
+      ["model", "zoo"],
+      cwd,
+    );
+    this.post(toZooData(outcome));
   }
 
-  /** Add a curated zoo entry to board.yaml. `tan model add` is tan-cli#674.
+  /** Add a curated zoo entry to board.yaml with `tan model add <id>` (#699),
+   *  then refresh, so the new model shows in the list and the gallery.
    *
-   *  NO `zooAddStarted` and NO progress notification: both announce work that
-   *  is not starting, and a spinner that resolves into "not implemented" is a
-   *  worse answer than the answer itself. The refusal is posted straight to
-   *  the section, and `reportError` still fires so a click is never silent —
-   *  which is what the spawned version bought for a subprocess that exited 2
-   *  with `Got unexpected extra argument(s)` and no envelope for the webview
-   *  to classify. */
+   *  tan fetches the model (bundled, or a download verified against the
+   *  manifest's sha256), writes it under `models/` and appends the entry to
+   *  `models:` with a text splice; a duplicate name or an existing file is
+   *  refused, never overwritten. The timeout is the build one because a fetch
+   *  can be a real download. A failure is reported, so a click is never
+   *  silent. With no folder open nothing is spawned — this one WRITES, and
+   *  would write into the extension host's cwd (#605). */
   private async addFromZoo(id: string): Promise<void> {
-    const outcome = unsupportedModelSubcommand("add");
-    this.post(toZooAddResult(outcome));
-    void reportError(
-      `Alp: cannot add ${id} from the zoo — ${cliFailureMessage(outcome)}`,
+    const cwd = collectProjectContext().workspaceRoot;
+    if (!cwd) {
+      notifyAsync(
+        planPrecondition("noWorkspace", { operation: "add a zoo model" }),
+      );
+      this.post({
+        type: "zooAddResult",
+        ok: false,
+        issues: [
+          {
+            code: "zooAdd.no-workspace",
+            severity: "error",
+            message: `Open a folder to add ${id} from the zoo.`,
+          },
+        ],
+      });
+      return;
+    }
+    this.post({ type: "zooAddStarted" });
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Alp: Adding ${id} from the zoo`,
+        cancellable: false,
+      },
+      async () => {
+        const { outcome } = await runAlpCommand(
+          this.context,
+          ["model", "add", id],
+          cwd,
+          { timeoutMs: MODEL_BUILD_TIMEOUT_MS },
+        );
+        this.post(toZooAddResult(outcome));
+        if (outcome.envelope && outcome.envelope.ok) {
+          await this.refresh();
+        } else {
+          void reportError(
+            `Alp: could not add ${id} from the zoo — ${cliFailureMessage(outcome)}`,
+          );
+        }
+      },
     );
   }
 
   /** The static NPU-eligibility screen over every board.yaml model.
-   *  `tan model check` is tan-cli#674, so the coverage section reports the gap
-   *  from the pin. The screen, its vocabulary and every caveat live in
+   *  `tan model check` exists at the pin and is not wired here yet (#524), so
+   *  the coverage section reports that from the pin. The screen, its vocabulary and every caveat live in
    *  `tan`/alp-sdk and none of it is re-derived here — an eligibility verdict
    *  invented locally would be exactly the wrong thing to invent. */
   private async checkFit(): Promise<void> {
     this.post(toModelFitData(unsupportedModelSubcommand("check")));
   }
 
-  /** Prep a raw .onnx (quantize + accuracy). `tan model prep` is tan-cli#674.
+  /** Prep a raw .onnx (quantize + accuracy). `tan model prep` is not wired
+   *  here yet (#524).
    *
    *  NO file dialogs and NO `modelPrepStarted`: asking a customer to pick a
-   *  model and a calibration folder before telling them the CLI cannot prep
-   *  anything spends their time to reach the same refusal. */
+   *  model and a calibration folder before telling them this panel cannot
+   *  prep anything spends their time to reach the same answer. */
   private async prepModel(): Promise<void> {
     this.post(toModelPrepResult(unsupportedModelSubcommand("prep")));
   }
 
-  /** Host reference latency/accuracy for one model. `tan model run` is
-   *  tan-cli#674 — see `prepModel` for why no dialog opens first. */
+  /** Host reference latency/accuracy for one model. `tan model run` is not
+   *  wired here yet (#524) — see `prepModel` for why no dialog opens first. */
   private async runModel(): Promise<void> {
     this.post(toModelRunResult(unsupportedModelSubcommand("run")));
   }
 
-  /** Head-to-head comparison of two models. `tan model ab` is tan-cli#674 —
-   *  see `prepModel` for why no dialog opens first. */
+  /** Head-to-head comparison of two models. `tan model ab` is not wired here
+   *  yet (#524) — see `prepModel` for why no dialog opens first. */
   private async abModels(): Promise<void> {
     this.post(toModelAbResult(unsupportedModelSubcommand("ab")));
   }
