@@ -96,7 +96,6 @@ export function acceleratorAvailability(som: SomPreset): AcceleratorAvail[] {
 
 const SKU_FAMILY_PREFIXES: { re: RegExp; family: string }[] = [
   { re: /^E1M-AEN/, family: "aen" },
-  { re: /^E1M-NX9/, family: "imx93" },
   { re: /^E1M-V2M/, family: "v2n-m1" },
   { re: /^E1M-V2N/, family: "v2n" },
 ];
@@ -109,20 +108,8 @@ export function chipFamilyForSku(sku: string): string | undefined {
   return undefined;
 }
 
-/**
- * Vendor family slugs some SDK chip manifests carry in `families` instead of the
- * short SoM family slug (e.g. the i.MX 9 Murata radios tag `nxp-imx9`, not
- * `imx93`). Accept both so those chips are not invisible in the Configurator.
- */
-const FAMILY_ALIASES: Record<string, string[]> = {
-  imx93: ["nxp-imx9"],
-};
-
 export function chipsForSom(catalogue: SdkCatalogue, sku: string): ChipDef[] {
   const family = chipFamilyForSku(sku);
   if (!family) return [];
-  const accepted = new Set([family, ...(FAMILY_ALIASES[family] ?? [])]);
-  return catalogue.chips.filter((chip) =>
-    chip.families.some((f) => accepted.has(f)),
-  );
+  return catalogue.chips.filter((chip) => chip.families.includes(family));
 }

@@ -851,7 +851,7 @@ per-core dispatch itself** (`python/tan/commands/build/execute.py`'s
   |---|---|---|
   | Zephyr (Cortex-M) | `west build` | Zephyr SDK compiler + bootstrapped west workspace |
   | Yocto (Cortex-A) | **bitbake** (`meta-alp-sdk` layer) | Yocto host packages (Linux-only; can be hour-long) |
-  | baremetal | **CMake + vendor toolchain** | Alif Ensemble / Renesas FSP / NXP MCUXpresso, per SoC family |
+  | baremetal | **CMake + vendor toolchain** | Alif Ensemble / Renesas FSP, per SoC family |
 
 **What actually executes today:** only the single-core Zephyr path is landed
 end to end (`tan build --native`, sequential; see

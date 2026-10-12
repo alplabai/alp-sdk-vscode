@@ -877,10 +877,11 @@ export class NewProjectFlowPanel {
       // a bad SKU exits 2 (validation ⇒ warning) and must not read like the
       // spawn failure that exits 1.
       // Two refusals get guidance instead of a bare report (#530): this
-      // wizard lets any template be paired with any SoM, and 12 of the 44
-      // pairs cannot be scaffolded — `iot-starter` alone is refused on 10 of
-      // the 11 SoMs. tan is right to refuse (rendering an Alif tree under an
-      // NXP SKU would write another vendor's content into the project), but a
+      // wizard lets any template be paired with any SoM, and not every pair
+      // can be scaffolded — at the 0.6.0 pin `iot-starter` is refused on every
+      // SoM but E1M-AEN801. tan is right to refuse (rendering one family's
+      // tree under another's SKU would write another vendor's content into
+      // the project), but a
       // raw refusal leaves the customer on a Confirm step whose Create button
       // will fail again, with nothing saying where to go.
       //

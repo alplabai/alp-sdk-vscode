@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **The flash consent gate reads tan 0.7's new flash options with the
+  right arity (#701).** `--probe-serial`, `--probe-usb-path`, `--watch`,
+  `--raw`, `--wait` and `--jlink` now swallow their value, so
+  `tan flash --probe-serial 000801234567 --confirm` no longer reads the
+  serial as the APP_PATH and looks for a manifest beside it. This matters
+  when `alpSdk.cliPath` points at a tan newer than the 0.6.0 pin. They are
+  held apart from the pinned table, and the surface gate reds the re-pin
+  that vendors them until they are folded in.
+
+- **The i.MX 93 mappings for E1M-NX9101 are gone (#700).** The module was
+  never produced and alp-sdk removed it (alplabai/alp-sdk#2782). The
+  Configurator's chip filter and the pinmux loader no longer map `E1M-NX9*`
+  to `imx93`, the `nxp-imx9` chip-family alias went with it, and the
+  baremetal bootstrap no longer points at NXP MCUXpresso. The SoM picker,
+  the `board.yaml` snippet and their docs still list E1M-NX9101, because
+  they are gated to match the vendored alp-sdk v0.16.0, which still ships
+  its preset; they follow when `alp-sdk-upstream` moves to a release without
+  it.
+
 - **The Models gallery reads `tan model zoo`'s camelCase envelope (#699).**
   The zoo entry types and the gallery card read `validatedSoms` and
   `runsHere`, which tan emits from 0.7.0-rc1 (tan-cli#1338), instead of

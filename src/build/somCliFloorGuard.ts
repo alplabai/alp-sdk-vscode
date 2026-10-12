@@ -50,7 +50,7 @@ function somSkuOf(cwd: string): string | null {
  * neither their CLI nor their SoM.
  *
  * The probe is deliberately behind the SKU check: `probeTanVersion` spawns the
- * CLI, and there is no reason to pay that on every Alif or NXP build to answer
+ * CLI, and there is no reason to pay that on every Alif build to answer
  * a question only Renesas can fail. Fire-and-forget (`notifyAsync`) — this is
  * an explanation, not a gate, so the build the customer asked for still starts
  * as soon as this resolves.
