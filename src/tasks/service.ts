@@ -95,7 +95,8 @@ export function taskLabel(spec: TaskSpec): string {
  * there is no per-target build selector. `--target` is no longer an option of
  * `build` itself — at 0.7.0-rc1 it exists only as a ROOT-level global — and
  * `--core ID` IS a `build` option. Neither distinguishes the three labels:
- * `--core` picks a core of the board, not a debug-target kind. Do not reach
+ * `--core ID` only scopes `-D` to that core's Zephyr slice(s) (repeatable,
+ * default every Zephyr slice); it does not narrow what builds. Do not reach
  * for either to "properly" tell them apart.
  *
  * "deploy and start gdbserver" has no tan equivalent at all: the extension
