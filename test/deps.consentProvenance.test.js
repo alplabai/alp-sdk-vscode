@@ -345,3 +345,62 @@ test("a row with no producer entry says not reported for tier, size and licence"
   );
   assert.equal(pick.picked, true);
 });
+
+// ---------------------------------------------------------------------------
+// The tier gate fails CLOSED on spelling and on unknown words
+// ---------------------------------------------------------------------------
+
+test("a tier word is trimmed and upper-cased, so ' c' IS tier C", () => {
+  assert.equal(normaliseProvenance({ tier: " c" }).tier, "C");
+  assert.equal(normaliseProvenance({ tier: "b\n" }).tier, "B");
+  assert.equal(normaliseProvenance({ tier: "  " }).tier, null);
+});
+
+for (const tier of ["c", " C", "C ", "D", "x"]) {
+  test(`tier ${JSON.stringify(tier)} starts UNCHECKED`, async () => {
+    // Arrange -- built straight from the raw word, as a step crossing a JS
+    // boundary without `normaliseProvenance` would carry it.
+    const { mod, shown } = loadAdapter();
+    const row = commandRow("vendor", [
+      { tool: "vendor", command: "brew install vendor", provenance: { tier } },
+    ]);
+
+    // Act
+    const consented = await mod.confirmDependencyInstalls([row], "darwin");
+
+    // Assert
+    const [pick] = shown[0];
+    assert.equal(pick.picked, false);
+    assert.match(pick.description, /check to install/);
+    assert.deepEqual(consented, []);
+  });
+}
+
+for (const tier of ["A", "a", " b "]) {
+  test(`tier ${JSON.stringify(tier)} starts checked`, async () => {
+    const { mod, shown } = loadAdapter();
+    await mod.confirmDependencyInstalls(
+      [
+        commandRow("tool", [
+          { tool: "tool", command: "brew install tool", provenance: { tier } },
+        ]),
+      ],
+      "darwin",
+    );
+    assert.equal(shown[0][0].picked, true);
+  });
+}
+
+test("ONE unchecked-tier step unchecks the whole rollup line", () => {
+  const [item] = planInstallConsent(
+    [
+      commandRow("hostPrerequisites", [
+        step("cmake", { tier: "A" }),
+        step("vendor", { tier: "D" }),
+      ]),
+    ],
+    "darwin",
+  );
+  assert.equal(item.startsUnchecked, true);
+  assert.equal(item.licenceGated, false, "D is not C; it is unknown");
+});

@@ -26,7 +26,8 @@
  *  reported" — an old tan, an SDK before alp-sdk#1574, a tool with no entry,
  *  or a value that failed normalisation. */
 export interface PrerequisiteProvenance {
-  /** ADR 0021 §3's tier word, verbatim (`"A"`, `"B"`, `"C"` today). */
+  /** ADR 0021 §3's tier word, trimmed and upper-cased (`"A"`, `"B"`, `"C"`
+   *  today) — see `canonicalTier`. */
   tier: string | null;
   licence: string | null;
   /** The upstream project page. Never the install source. */
@@ -49,6 +50,17 @@ function text(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
+/**
+ * A tier word in its one comparable spelling — trimmed and upper-cased, or
+ * `null`. `" c"` and `"C"` are the same tier, and a gate comparing the raw
+ * value would let the first one through unchecked. These are TIER words, not
+ * tool names: canonicalising them decides nothing about any artifact.
+ */
+export function canonicalTier(value: unknown): string | null {
+  const word = text(value);
+  return word === null ? null : word.trim().toUpperCase();
+}
+
 /** A non-negative safe integer, or `null`. A float, a negative, a numeric
  *  string and a boolean are all refused — the same rules tan applies on its
  *  side, held again here because the envelope is untrusted input. */
@@ -69,7 +81,7 @@ export function normaliseProvenance(entry: unknown): PrerequisiteProvenance {
   if (typeof entry !== "object" || entry === null) return NO_PROVENANCE;
   const record = entry as Record<string, unknown>;
   return {
-    tier: text(record.tier),
+    tier: canonicalTier(record.tier),
     licence: text(record.licence),
     sourceUrl: text(record.sourceUrl),
     sizeBytes: byteCount(record.sizeBytes),

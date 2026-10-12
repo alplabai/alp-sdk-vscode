@@ -31,13 +31,18 @@ import type {
   DependencyCommandStep,
   DependencyRow,
 } from "./planner";
-import { formatByteCount, type PrerequisiteProvenance } from "./provenance";
+import {
+  canonicalTier,
+  formatByteCount,
+  type PrerequisiteProvenance,
+} from "./provenance";
 
 /** What a cell says when the producer reports nothing for it. */
 export const NOT_REPORTED = "not reported";
 
-/** ADR 0021 §3's tier words this module acts on — producer values, compared
- *  verbatim. `B` installs with elevation; `C` is licence-gated. */
+/** ADR 0021 §3's tier words this module acts on, compared in `canonicalTier`
+ *  form. `A` installs plainly, `B` with elevation; `C` is licence-gated. */
+const PLAIN_TIER = "A";
 const ELEVATION_TIER = "B";
 const LICENCE_GATED_TIER = "C";
 
@@ -79,6 +84,13 @@ export interface ConsentItem {
    * explicit action of its own.
    */
   licenceGated: boolean;
+  /**
+   * True when ANY step reports a tier other than `A` or `B` — `C`, or a word
+   * this extension does not know (`D`). The gate FAILS CLOSED: such a line
+   * starts unchecked. A step reporting no tier at all is not this case; that
+   * is "not reported", and stays checked.
+   */
+  startsUnchecked: boolean;
   /** True when the PRODUCER's command text asks for elevation. */
   needsElevation: boolean;
   /** The action's own effect, unchanged — `install`, `open-docs`, `bootstrap`. */
@@ -175,12 +187,26 @@ function perTool(
     .join("; ");
 }
 
-/** Whether any step's producer tier is exactly `tier`. */
+/** Each step's reported tier, canonicalised again here because a step
+ *  crosses a JS boundary at every call site and need not have come through
+ *  `normaliseProvenance`. */
+function tiersOf(steps: readonly DependencyCommandStep[]): (string | null)[] {
+  return steps.map((step) => canonicalTier(step.provenance?.tier));
+}
+
+/** Whether any step's producer tier is `tier`. */
 function anyTier(
   steps: readonly DependencyCommandStep[],
   tier: string,
 ): boolean {
-  return steps.some((step) => step.provenance?.tier === tier);
+  return tiersOf(steps).includes(tier);
+}
+
+/** Whether any step reports a tier that is neither `A` nor `B`. */
+function anyUncheckedTier(steps: readonly DependencyCommandStep[]): boolean {
+  return tiersOf(steps).some(
+    (tier) => tier !== null && tier !== PLAIN_TIER && tier !== ELEVATION_TIER,
+  );
 }
 
 /**
@@ -208,9 +234,10 @@ export function planInstallConsent(
         typeof p.sizeBytes === "number" ? formatByteCount(p.sizeBytes) : null,
       ),
       licence: perTool(steps, (p) => p.licence ?? null),
-      tier: perTool(steps, (p) => p.tier ?? null),
+      tier: perTool(steps, (p) => canonicalTier(p.tier)),
       elevationTier: anyTier(steps, ELEVATION_TIER),
       licenceGated: anyTier(steps, LICENCE_GATED_TIER),
+      startsUnchecked: anyUncheckedTier(steps),
       // ANY line, not just the first: a multi-step `command` row (#603) whose
       // SECOND line is `sudo apt-get install -y ninja-build` still needs to
       // flag elevation even though its first line does not.

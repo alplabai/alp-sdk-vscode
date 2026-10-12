@@ -1687,9 +1687,11 @@ function consentPick(item: ConsentItem, row: DependencyRow): ConsentPick {
         : ""),
     // A licence-gated (tier `C`) line starts UNCHECKED: ADR 0021 §3 says such
     // an artifact is never fetched without an explicit action, and pressing
-    // "Fix all" is not one for an item the customer has not read yet. Every
-    // other line starts checked, so skipping stays an opt-out for them.
-    picked: !item.licenceGated,
+    // "Fix all" is not one for an item the customer has not read yet. So does
+    // any tier word that is not `A` or `B` — the gate fails closed on a tier
+    // it does not know. A line with NO reported tier starts checked, as does
+    // every `A`/`B` line, so skipping stays an opt-out for those.
+    picked: !item.startsUnchecked,
   };
 }
 
@@ -1697,6 +1699,9 @@ function consentPick(item: ConsentItem, row: DependencyRow): ConsentPick {
 function consentNotes(item: ConsentItem): string {
   const notes: string[] = [];
   if (item.licenceGated) notes.push("licence-gated, check to install");
+  else if (item.startsUnchecked) {
+    notes.push("unrecognised tier, check to install");
+  }
   if (item.needsElevation || item.elevationTier) {
     notes.push("requires elevation");
   }
