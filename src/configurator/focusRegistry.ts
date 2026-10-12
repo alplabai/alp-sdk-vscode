@@ -63,12 +63,22 @@ interface LivePanel {
 interface Pending {
   target: FocusEntryTarget;
   at: number;
+  token: number;
 }
 
+/** Identifies one request, so withdrawing it cannot remove a newer one. */
+export type FocusRequestToken = number;
+
 export interface FocusRegistry {
-  requestConfiguratorFocus(boardPath: string, target: FocusEntryTarget): void;
+  requestConfiguratorFocus(
+    boardPath: string,
+    target: FocusEntryTarget,
+  ): FocusRequestToken;
   deliverPendingFocus(boardPath: string): void;
-  takePendingFocus(boardPath: string): FocusEntryTarget | null;
+  takePendingFocus(
+    boardPath: string,
+    token?: FocusRequestToken,
+  ): FocusEntryTarget | null;
   attachConfiguratorPanel(
     boardPath: string,
     post: Post,
@@ -85,11 +95,15 @@ export function createFocusRegistry({
 }: { now?: () => number; platform?: string } = {}): FocusRegistry {
   // Windows paths are case-insensitive and accept either separator; a
   // drive letter in particular arrives as `C:` from one API and `c:` from
-  // another. Elsewhere case is significant and is kept.
+  // another. macOS's default APFS volume is case-insensitive too. Elsewhere
+  // case is significant and is kept.
   const keyOf = (boardPath: string): string =>
     platform === "win32"
       ? path.win32.resolve(boardPath).toLowerCase()
-      : path.resolve(boardPath);
+      : platform === "darwin"
+        ? path.posix.resolve(boardPath).toLowerCase()
+        : path.resolve(boardPath);
+  let nextToken = 1;
 
   const pending = new Map<string, Pending>();
   const panels = new Map<string, LivePanel>();
@@ -122,19 +136,25 @@ export function createFocusRegistry({
      *  new panel becomes ready, or by `deliverPendingFocus` once the open
      *  resolves. A newer request replaces an undelivered older one. */
     requestConfiguratorFocus(boardPath, target) {
+      const token = nextToken++;
       pending.set(keyOf(boardPath), {
         target: { section: target.section, name: target.name },
         at: now(),
+        token,
       });
+      return token;
     },
     /** The open resolved: deliver to the panel if it is already ready. */
     deliverPendingFocus(boardPath) {
       deliver(keyOf(boardPath));
     },
     /** Remove and return the undelivered request, if still valid — used to
-     *  withdraw it when the open itself failed. */
-    takePendingFocus(boardPath) {
+     *  withdraw it when the open itself failed. With a `token`, only THAT
+     *  request is withdrawn: a newer one queued meanwhile stays. */
+    takePendingFocus(boardPath, token) {
       const key = keyOf(boardPath);
+      const entry = pending.get(key);
+      if (token !== undefined && entry?.token !== token) return null;
       const target = live(key);
       pending.delete(key);
       return target;

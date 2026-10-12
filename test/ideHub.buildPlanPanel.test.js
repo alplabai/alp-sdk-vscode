@@ -176,6 +176,23 @@ function mountPanel({
       writeFileSync: (...args) => writes.push(["fs.writeFileSync", ...args]),
       writeFile: (...args) => writes.push(["fs.writeFile", ...args]),
     },
+    // The same write paths under every spelling a module could import.
+    "node:fs": {
+      existsSync: () => true,
+      statSync: () => ({ mtimeMs: 0 }),
+      readFileSync: () => MANIFEST_YAML,
+      writeFileSync: (...args) =>
+        writes.push(["node:fs.writeFileSync", ...args]),
+      writeFile: (...args) => writes.push(["node:fs.writeFile", ...args]),
+    },
+    "fs/promises": {
+      writeFile: async (...args) =>
+        writes.push(["fs/promises.writeFile", ...args]),
+    },
+    "node:fs/promises": {
+      writeFile: async (...args) =>
+        writes.push(["node:fs/promises.writeFile", ...args]),
+    },
     vscode: {
       window: {
         createWebviewPanel: () => panel,
@@ -686,4 +703,30 @@ test("openInConfigurator only navigates: one vscode.openWith, no edit, no file w
   );
   assert.deepEqual(writes, []);
   focusRegistry().takePendingFocus(boardYamlPath);
+});
+
+test("openInConfigurator: an older open failing does not withdraw a newer request", async () => {
+  const boardYamlPath = path.join(WORKSPACE_ROOT, "board.yaml");
+  let call = 0;
+  const { openInConfigurator } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+    boardYamlPath,
+    executeCommand: () => {
+      call += 1;
+      // A's open fails, and only AFTER B has been requested and opened.
+      return call === 1
+        ? new Promise((_, reject) =>
+            setImmediate(() => reject(new Error("A failed"))),
+          )
+        : Promise.resolve();
+    },
+  });
+  openInConfigurator("ipc", "A");
+  openInConfigurator("ipc", "B");
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(focusRegistry().takePendingFocus(boardYamlPath), {
+    section: "ipc",
+    name: "B",
+  });
 });

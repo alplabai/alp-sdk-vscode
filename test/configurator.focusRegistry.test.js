@@ -120,3 +120,27 @@ test("isFocusEntryTarget accepts only ipc/storage with a non-empty name", () => 
     assert.equal(isFocusEntryTarget(bad), false, JSON.stringify(bad));
   }
 });
+
+test("withdrawing an older request by its token leaves a newer one in place", () => {
+  const { r } = registry();
+  const a = r.requestConfiguratorFocus(BOARD, { section: "ipc", name: "A" });
+  const b = r.requestConfiguratorFocus(BOARD, { section: "ipc", name: "B" });
+  assert.notEqual(a, b);
+  assert.equal(r.takePendingFocus(BOARD, a), null, "A is no longer pending");
+  const posted = [];
+  r.attachConfiguratorPanel(BOARD, (m) => posted.push(m)).ready();
+  assert.deepEqual(posted, [focus("ipc", "B")]);
+});
+
+test("on macOS paths differing only in case are the same file (APFS default)", () => {
+  const { r } = registry({ platform: "darwin" });
+  r.requestConfiguratorFocus("/Users/dev/Board.yaml", {
+    section: "ipc",
+    name: "a",
+  });
+  const posted = [];
+  r.attachConfiguratorPanel("/users/dev/board.yaml", (m) =>
+    posted.push(m),
+  ).ready();
+  assert.deepEqual(posted, [focus("ipc", "a")]);
+});

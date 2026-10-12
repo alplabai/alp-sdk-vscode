@@ -116,7 +116,8 @@ export async function openBoardYaml(): Promise<void> {
  * Open the Board Configurator on the project's board.yaml at one ipc or
  * storage entry (#484). NAVIGATION ONLY: the Build Plan never writes
  * board.yaml — the Configurator is the one writer, and it opens with the
- * entry's size field focused so the reader edits it there.
+ * entry's size field scrolled to and highlighted (not focused), so the
+ * reader clicks into it and edits it there.
  *
  * The path is `collectProjectContext().boardYamlPath`, the same resolver
  * and the same `noBoardYaml` precondition `openBoardYaml` uses; the
@@ -139,7 +140,7 @@ export async function openInConfigurator(msg: unknown): Promise<void> {
   // its panel under `document.uri.fsPath`, so the request must be keyed by
   // the same spelling (a Windows drive letter is `c:` there).
   const uri = vscode.Uri.file(boardYamlPath);
-  focusRegistry.requestConfiguratorFocus(uri.fsPath, {
+  const token = focusRegistry.requestConfiguratorFocus(uri.fsPath, {
     section: msg.section,
     name: msg.name,
   });
@@ -153,7 +154,8 @@ export async function openInConfigurator(msg: unknown): Promise<void> {
     // is visible; a new one takes it when it reports ready.
     focusRegistry.deliverPendingFocus(uri.fsPath);
   } catch (err) {
-    focusRegistry.takePendingFocus(uri.fsPath);
+    // Only THIS request: a newer click may have queued another meanwhile.
+    focusRegistry.takePendingFocus(uri.fsPath, token);
     notifyAsync(
       planFailure({
         operation: "Opening the board configurator",

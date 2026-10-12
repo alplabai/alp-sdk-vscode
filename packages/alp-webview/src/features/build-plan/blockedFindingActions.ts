@@ -78,8 +78,8 @@ export function copyFindingText(text: string): void {
  * Ask the host to open the Board Configurator on the project's board config
  * at one IPC link or storage partition, by name (#484). NAVIGATION ONLY: it
  * carries no value to write — the Configurator, the extension's one writer
- * of that file, opens with the entry's size field focused, and the reader
- * edits there. The gate pins this call's keys to exactly these three.
+ * of that file, opens with the entry's size field scrolled to and
+ * highlighted (not focused), and the reader edits there. The gate pins this call's keys to exactly these three.
  */
 export function openEntryInConfigurator(
   section: "ipc" | "storage",

@@ -13,7 +13,7 @@
 // does not declare opens the section and says so — nothing is ever created,
 // and this module never writes the board.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { BoardConfig } from "../../types";
 import { onMessage } from "../../vscode";
 
@@ -66,8 +66,8 @@ export function findFocusElement(
  * Listen for `focusEntry`, call `openSection` so the entry's section is
  * rendered, then scroll to and highlight the field once it is. Returns the
  * notice to show when the entry cannot be shown (null otherwise); the
- * notice clears when the reader moves to another section (`active`) or the
- * board changes.
+ * notice clears when the reader moves to another section (`active`), or —
+ * for a missing entry — once the board declares it.
  */
 export function useFocusEntry(
   board: BoardConfig,
@@ -78,11 +78,29 @@ export function useFocusEntry(
   const [target, setTarget] = useState<FocusTarget | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // The request the current notice is about, so a board change can tell
+  // whether the notice still holds.
+  const noticeFor = useRef<FocusTarget | null>(null);
+
   // Declared BEFORE the landing effect below, so on the commit that both
   // opens the section and lands, the landing's notice is the one that stays.
+  // Cleared on a section change only — NOT on every new board object: each
+  // `configuratorRender` hands over a fresh (often equal) board, and wiping
+  // the notice on that would erase it a moment after it appeared.
   useEffect(() => {
     setNotice(null);
-  }, [active, board]);
+    noticeFor.current = null;
+  }, [active]);
+
+  // A board change clears the "no entry named …" notice only once the entry
+  // it named actually exists.
+  useEffect(() => {
+    const about = noticeFor.current;
+    if (about && missingEntryNotice(board, about) === null) {
+      setNotice(null);
+      noticeFor.current = null;
+    }
+  }, [board]);
 
   useEffect(
     () =>
@@ -102,6 +120,7 @@ export function useFocusEntry(
     if (!target || !loaded) return;
     const missing = missingEntryNotice(board, target);
     if (missing) {
+      noticeFor.current = target;
       setNotice(missing);
       return;
     }

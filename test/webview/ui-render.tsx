@@ -2063,9 +2063,13 @@ async function main() {
   // ── the Configurator lands on the entry it was sent to (#484) ──
   // `focusEntry` opens the section, scrolls to and highlights the size field
   // whose `data-focus-entry` matches — and does NOT focus it: a focused
-  // number input steps on ArrowUp/Down and the wheel, a silent resize. So
-  // after landing, keys and wheel reach no onChange and nothing is posted.
-  // An undeclared name shows a notice and creates nothing.
+  // number input steps on ArrowUp/Down and the wheel, a silent resize. THE
+  // GUARD IS `document.activeElement`: this DOM shim does not step a number
+  // input on keys or wheel at all, so the key/wheel loop below is only a
+  // smoke check that no handler of ours reacts — it cannot prove the
+  // browser would not step a focused field. Nothing is posted either.
+  // An undeclared name shows a notice, creates nothing, and the notice
+  // survives a re-render with a new-but-equal board.
   {
     const problemsBefore = problems.length;
     const container = document.createElement("div");
@@ -2080,7 +2084,7 @@ async function main() {
     const openSection = () => {
       opened += 1;
     };
-    function Probe() {
+    function Probe({ board }: { board: unknown }) {
       const notice = useFocusEntry(
         board as never,
         true,
@@ -2101,7 +2105,8 @@ async function main() {
         }),
       );
     }
-    createRoot(container).render(React.createElement(Probe));
+    const root = createRoot(container);
+    root.render(React.createElement(Probe, { board }));
     await settle();
     const postedBefore = (g.__ALP_POSTED__ as unknown[]).length;
     g.__ALP_POST_TO_WEBVIEW__({
@@ -2127,6 +2132,7 @@ async function main() {
           "configurator-focus: the landed field is not highlighted",
         );
       }
+      // Smoke check only (see above): the shim never steps a number input.
       for (const key of ["ArrowUp", "ArrowDown", "PageUp", "PageDown"]) {
         pressKey(input, key);
       }
@@ -2162,6 +2168,27 @@ async function main() {
     if (postedSince(postedMid).length !== 0 || changes !== 0) {
       problems.push(
         "configurator-focus: a missing entry posted or changed something",
+      );
+    }
+    // Every `configuratorRender` hands over a NEW board object; an equal one
+    // must not wipe the notice.
+    root.render(React.createElement(Probe, { board: { ...board } }));
+    await settle();
+    if (!container.querySelector("[data-notice]")) {
+      problems.push(
+        "configurator-focus: an equal re-rendered board wiped the notice",
+      );
+    }
+    // Once the board declares the entry, the notice no longer holds.
+    root.render(
+      React.createElement(Probe, {
+        board: { ...board, storage: [{ name: "nvs", size_kib: 8 }] },
+      }),
+    );
+    await settle();
+    if (container.querySelector("[data-notice]")) {
+      problems.push(
+        "configurator-focus: the notice outlived the entry it said was missing",
       );
     }
     container.remove();

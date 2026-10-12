@@ -103,8 +103,12 @@ export function buildMemoryView(manifest: SystemManifest): MemoryView {
   ].sort(byAddress);
   // Every region carries its fail-closed target lock; a manifest of an
   // unknown schema_version locks them all (see `memoryView/targetLock.ts`).
-  const paneReason = paneLockReason(manifest.schema_version);
   const narrowed = regions(manifest.memory);
+  const paneReason = paneLockReason(
+    manifest.schema_version,
+    Array.isArray(manifest.memory) &&
+      manifest.memory.length !== narrowed.length,
+  );
   const memoryRegions = narrowed.map((region) => ({
     ...region,
     targetLock: targetLockOf(region, paneReason, narrowed),

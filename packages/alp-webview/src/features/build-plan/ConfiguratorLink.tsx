@@ -4,7 +4,8 @@
 //
 // The Build Plan never edits board config itself. This link opens the Board
 // Configurator — the extension's one writer of that file — at the entry,
-// with its size field focused; the reader changes the value there. What the
+// with its size field scrolled to and highlighted (not focused); the reader
+// clicks in and changes the value there. What the
 // row beside it shows is the last build's request and tan's verdict on it,
 // so the link always says a changed value is judged only by the next build,
 // and says too when the manifest may not even reflect the last one.

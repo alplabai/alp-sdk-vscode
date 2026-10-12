@@ -139,8 +139,12 @@ type UnlockedRegion = Omit<MemoryRegion, "targetLock">;
  *    which extent an edit would land in;
  *  - its extent intersects (half-open) any other row's resolved extent that
  *    is not itself `customer_runtime` — growing into the AEN ATOC by one
- *    byte is exactly the #1289 shape. A row with no resolved extent cannot
- *    be intersected and is not counted here; it is locked on its own.
+ *    byte is exactly the #1289 shape;
+ *  - any other non-`customer_runtime` row has NO resolved extent and a kind
+ *    that could alias this one's (`kindsMayAlias`): an address that is not
+ *    known could be anywhere, so an overlap cannot be ruled out. On the AEN
+ *    fixture `mram_main` (composite, base TBD) locks `storage` this way —
+ *    fail-closed, by design.
  */
 export function neighbourLockReason(
   region: UnlockedRegion,
@@ -155,43 +159,78 @@ export function neighbourLockReason(
     if (other === region || other.writeAuthority === "customer_runtime") {
       continue;
     }
-    const theirs = regionExtentOf(other);
-    if (theirs === null || !intersects(own, theirs)) continue;
     const authority = other.writeAuthority ?? "write authority not declared";
+    const theirs = regionExtentOf(other);
+    if (theirs === null) {
+      if (!kindsMayAlias(region.kind, other.kind)) continue;
+      return (
+        `overlap with ${other.name} (${authority}) cannot be ruled out — ` +
+        "its extent is unresolved"
+      );
+    }
+    if (!intersects(own, theirs)) continue;
     return `overlaps ${other.name} (${authority})`;
   }
   return null;
 }
 
+/** Kinds that say nothing about the address space they live in. */
+const UNPROVEN_KINDS: readonly string[] = ["unresolved", "unclassified"];
+
+/** Whether two regions could occupy the same addresses: the same kind, or
+ *  either kind is unproven (`unresolved`/`unclassified`, or any value this
+ *  module does not recognise — it is not known to differ). */
+function kindsMayAlias(a: string, b: string): boolean {
+  if (a === b) return true;
+  const known = TARGET_LOCK_CLASSIFIED.kind as readonly string[];
+  const unproven = (k: string) =>
+    UNPROVEN_KINDS.includes(k) || !known.includes(k);
+  return unproven(a) || unproven(b);
+}
+
 /** Both verdicts. Locked with `paneReason` when the whole pane is untrusted
- *  (see `paneLockReason`), then with the neighbour reason, then per row. */
+ *  (see `paneLockReason`); otherwise each field's own per-row verdict, and a
+ *  row that would open is then held by its neighbours (`neighbourLockReason`).
+ *  The row's own reason wins when both lock, as the more specific one. */
 export function targetLockOf(
   region: UnlockedRegion,
   paneReason: string | null,
-  all: readonly UnlockedRegion[] = [region],
+  all: readonly UnlockedRegion[],
 ): MemoryRegionTargetLock {
-  const shared = paneReason ?? neighbourLockReason(region, all);
-  if (shared !== null) {
-    return { ipc: locked(shared), storage: locked(shared) };
+  if (paneReason !== null) {
+    return { ipc: locked(paneReason), storage: locked(paneReason) };
   }
-  return {
-    ipc: regionTargetLock(region, "ipc"),
-    storage: regionTargetLock(region, "storage"),
+  const neighbour = neighbourLockReason(region, all);
+  const verdict = (field: TargetLockField): TargetLock => {
+    const own = regionTargetLock(region, field);
+    if (own.locked || neighbour === null) return own;
+    return locked(neighbour);
   };
+  return { ipc: verdict("ipc"), storage: verdict("storage") };
 }
 
 /**
  * A reason to lock EVERY region, or null. A manifest whose `schema_version`
  * is not exactly 1 is a contract this build has not read, so none of its
  * authority values is trusted — even though `parseSystemManifest` already
- * refuses one, this is the second gate behind it. A manifest with no
+ * refuses one, this is the second gate behind it. `rowsDropped` is true
+ * when `memory[]` holds a row the narrower could not read. A manifest with no
  * `memory[]` pane yields no regions at all (`buildMemoryView` omits the
  * field), so nothing can be targeted there either.
  */
-export function paneLockReason(schemaVersion: unknown): string | null {
-  if (schemaVersion === 1) return null;
-  return (
-    `manifest schema_version ${JSON.stringify(schemaVersion ?? null)} is ` +
-    "not 1 — an unknown contract version, so every region is locked"
-  );
+export function paneLockReason(
+  schemaVersion: unknown,
+  rowsDropped: boolean,
+): string | null {
+  if (schemaVersion !== 1) {
+    return (
+      `manifest schema_version ${JSON.stringify(schemaVersion ?? null)} is ` +
+      "not 1 — an unknown contract version, so every region is locked"
+    );
+  }
+  // A row the narrower had to drop (no name, not an object) is a region this
+  // view cannot see — and so cannot rule out overlapping any other.
+  if (rowsDropped)
+    return "a memory[] row could not be read, so every region is locked";
+  return null;
 }

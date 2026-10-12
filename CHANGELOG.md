@@ -11,9 +11,11 @@
 
 - **Memory regions now say whether they can be an edit target, and refuse
   by default.** A region opens only when the manifest marks it `ok`,
-  `customer_runtime`, fully resolved and of a fitting kind, so the
-  Secure-Enclave ATOC, a region with no declared authority and any value
-  this build does not recognise all stay locked.
+  `customer_runtime`, fully resolved and of a fitting kind, and no region
+  owned by anything else overlaps it or could, so the Secure-Enclave ATOC,
+  anything beside a region whose address is still unresolved, a region with
+  no declared authority and any value this build does not recognise all
+  stay locked.
 
 - **board.yaml validation and the SoM catalogue follow alp-sdk v0.17.0.**
   The bundled schemas and the new-project SoM list now match alp-sdk

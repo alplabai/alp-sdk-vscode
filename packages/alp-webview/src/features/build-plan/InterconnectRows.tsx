@@ -6,7 +6,8 @@
 // config) beside it. A resolved link names where its carve-out landed.
 //
 // Every link also offers "Edit in Configurator" (#484): it opens the Board
-// Configurator at this entry with its carve-out size focused. The status
+// Configurator at this entry, its carve-out size scrolled to and
+// highlighted (not focused). The status
 // and reason on the row are tan's verdict from the LAST build; a changed
 // size is judged only by the next one.
 

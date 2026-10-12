@@ -204,31 +204,22 @@ test("(c) write_authority is not schema-required — so absence must lock, and d
   ]);
 });
 
-test("(d) AEN fixture: only `storage` is a storage target; atoc and mram_main lock for both", () => {
+test("(d) AEN fixture: NO region is a target — storage locks because mram_main's extent is unresolved", () => {
   const view = fixture("system-manifest.rpmsg-aen.memory.yaml");
-  for (const name of [
-    "atoc",
-    "mram_main",
-    "reserved",
-    "mcuboot",
-    "he_slot0",
-    "hp_slot0",
-  ]) {
-    const r = regionNamed(view, name);
+  for (const r of view.regions) {
     for (const field of FIELDS) {
-      assert.equal(r.targetLock[field].locked, true, `${name}.${field}`);
+      assert.equal(r.targetLock[field].locked, true, `${r.name}.${field}`);
     }
   }
   assert.match(
     regionNamed(view, "atoc").targetLock.storage.reason,
     /secure_enclave/,
   );
-  const storage = regionNamed(view, "storage");
-  assert.equal(storage.targetLock.storage.locked, false);
+  // `mram_main` (composite, base TBD) could sit anywhere, so an overlap
+  // with the customer `storage` band cannot be ruled out: fail closed.
   assert.equal(
-    storage.targetLock.ipc.locked,
-    true,
-    "flash is not an ipc target",
+    regionNamed(view, "storage").targetLock.storage.reason,
+    "overlap with mram_main (composite) cannot be ruled out — its extent is unresolved",
   );
 });
 
@@ -357,6 +348,9 @@ test("a customer_runtime row reaching ONE byte into atoc is locked for both fiel
   const storage = regionNamed(view, "storage");
   for (const field of FIELDS) {
     assert.equal(storage.targetLock[field].locked, true, field);
+    // ipc is already locked on its own (flash is not ram); the row's own
+    // reason is the more specific one there, so the neighbour shows on storage.
+    if (field !== "storage") continue;
     assert.match(
       storage.targetLock[field].reason,
       /overlaps atoc \(secure_enclave\)/,
@@ -409,7 +403,70 @@ test("a region name that occurs more than once locks every row of that name", ()
   for (const r of named) {
     for (const field of FIELDS) {
       assert.equal(r.targetLock[field].locked, true);
+      if (field !== "storage") continue; // ipc: locked on its own kind
       assert.match(r.targetLock[field].reason, /region name is ambiguous/);
+    }
+  }
+});
+
+test("an UNRESOLVED secure_enclave row that declares a size still locks a customer row", () => {
+  const rows = aenTail(98304);
+  rows.push({
+    name: "se_scratch",
+    source: "som_preset",
+    kind: "flash",
+    status: "unresolved",
+    size_bytes: 4096,
+    write_authority: "secure_enclave",
+    reason: "base TBD",
+  });
+  const storage = regionNamed(manifestWith(rows), "storage");
+  for (const field of FIELDS) {
+    assert.equal(storage.targetLock[field].locked, true, field);
+    // ipc is already locked on its own (flash is not ram); the row's own
+    // reason is the more specific one there, so the neighbour shows on storage.
+    if (field !== "storage") continue;
+    assert.match(
+      storage.targetLock[field].reason,
+      /overlap with se_scratch \(secure_enclave\) cannot be ruled out/,
+    );
+  }
+});
+
+test("an unresolved row of a kind that cannot alias does not lock", () => {
+  const rows = aenTail(98304);
+  rows.push({
+    name: "sram_tbd",
+    source: "som_preset",
+    kind: "ram",
+    status: "unresolved",
+    size_bytes: 4096,
+    write_authority: "vendor_image",
+    reason: "base TBD",
+  });
+  const storage = regionNamed(manifestWith(rows), "storage");
+  assert.equal(storage.targetLock.storage.locked, false);
+});
+
+test("a memory[] row that cannot be read (no name) locks the whole pane", () => {
+  const rows = [
+    ...aenTail(98304),
+    {
+      source: "som_preset",
+      kind: "flash",
+      status: "ok",
+      base: 1,
+      size_bytes: 4096,
+    },
+  ];
+  const view = manifestWith(rows);
+  for (const r of view.regions) {
+    for (const field of FIELDS) {
+      assert.equal(r.targetLock[field].locked, true, `${r.name}.${field}`);
+      assert.match(
+        r.targetLock[field].reason,
+        /a memory\[\] row could not be read/,
+      );
     }
   }
 });
