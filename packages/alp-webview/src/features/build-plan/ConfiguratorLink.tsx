@@ -5,10 +5,9 @@
 // The Build Plan never edits board config itself. This link opens the Board
 // Configurator — the extension's one writer of that file — at the entry,
 // with its size field focused; the reader changes the value there. What the
-// row beside it shows is the LAST build's request and tan's verdict on it,
-// so when the manifest is not known to describe the last build the link
-// says so, and in every case a changed value is only judged by tan on the
-// next build.
+// row beside it shows is the last build's request and tan's verdict on it,
+// so the link always says a changed value is judged only by the next build,
+// and says too when the manifest may not even reflect the last one.
 
 import { openEntryInConfigurator } from "./blockedFindingActions";
 import styles from "./rows.module.css";
@@ -30,9 +29,14 @@ export function configuratorTargetOf(
   return null;
 }
 
-/** Said beside the link whenever the shown verdict may not be current. */
-export const LAST_BUILD_NOTE =
-  "from the last build — rebuild after editing to see tan's verdict";
+/** Said beside the link when the manifest is not known to describe the
+ *  last build — the verdict on the row may be older than that. */
+export const NOT_FRESH_NOTE =
+  "may not reflect the last build — rebuild after editing to see tan's verdict";
+
+/** Said beside the link otherwise: the verdict is the last build's, and an
+ *  edit is judged only by the next one. */
+export const FRESH_NOTE = "rebuild after editing to see tan's verdict";
 
 export function ConfiguratorLink({
   section,
@@ -55,7 +59,7 @@ export function ConfiguratorLink({
       >
         Edit in Configurator
       </button>
-      {!fresh && <span className={styles.sub}>{LAST_BUILD_NOTE}</span>}
+      <span className={styles.sub}>{fresh ? FRESH_NOTE : NOT_FRESH_NOTE}</span>
     </span>
   );
 }

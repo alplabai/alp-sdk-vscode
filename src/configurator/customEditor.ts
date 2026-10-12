@@ -26,10 +26,7 @@ import { notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { loadSdkCatalogue } from "../sdkCatalogue/vscodeAdapter";
 import { log } from "../util";
-import {
-  attachConfiguratorPanel,
-  CONFIGURATOR_VIEW_TYPE,
-} from "./focusRegistry";
+import { CONFIGURATOR_VIEW_TYPE, focusRegistry } from "./focusRegistry";
 
 const VIEW_TYPE = CONFIGURATOR_VIEW_TYPE;
 const EMPTY_BOARD: BoardConfig = { som: { sku: "" }, cores: {} };
@@ -152,9 +149,12 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
     // #484: a Build Plan "Edit in Configurator" request for this file is
     // delivered once the view has rendered the board it must find the entry
     // in — i.e. right after the first `configuratorRender` below.
-    const focus = attachConfiguratorPanel(document.uri.fsPath, (message) => {
-      void panel.webview.postMessage(message satisfies ExtToWebviewMessage);
-    });
+    const focus = focusRegistry.attachConfiguratorPanel(
+      document.uri.fsPath,
+      (message) => {
+        void panel.webview.postMessage(message satisfies ExtToWebviewMessage);
+      },
+    );
     panel.onDidDispose(() => focus.dispose());
 
     panel.webview.onDidReceiveMessage((msg: WebviewToExtMessage) => {

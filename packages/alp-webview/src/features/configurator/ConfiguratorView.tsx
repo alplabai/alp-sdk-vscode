@@ -1763,7 +1763,12 @@ export function ConfiguratorView() {
   // #484: the Build Plan's "Edit in Configurator" lands in Advanced, where
   // the IPC and storage entries are edited.
   const openAdvanced = useCallback(() => setActive("advanced"), []);
-  const focusNotice = useFocusEntry(cfg.board, cfg.loaded, openAdvanced);
+  const focusNotice = useFocusEntry(
+    cfg.board,
+    cfg.loaded,
+    openAdvanced,
+    active,
+  );
   const {
     sdkConnected,
     dirty,

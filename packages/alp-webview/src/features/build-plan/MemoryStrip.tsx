@@ -140,7 +140,16 @@ const capitalise = (word: string): string =>
 /** "Edit in Configurator" for a carve-out or partition; nothing otherwise.
  *  A partition's offset is shown read-only above — pinning or moving it is
  *  a hand edit in the board config, through the existing Open button. */
-function EntryLinks({ id, fresh }: { id: string; fresh: boolean }) {
+function EntryLinks({
+  id,
+  fresh,
+  withOpen = true,
+}: {
+  id: string;
+  fresh: boolean;
+  /** False where the caller already renders its own Open button. */
+  withOpen?: boolean;
+}) {
   const target = configuratorTargetOf(id);
   if (!target) return null;
   return (
@@ -150,7 +159,7 @@ function EntryLinks({ id, fresh }: { id: string; fresh: boolean }) {
         name={target.name}
         fresh={fresh}
       />
-      {target.section === "storage" && (
+      {withOpen && target.section === "storage" && (
         <button
           type="button"
           className={styles.ghostBtn}
@@ -261,7 +270,9 @@ function GhostDetail({ ghost, fresh }: { ghost: UnplacedRow; fresh: boolean }) {
       ) : (
         <Pair label="Reason">none reported</Pair>
       )}
-      {declaredInBoardConfig && <EntryLinks id={ghost.id} fresh={fresh} />}
+      {declaredInBoardConfig && (
+        <EntryLinks id={ghost.id} fresh={fresh} withOpen={false} />
+      )}
       {declaredInBoardConfig && (
         <div className={styles.detailActions}>
           <button

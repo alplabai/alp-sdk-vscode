@@ -3,7 +3,13 @@
 // "Edit in Configurator" landing (#484): the host posts `focusEntry` when the
 // Build Plan asked to open this editor at one IPC link or storage partition.
 // The Configurator switches to the section that holds it, scrolls its size
-// field into view, focuses it and briefly highlights it. A name board.yaml
+// field into view and briefly highlights it.
+//
+// It does NOT focus the field. The field is an `<input type="number">`, and
+// a focused number input steps its value on ArrowUp/ArrowDown/PageUp/
+// PageDown and on the mouse wheel — each step is an `onChange`, i.e. a
+// silent storage resize the reader never chose. The reader clicks (or Tabs)
+// into the field to edit it, like any other field. A name board.yaml
 // does not declare opens the section and says so — nothing is ever created,
 // and this module never writes the board.
 
@@ -35,7 +41,7 @@ export function missingEntryNotice(
       (e) =>
         typeof e === "object" &&
         e !== null &&
-        (e as { name?: unknown }).name === target.name,
+        String((e as { name?: unknown }).name) === target.name,
     );
   if (declared) return null;
   return (
@@ -58,16 +64,25 @@ export function findFocusElement(
 
 /**
  * Listen for `focusEntry`, call `openSection` so the entry's section is
- * rendered, then land on the field once it is. Returns the notice to show
- * when the entry is not declared (null otherwise).
+ * rendered, then scroll to and highlight the field once it is. Returns the
+ * notice to show when the entry cannot be shown (null otherwise); the
+ * notice clears when the reader moves to another section (`active`) or the
+ * board changes.
  */
 export function useFocusEntry(
   board: BoardConfig,
   loaded: boolean,
   openSection: () => void,
+  active: string,
 ): string | null {
   const [target, setTarget] = useState<FocusTarget | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  // Declared BEFORE the landing effect below, so on the commit that both
+  // opens the section and lands, the landing's notice is the one that stays.
+  useEffect(() => {
+    setNotice(null);
+  }, [active, board]);
 
   useEffect(
     () =>
@@ -104,7 +119,6 @@ export function useFocusEntry(
       return;
     }
     el.scrollIntoView({ block: "center" });
-    el.focus();
     el.setAttribute("data-focus-flash", "");
     const timer = setTimeout(
       () => el.removeAttribute("data-focus-flash"),

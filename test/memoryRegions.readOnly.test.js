@@ -849,6 +849,14 @@ function checkPostMessageCall(call, file, ast, is) {
         "is refused outright",
     );
     assert.ok(
+      is.isPropertyAssignment(property) ||
+        is.isShorthandPropertyAssignment(property),
+      `${where}: postMessage(...) carries a ` +
+        `${ast.formatSyntaxKind(property.kind)} — only plain \`key: value\` ` +
+        "or shorthand properties are auditable; a method or accessor runs " +
+        "code when the host reads the message",
+    );
+    assert.ok(
       !property.name || !is.isComputedPropertyName(property.name),
       `${where}: postMessage(...) uses a computed property key — a message ` +
         "must be written with plain, literal keys so it can be audited",

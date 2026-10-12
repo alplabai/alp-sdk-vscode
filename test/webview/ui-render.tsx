@@ -2009,7 +2009,8 @@ async function main() {
   // to be the last build's, so the row says so; with a fresh one it does not.
   {
     const problemsBefore = problems.length;
-    const LAST_BUILD = "from the last build — rebuild after editing";
+    const NOT_FRESH = "may not reflect the last build — rebuild after editing";
+    const FRESH = "rebuild after editing to see tan's verdict";
     const manifest = parseSystemManifest(aenFixtureText);
     const stale = await mountBuildPlan(manifest);
     const link = stale.querySelector(
@@ -2020,7 +2021,7 @@ async function main() {
         "configurator-link: no Edit in Configurator on the ipc row",
       );
     } else {
-      if (!(stale.textContent || "").includes(LAST_BUILD)) {
+      if (!(stale.textContent || "").includes(NOT_FRESH)) {
         problems.push(
           "configurator-link: no last-build note without provenance",
         );
@@ -2047,9 +2048,10 @@ async function main() {
       freshness: "fresh",
       reason: null,
     });
-    if ((fresh.textContent || "").includes(LAST_BUILD)) {
+    const freshText = fresh.textContent || "";
+    if (freshText.includes(NOT_FRESH) || !freshText.includes(FRESH)) {
       problems.push(
-        "configurator-link: last-build note shown on a fresh manifest",
+        "configurator-link: a fresh manifest must say only that a rebuild judges the edit",
       );
     }
     fresh.remove();
@@ -2059,14 +2061,17 @@ async function main() {
   }
 
   // ── the Configurator lands on the entry it was sent to (#484) ──
-  // `focusEntry` opens the section, focuses the size field whose
-  // `data-focus-entry` matches, and flags it; an undeclared name shows a
-  // notice and creates nothing.
+  // `focusEntry` opens the section, scrolls to and highlights the size field
+  // whose `data-focus-entry` matches — and does NOT focus it: a focused
+  // number input steps on ArrowUp/Down and the wheel, a silent resize. So
+  // after landing, keys and wheel reach no onChange and nothing is posted.
+  // An undeclared name shows a notice and creates nothing.
   {
     const problemsBefore = problems.length;
     const container = document.createElement("div");
     document.body.appendChild(container);
     let opened = 0;
+    let changes = 0;
     const board = {
       som: { sku: "E1M-AEN801" },
       cores: {},
@@ -2076,7 +2081,12 @@ async function main() {
       opened += 1;
     };
     function Probe() {
-      const notice = useFocusEntry(board as never, true, openSection);
+      const notice = useFocusEntry(
+        board as never,
+        true,
+        openSection,
+        "advanced",
+      );
       return React.createElement(
         "div",
         null,
@@ -2084,26 +2094,61 @@ async function main() {
         React.createElement(NumberInput, {
           label: "IPC carve-out KiB",
           value: "16",
-          onChange: () => {},
+          onChange: () => {
+            changes += 1;
+          },
           focusKey: "ipc:link0",
         }),
       );
     }
     createRoot(container).render(React.createElement(Probe));
     await settle();
+    const postedBefore = (g.__ALP_POSTED__ as unknown[]).length;
     g.__ALP_POST_TO_WEBVIEW__({
       type: "focusEntry",
       section: "ipc",
       name: "link0",
     });
     await settle();
-    const input = container.querySelector('[data-focus-entry="ipc:link0"]');
+    const input = container.querySelector(
+      '[data-focus-entry="ipc:link0"]',
+    ) as HTMLInputElement | null;
     if (opened !== 1) problems.push("configurator-focus: section not opened");
-    if (!input || document.activeElement !== input) {
-      problems.push("configurator-focus: the carve-out field is not focused");
-    } else if (!input.hasAttribute("data-focus-flash")) {
-      problems.push("configurator-focus: the landed field is not highlighted");
+    if (!input) {
+      problems.push("configurator-focus: the carve-out field is missing");
+    } else {
+      if (document.activeElement === input) {
+        problems.push(
+          "configurator-focus: the number field was focused — arrow keys and the wheel would resize it",
+        );
+      }
+      if (!input.hasAttribute("data-focus-flash")) {
+        problems.push(
+          "configurator-focus: the landed field is not highlighted",
+        );
+      }
+      for (const key of ["ArrowUp", "ArrowDown", "PageUp", "PageDown"]) {
+        pressKey(input, key);
+      }
+      input.dispatchEvent(
+        new (g.WheelEvent ?? Event)("wheel", {
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await settle();
+      if (input.value !== "16" || changes !== 0) {
+        problems.push(
+          `configurator-focus: landing let keys/wheel change the value (${changes} onChange, value "${input.value}")`,
+        );
+      }
     }
+    if (postedSince(postedBefore).length !== 0) {
+      problems.push(
+        `configurator-focus: landing posted ${JSON.stringify(postedSince(postedBefore))}`,
+      );
+    }
+    const postedMid = (g.__ALP_POSTED__ as unknown[]).length;
     g.__ALP_POST_TO_WEBVIEW__({
       type: "focusEntry",
       section: "storage",
@@ -2114,9 +2159,14 @@ async function main() {
     if (!notice.includes('"nvs"') || !notice.includes("nothing was created")) {
       problems.push(`configurator-focus: missing-entry notice was "${notice}"`);
     }
+    if (postedSince(postedMid).length !== 0 || changes !== 0) {
+      problems.push(
+        "configurator-focus: a missing entry posted or changed something",
+      );
+    }
     container.remove();
     console.log(
-      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  configurator-focus: focusEntry lands on the field, never creates`,
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  configurator-focus: focusEntry highlights the field, never focuses, writes or creates`,
     );
   }
 

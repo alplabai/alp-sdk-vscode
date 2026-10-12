@@ -44,7 +44,13 @@ const root = path.join(__dirname, "..");
 
 function loadWithStubs(relPath, stubs) {
   const modPath = require.resolve(path.join(root, "out", relPath));
+  // #484: the panel's navigation actions live in a sibling module that
+  // resolves the same stubbed specifiers, so it is re-loaded with them.
+  const navPath = require.resolve(
+    path.join(root, "out", "ideHub", "buildPlanNavigation.js"),
+  );
   delete require.cache[modPath];
+  delete require.cache[navPath];
   const originalLoad = Module._load;
   Module._load = function (request, ...rest) {
     return Object.prototype.hasOwnProperty.call(stubs, request)
@@ -56,6 +62,7 @@ function loadWithStubs(relPath, stubs) {
   } finally {
     Module._load = originalLoad;
     delete require.cache[modPath];
+    delete require.cache[navPath];
   }
 }
 
@@ -109,6 +116,8 @@ function mountPanel({
   // #484: every `vscode.commands.executeCommand` call — how
   // `openInConfigurator` opens the Configurator custom editor.
   const executed = [];
+  // Every write path a navigation action must never reach.
+  const writes = [];
   // #484: every plan `notifyAsync` was handed —
   // the user-visible half. A raw `log()` call alone reaches only the "Alp
   // SDK" output channel, which nothing surfaces on its own; this is what
@@ -164,6 +173,8 @@ function mountPanel({
       // #580: the panel reads the manifest now rather than posting `manifest:
       // null`, so the stub has to be able to answer.
       readFileSync: () => MANIFEST_YAML,
+      writeFileSync: (...args) => writes.push(["fs.writeFileSync", ...args]),
+      writeFile: (...args) => writes.push(["fs.writeFile", ...args]),
     },
     vscode: {
       window: {
@@ -179,6 +190,16 @@ function mountPanel({
           return workspaceRoot
             ? [{ uri: { fsPath: workspaceRoot } }]
             : undefined;
+        },
+        applyEdit: (...args) => {
+          writes.push(["workspace.applyEdit", ...args]);
+          return Promise.resolve(true);
+        },
+        fs: {
+          writeFile: (...args) => {
+            writes.push(["workspace.fs.writeFile", ...args]);
+            return Promise.resolve();
+          },
         },
         createFileSystemWatcher: () => ({
           onDidChange(handler) {
@@ -255,6 +276,7 @@ function mountPanel({
     logs,
     clipboard,
     executed,
+    writes,
     notifications,
     openInConfigurator: (section, name) =>
       onMessage({ type: "openInConfigurator", section, name }),
@@ -575,7 +597,8 @@ test("copyText notifies when the clipboard write is refused", async () => {
 // resolves the path itself, under the same precondition `openBoardYaml` uses.
 
 const focusRegistry = () =>
-  require(path.join(root, "out", "configurator", "focusRegistry.js"));
+  require(path.join(root, "out", "configurator", "focusRegistry.js"))
+    .focusRegistry;
 
 test("openInConfigurator opens the Configurator custom editor on the resolved board.yaml and queues the focus", async () => {
   const boardYamlPath = path.join(WORKSPACE_ROOT, "config", "board.yaml");
@@ -647,4 +670,20 @@ test("openInConfigurator refuses a malformed request without opening anything", 
   }
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(executed, []);
+});
+
+test("openInConfigurator only navigates: one vscode.openWith, no edit, no file write", async () => {
+  const boardYamlPath = path.join(WORKSPACE_ROOT, "board.yaml");
+  const { executed, writes, openInConfigurator } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+    boardYamlPath,
+  });
+  openInConfigurator("storage", "data");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(
+    executed.map((call) => call[0]),
+    ["vscode.openWith"],
+  );
+  assert.deepEqual(writes, []);
+  focusRegistry().takePendingFocus(boardYamlPath);
 });
