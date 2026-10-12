@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **The dependency consent screen shows each artifact's tier, licence and
+  size from the producer (#467).** tan 0.7.0-rc1 (tan-cli#1066) carries
+  alp-sdk's artifact provenance on every missing prerequisite, and the
+  screen now reads it off the step that will run: `Tier`, `Licence` and
+  `Size` sit beside `Runs:`, per tool when a rollup row's tools disagree
+  (`cmake: BSD-3-Clause; ninja: Apache-2.0`). A tier `C` (licence-gated)
+  line starts unchecked, so it is never fetched without its own click, and
+  a tier `B` line says it requires elevation. Today alp-sdk declares tier
+  `A` for all eight entries it covers and no sizes, so `Size` still reads
+  "not reported", and rows with no entry (`west`, `zephyrSdk`, `setools`,
+  `jlink`) report nothing. `Runs:` is still the command; the upstream page
+  is not shown in its place.
+
 - **The extension pins tan `0.7.0-rc1`.** `SUPPORTED_CLI_VERSION` moves
   from `0.6.0` to the `v0.7.0-rc1` pre-release, which carries
   `tan model zoo`/`add` (tan-cli#1338) and per-entry artifact provenance on

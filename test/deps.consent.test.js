@@ -5,13 +5,12 @@
 // Two things are being pinned here, and they pull in opposite directions.
 //
 // 1. **Nothing is invented.** ADR 0021 asks the screen to itemise artifact,
-//    source, size and licence. No producer emits a size or a licence today —
-//    measured on `metadata/bootstrap.json` at SDK v0.15.0 and on `tan doctor
-//    --format json` at the 0.6.0 pin, neither of which carries `tier`,
-//    `licence`, `source` or `size` (alp-sdk#1574). So those cells are `null`
-//    and the screen says "not reported"; a plausible-looking number here would
-//    be this extension making a claim it has no authority to make, and a
-//    licence is exactly the claim you must not guess at.
+//    source, size and licence. Those come ONLY from tan's per-entry
+//    provenance (tan 0.7.0-rc1, tan-cli#1066), carried on the step; a row
+//    whose steps carry none — every row built here — says "not reported". A
+//    plausible-looking number would be this extension making a claim it has no
+//    authority to make, and a licence is exactly the claim you must not guess
+//    at. `test/deps.consentProvenance.test.js` covers the reported side.
 //
 // 2. **Nothing is filtered.** There is deliberately no table keyed on tool
 //    name — the same rule the planner already states ("tan owns the facts").
@@ -114,11 +113,13 @@ test("a multi-step command row: every line reaches the screen, none truncated", 
   ]);
 });
 
-test("size and licence are null — no producer reports either (alp-sdk#1574)", () => {
+test("size, licence and tier are null when no step carries provenance", () => {
   const items = planInstallConsent([row({ name: "ninja" })], "linux");
 
   assert.equal(items[0].size, null);
   assert.equal(items[0].licence, null);
+  assert.equal(items[0].tier, null);
+  assert.equal(items[0].licenceGated, false);
 });
 
 test("a check this extension has never heard of still gets an item", () => {

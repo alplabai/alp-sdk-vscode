@@ -1,0 +1,219 @@
+{
+  "command": "doctor",
+  "ok": false,
+  "exitCode": 4,
+  "project": {
+    "root": "/home/dev/proj",
+    "boardYaml": "/home/dev/proj/board.yaml"
+  },
+  "sdk": {
+    "root": "/home/dev/alp-sdk",
+    "sourceTier": "sdkRootFlag"
+  },
+  "data": {
+    "generatedAt": "2026-10-12T15:42:03Z",
+    "summary": {
+      "pass": 14,
+      "warn": 4,
+      "fail": 3
+    },
+    "checks": [
+      {
+        "name": "sdk",
+        "status": "pass",
+        "scope": "project",
+        "detail": "alp-sdk at /home/dev/alp-sdk (sdkRootFlag)"
+      },
+      {
+        "name": "boardYaml",
+        "status": "pass",
+        "scope": "project",
+        "detail": "board.yaml found"
+      },
+      {
+        "name": "workspace",
+        "status": "pass",
+        "scope": "project",
+        "detail": "Zephyr workspace at /home/dev/VSCodeProjects/zephyrproject"
+      },
+      {
+        "name": "westResolved",
+        "status": "pass",
+        "scope": "project",
+        "detail": "west 1.5 resolved: /home/dev/VSCodeProjects/zephyrproject/.venv/bin/west."
+      },
+      {
+        "name": "zephyrVersion",
+        "status": "fail",
+        "scope": "project",
+        "detail": "reused Zephyr v4.4.0 != SDK pin v4.4.1 -- run `tan bootstrap` to refresh the workspace",
+        "fix": "tan bootstrap"
+      },
+      {
+        "name": "zephyrWorkspace",
+        "status": "pass",
+        "scope": "project",
+        "detail": "Zephyr 4.4.0 at `/home/dev/VSCodeProjects/zephyrproject`."
+      },
+      {
+        "name": "workspacePatches",
+        "status": "warn",
+        "scope": "project",
+        "detail": "alp-sdk's zephyr/patches.yml is not applied in /home/dev/VSCodeProjects/zephyrproject: mcuboot/0001-flash_map_extended-alif-mram-base.patch (ABSENT), mcuboot/0002-bootutil_misc-reject-erased-swap_size-trailer.patch (ABSENT), mcuboot/0003-sim-swap-size-erased-collision-regression-test.patch (ABSENT), mcuboot/0004-scramble-scratch-trailer-and-backward-scramble-off-by-one.patch (ABSENT), mcuboot/0005-sim-scratch-trailer-no-erase-device-regression-test.patch (DRIFTED), zephyr/0001-clock_control_alif-master-source-expmst-i2s-setrate.patch (ABSENT), zephyr/0002-ipm-add-poll-out-poll-in.patch (ABSENT), zephyr/0003-kconfig-serialize-missing-deps.patch (ABSENT), zephyr/0004-imx335-2lane-link-freq-and-binning.patch (ABSENT), hal_alif/0001-se-service-add-boot-cpu.patch (UNRESOLVED), hal_alif/0002-se-service-add-public-send-request.patch (UNRESOLVED), hal_alif/0003-isp-add-sbggr10p-bggr10-input-mapping.patch (UNRESOLVED), hal_alif/0004-isp-fix-wbm-v10-config-prefix.patch (UNRESOLVED), hal_alif/0005-isp-port-ae-writeback-to-v4.4-video-ctrl.patch (UNRESOLVED), hal_alif/0006-isp-ov5647-ae-sensor-defaults.patch (UNRESOLVED), hal_alif/0007-isp-setcalib-load-once.patch (UNRESOLVED), hal_alif/0008-isp-ov5647-awb-ccm-calibration.patch (UNRESOLVED), hal_alif/0009-isp-setcalib-before-3a-callbacks.patch (UNRESOLVED), hal_alif/0010-isp-clamp-ae-writeback-to-ctrl-range.patch (UNRESOLVED), hal_alif/0011-isp-ov5647-ae-calib-envelope.patch (UNRESOLVED), hal_alif/0012-isp-srggb10p-input.patch (UNRESOLVED), hal_alif/0013-isp-imx296-ae-envelope.patch (UNRESOLVED), hal_alif/0014-isp-imx335-ae-envelope.patch (UNRESOLVED), hal_alif/0015-se-service-toc-entry-id-memcpy.patch (UNRESOLVED) in module(s) mcuboot, zephyr, alif. The build still succeeds, but features that need them fail at runtime (for example `alp_camera_open` returns ALP_ERR_NOSUPPORT). Fix: run `tan bootstrap` (or, from /home/dev/VSCodeProjects/zephyrproject: west patch --dst-module mcuboot apply; west patch --dst-module zephyr apply; west patch --dst-module alif apply).",
+        "fix": "tan bootstrap"
+      },
+      {
+        "name": "zephyrBase",
+        "status": "pass",
+        "scope": "project",
+        "detail": "$ZEPHYR_BASE=/home/dev/zephyrproject/zephyr is ignored: tan always builds with the resolved west workspace's zephyr (/home/dev/VSCodeProjects/zephyrproject/zephyr). To build against another tree, run tan from that workspace or bootstrap it."
+      },
+      {
+        "name": "zephyrSdkAvailableForHost",
+        "status": "pass",
+        "scope": "host",
+        "detail": "The Zephyr SDK publishes a host build for macos-aarch64."
+      },
+      {
+        "name": "homePath",
+        "status": "pass",
+        "scope": "host",
+        "detail": "Home directory has no spaces: /home/dev"
+      },
+      {
+        "name": "tanInstall",
+        "status": "pass",
+        "scope": "host",
+        "detail": "tan 0.7.0-rc1"
+      },
+      {
+        "name": "hostPython",
+        "status": "fail",
+        "scope": "host",
+        "detail": "Python 3.9 (`python3`) is below the effective floor 3.12, which comes from /home/dev/VSCodeProjects/zephyrproject/zephyr/cmake/modules/python.cmake. The build does not fail here -- it fails later, inside Zephyr's own CMake configure, with an error that names Zephyr rather than your Python.",
+        "fix": "Install Python 3.12+ and put it ahead of 3.9 on PATH, then re-run `tan bootstrap` so the workspace venv is built with it."
+      },
+      {
+        "name": "pythonFloor",
+        "status": "warn",
+        "scope": "project",
+        "detail": "alp-sdk's metadata/bootstrap.json declares pythonMinVersion 3.10, but the build's effective floor is 3.12 (from /home/dev/VSCodeProjects/zephyrproject/zephyr/cmake/modules/python.cmake). Both `tan doctor` and `tan bootstrap` enforce the higher, effective floor, so a host this manifest would have accepted is refused up front rather than failing later at Zephyr's CMake configure.",
+        "fix": "Known, Zephyr-scoped skew (alp-sdk#1078) -- raising `prerequisites.pythonMinVersion` to 3.12 was tried and reverted, because that key also gates Yocto-only and metadata-only projects, which do not need it. Building for Zephyr on a host below 3.12 needs a newer interpreter -- see the `hostPython` check above."
+      },
+      {
+        "name": "hostPrerequisites",
+        "status": "fail",
+        "scope": "host",
+        "detail": "missing from PATH: cmake, ninja (facts from alp-sdk /home/dev/alp-sdk/metadata/bootstrap.json).",
+        "fix": "Install the missing prerequisites, then run `tan bootstrap`.  brew install cmake; brew install ninja"
+      },
+      {
+        "name": "west",
+        "status": "pass",
+        "scope": "host",
+        "detail": "`west` is not on bare PATH, but resolves through the workspace venv: /home/dev/VSCodeProjects/zephyrproject/.venv/bin/west -- the same binary `westResolved` above reports, and the one a real build actually spawns. This is the default state right after `tan bootstrap`, which deliberately does not put `west` on PATH; activating the venv (its `bin`/`Scripts` directory holds the `west` launcher) would additionally put it on bare PATH, for tools that spawn it directly rather than through tan."
+      },
+      {
+        "name": "zephyrSdk",
+        "status": "pass",
+        "scope": "host",
+        "detail": "Zephyr SDK toolchain detected."
+      },
+      {
+        "name": "toolchain",
+        "status": "pass",
+        "scope": "project",
+        "detail": "arm-zephyr-eabi 1.0.1 detected at /home/dev/zephyr-sdk-1.0.1 -- not tan's own store, but its `sdk_version` matches this checkout's pin, so this host already has what `tan bootstrap` would otherwise download again."
+      },
+      {
+        "name": "devicetreeLint",
+        "status": "pass",
+        "scope": "host",
+        "detail": "no `dtc` in CMake's reach (neither a Zephyr SDK `hosttools/` copy nor one on PATH), so Zephyr's devicetree lint pass (`-E unit_address_vs_reg` / `-Wunique_unit_address_if_enabled`) is SKIPPED -- `dts.cmake` guards it with `if(DTC)` and treats dtc as optional. Builds succeed and produce a real `zephyr.elf`; only those diagnostics are absent. This is the expected state after `tan bootstrap`, which acquires the Zephyr SDK with `--no-hosttools` (tan-cli#1178) and so installs no dtc. Install a system dtc 1.4.6 or newer if you want the lint back."
+      },
+      {
+        "name": "setools",
+        "status": "warn",
+        "scope": "host",
+        "detail": "AEN MRAM flashing (Flow D `alif_mram_jlink`, the planner default, and Flow A `west flash`) cannot sign an ATOC: $SETOOLS_DIR is unset (the Alif Security Toolkit is license-gated and NOT redistributed by alp-sdk). Flow A (`west flash`, alif_flash) is Linux-only in this tree -- run it from WSL2/Linux.",
+        "fix": "Download the Alif Security Toolkit (`app-release-exec-linux-SE_FW_x.y.z`) from the Alif developer portal -- it is license-gated and alp-sdk does not redistribute it -- then `export SETOOLS_DIR=<...>/app-release-exec-linux`. Flow A (`west flash`) additionally needs `export SE_UART=/dev/ttyUSB0` (your SE-UART device); Flow D does not. See docs/aen-bench-bringup.md. Doctor reads $SETOOLS_DIR and the built manifest's flash_args.setools_dir; a --setools-dir flag given to `tan flash` is not visible to it."
+      },
+      {
+        "name": "jlink",
+        "status": "warn",
+        "scope": "host",
+        "detail": "J-Link tools found at /usr/bin/JLink but their version could not be read, so the Flow D MRAM loader could not be confirmed. Flow D needs the `AE822FA0E5597LS0_M55_HE` part-number device profile (NOT the generic `Cortex-M55`, which has no MRAM loader) and a J-Link DLL V9.46+. Device profile resolved from: /home/dev/alp-sdk/metadata/socs/alif/ensemble/e8.json.",
+        "fix": "Run `JLinkExe` by hand (it prints the banner unprompted, then type `exit`) and confirm it reports V9.46 or newer."
+      },
+      {
+        "name": "sdkProvenance",
+        "status": "pass",
+        "scope": "project",
+        "detail": "alp-sdk 0.16.0 @ 49ac9d134"
+      }
+    ],
+    "nextSteps": [
+      "tan bootstrap",
+      "Install Python 3.12+ and put it ahead of 3.9 on PATH, then re-run `tan bootstrap` so the workspace venv is built with it.",
+      "Known, Zephyr-scoped skew (alp-sdk#1078) -- raising `prerequisites.pythonMinVersion` to 3.12 was tried and reverted, because that key also gates Yocto-only and metadata-only projects, which do not need it. Building for Zephyr on a host below 3.12 needs a newer interpreter -- see the `hostPython` check above.",
+      "Install the missing prerequisites, then run `tan bootstrap`.  brew install cmake; brew install ninja",
+      "Download the Alif Security Toolkit (`app-release-exec-linux-SE_FW_x.y.z`) from the Alif developer portal -- it is license-gated and alp-sdk does not redistribute it -- then `export SETOOLS_DIR=<...>/app-release-exec-linux`. Flow A (`west flash`) additionally needs `export SE_UART=/dev/ttyUSB0` (your SE-UART device); Flow D does not. See docs/aen-bench-bringup.md. Doctor reads $SETOOLS_DIR and the built manifest's flash_args.setools_dir; a --setools-dir flag given to `tan flash` is not visible to it.",
+      "Run `JLinkExe` by hand (it prints the banner unprompted, then type `exit`) and confirm it reports V9.46 or newer."
+    ],
+    "missingPrerequisites": [
+      {
+        "tool": "cmake",
+        "command": "brew install cmake",
+        "tier": "A",
+        "licence": "BSD-3-Clause",
+        "sourceUrl": "https://cmake.org/",
+        "sizeBytes": null
+      },
+      {
+        "tool": "ninja",
+        "command": "brew install ninja",
+        "tier": "A",
+        "licence": "Apache-2.0",
+        "sourceUrl": "https://ninja-build.org/",
+        "sizeBytes": null
+      }
+    ]
+  },
+  "issues": [
+    {
+      "code": "doctor.zephyr-version",
+      "severity": "error",
+      "message": "reused Zephyr v4.4.0 != SDK pin v4.4.1 -- run `tan bootstrap` to refresh the workspace"
+    },
+    {
+      "code": "doctor.workspace-patches",
+      "severity": "warning",
+      "message": "alp-sdk's zephyr/patches.yml is not applied in /home/dev/VSCodeProjects/zephyrproject: mcuboot/0001-flash_map_extended-alif-mram-base.patch (ABSENT), mcuboot/0002-bootutil_misc-reject-erased-swap_size-trailer.patch (ABSENT), mcuboot/0003-sim-swap-size-erased-collision-regression-test.patch (ABSENT), mcuboot/0004-scramble-scratch-trailer-and-backward-scramble-off-by-one.patch (ABSENT), mcuboot/0005-sim-scratch-trailer-no-erase-device-regression-test.patch (DRIFTED), zephyr/0001-clock_control_alif-master-source-expmst-i2s-setrate.patch (ABSENT), zephyr/0002-ipm-add-poll-out-poll-in.patch (ABSENT), zephyr/0003-kconfig-serialize-missing-deps.patch (ABSENT), zephyr/0004-imx335-2lane-link-freq-and-binning.patch (ABSENT), hal_alif/0001-se-service-add-boot-cpu.patch (UNRESOLVED), hal_alif/0002-se-service-add-public-send-request.patch (UNRESOLVED), hal_alif/0003-isp-add-sbggr10p-bggr10-input-mapping.patch (UNRESOLVED), hal_alif/0004-isp-fix-wbm-v10-config-prefix.patch (UNRESOLVED), hal_alif/0005-isp-port-ae-writeback-to-v4.4-video-ctrl.patch (UNRESOLVED), hal_alif/0006-isp-ov5647-ae-sensor-defaults.patch (UNRESOLVED), hal_alif/0007-isp-setcalib-load-once.patch (UNRESOLVED), hal_alif/0008-isp-ov5647-awb-ccm-calibration.patch (UNRESOLVED), hal_alif/0009-isp-setcalib-before-3a-callbacks.patch (UNRESOLVED), hal_alif/0010-isp-clamp-ae-writeback-to-ctrl-range.patch (UNRESOLVED), hal_alif/0011-isp-ov5647-ae-calib-envelope.patch (UNRESOLVED), hal_alif/0012-isp-srggb10p-input.patch (UNRESOLVED), hal_alif/0013-isp-imx296-ae-envelope.patch (UNRESOLVED), hal_alif/0014-isp-imx335-ae-envelope.patch (UNRESOLVED), hal_alif/0015-se-service-toc-entry-id-memcpy.patch (UNRESOLVED) in module(s) mcuboot, zephyr, alif. The build still succeeds, but features that need them fail at runtime (for example `alp_camera_open` returns ALP_ERR_NOSUPPORT). Fix: run `tan bootstrap` (or, from /home/dev/VSCodeProjects/zephyrproject: west patch --dst-module mcuboot apply; west patch --dst-module zephyr apply; west patch --dst-module alif apply)."
+    },
+    {
+      "code": "bootstrap.python-too-old",
+      "severity": "error",
+      "message": "Python 3.9 (`python3`) is below the effective floor 3.12, which comes from /home/dev/VSCodeProjects/zephyrproject/zephyr/cmake/modules/python.cmake. The build does not fail here -- it fails later, inside Zephyr's own CMake configure, with an error that names Zephyr rather than your Python."
+    },
+    {
+      "code": "doctor.python-floor",
+      "severity": "warning",
+      "message": "alp-sdk's metadata/bootstrap.json declares pythonMinVersion 3.10, but the build's effective floor is 3.12 (from /home/dev/VSCodeProjects/zephyrproject/zephyr/cmake/modules/python.cmake). Both `tan doctor` and `tan bootstrap` enforce the higher, effective floor, so a host this manifest would have accepted is refused up front rather than failing later at Zephyr's CMake configure."
+    },
+    {
+      "code": "bootstrap.prerequisites-missing",
+      "severity": "error",
+      "message": "missing from PATH: cmake, ninja (facts from alp-sdk /home/dev/alp-sdk/metadata/bootstrap.json)."
+    },
+    {
+      "code": "doctor.setools",
+      "severity": "warning",
+      "message": "AEN MRAM flashing (Flow D `alif_mram_jlink`, the planner default, and Flow A `west flash`) cannot sign an ATOC: $SETOOLS_DIR is unset (the Alif Security Toolkit is license-gated and NOT redistributed by alp-sdk). Flow A (`west flash`, alif_flash) is Linux-only in this tree -- run it from WSL2/Linux."
+    },
+    {
+      "code": "doctor.jlink",
+      "severity": "warning",
+      "message": "J-Link tools found at /usr/bin/JLink but their version could not be read, so the Flow D MRAM loader could not be confirmed. Flow D needs the `AE822FA0E5597LS0_M55_HE` part-number device profile (NOT the generic `Cortex-M55`, which has no MRAM loader) and a J-Link DLL V9.46+. Device profile resolved from: /home/dev/alp-sdk/metadata/socs/alif/ensemble/e8.json."
+    }
+  ]
+}

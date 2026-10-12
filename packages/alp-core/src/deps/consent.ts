@@ -4,33 +4,42 @@
 // itself is `confirmDependencyInstalls` (`src/deps/vscodeAdapter.ts`).
 //
 // ADR 0021 §3 asks for one screen listing **artifact, source, size and licence**
-// per item, over three tiers. This module builds the first half of that and
-// deliberately does NOT build the second, for a measured reason:
+// per item, over three tiers.
 //
-//   No producer can express a tier, a licence or a size today. Measured on
-//   alp-sdk `metadata/bootstrap.json` at the vendored v0.15.0 pin (top-level
-//   keys: `_comment`, `schemaVersion`, `zephyr`, `venv`, `prerequisites`,
-//   `west`, `pip`, `verdict`, `env`, `nativeLibHints`, `manualInstallHints`)
-//   and on `tan doctor --format json` at the 0.6.0 pin (check rows are
-//   `name` / `status` / `scope` / `detail` / `fix`). Neither side carries
-//   `tier`, `licence`, `source` or `size`. Filed as alp-sdk#1574.
+// `size`, `licence` and `tier` come from the PRODUCER and nowhere else: the
+// artifact provenance tan 0.7.0-rc1 (tan-cli#1066) flattens onto each
+// `missingPrerequisites[]` entry, which the planner carries on the very
+// `DependencyCommandStep` that will run (`./provenance`). There is no table
+// keyed on tool name here — a LICENSING claim (Tier C exists because of
+// Segger's J-Link and the vendor NPU compilers) needs an authority, and this
+// module is not one.
 //
-// #467 states the constraint this creates: a tier "should arrive with the
-// install data ... not be hardcoded as a TypeScript allowlist keyed on tool
-// name". So `size` and `licence` are `null` and the screen renders "not
-// reported", and there is no tier field here at all. The alternative — a local
-// table — would put a LICENSING claim (Tier C exists because of Segger's J-Link
-// and the vendor NPU compilers) in a module with no authority to make one, and
-// would go stale the first time tan adds a check.
+// MEASURED, alp-sdk v0.16.0 through v0.17.0-rc2: 8 entries, every one tier
+// `"A"`, `sizeBytes` null on all 8, `licence` null for `xz` and `7zip`. So
+// today `size` still reads "not reported" everywhere, `licence` is real for
+// cmake/ninja/git/python/wget, and rows whose tool has no entry — `west`,
+// `zephyrSdk`, `setools`, `jlink`, and every `fix` row — say "not reported"
+// for all three. A `B` or `C` tier is wired through (`elevationTier`,
+// `licenceGated`) and has no producer instance yet.
 //
-// The one derived field is `needsElevation`, and it is derived from the
-// PRODUCER's own command text — does the line tan emitted invoke `sudo` — never
-// from the tool's name. Reading what a command does is not the same act as
-// opining about what an artifact is, which is why this one is allowed and a
-// tier table is not.
+// `needsElevation` is still derived from the PRODUCER's own command text —
+// does the line tan emitted invoke `sudo` — never from the tool's name.
 
 import { type BootstrapHost, fixCommand } from "../toolchain/bootstrapPlan";
-import type { DependencyActionEffect, DependencyRow } from "./planner";
+import type {
+  DependencyActionEffect,
+  DependencyCommandStep,
+  DependencyRow,
+} from "./planner";
+import { formatByteCount, type PrerequisiteProvenance } from "./provenance";
+
+/** What a cell says when the producer reports nothing for it. */
+export const NOT_REPORTED = "not reported";
+
+/** ADR 0021 §3's tier words this module acts on — producer values, compared
+ *  verbatim. `B` installs with elevation; `C` is licence-gated. */
+const ELEVATION_TIER = "B";
+const LICENCE_GATED_TIER = "C";
 
 /**
  * One line of the consent screen.
@@ -51,10 +60,25 @@ export interface ConsentItem {
    * summarises any of them is a screen a security team cannot use.
    */
   source: readonly string[] | null;
-  /** Producer-reported download size. `null` today — nothing reports one. */
+  /**
+   * Producer-reported download size, human-formatted, or `null` when no step
+   * reports one (every row today — alp-sdk declares `sizeBytes: null`). On a
+   * multi-step row whose steps disagree it is per tool:
+   * `cmake: 4 MiB; ninja: not reported`.
+   */
   size: string | null;
-  /** Producer-reported licence. `null` today — nothing reports one. */
+  /** Producer-reported licence, same per-tool rule as `size`. */
   licence: string | null;
+  /** Producer-reported tier word, same per-tool rule as `size`. */
+  tier: string | null;
+  /** True when ANY step's producer tier is `B`: it installs with elevation. */
+  elevationTier: boolean;
+  /**
+   * True when ANY step's producer tier is `C`, licence-gated. Such a line
+   * starts UNCHECKED on the consent screen, so it is never fetched without an
+   * explicit action of its own.
+   */
+  licenceGated: boolean;
   /** True when the PRODUCER's command text asks for elevation. */
   needsElevation: boolean;
   /** The action's own effect, unchanged — `install`, `open-docs`, `bootstrap`. */
@@ -126,6 +150,39 @@ function sourceFor(
   }
 }
 
+/** The row's command steps, or `[]` for a `fix` row or no action — those
+ *  carry no producer provenance at all. */
+function stepsOf(row: DependencyRow): readonly DependencyCommandStep[] {
+  return row.action?.kind === "command" ? row.action.commands : [];
+}
+
+/**
+ * One provenance field across a row's steps. The single value when every step
+ * agrees (all `null` stays `null`), else one `tool: value` clause per step in
+ * dispatch order, so a rollup row never pins one tool's licence on another.
+ * `?? {}` and the optional reads tolerate a step built before `provenance`
+ * existed — the row crosses a JS boundary at every call site.
+ */
+function perTool(
+  steps: readonly DependencyCommandStep[],
+  read: (provenance: Partial<PrerequisiteProvenance>) => string | null,
+): string | null {
+  if (steps.length === 0) return null;
+  const values = steps.map((step) => read(step.provenance ?? {}));
+  if (values.every((value) => value === values[0])) return values[0];
+  return steps
+    .map((step, index) => `${step.tool}: ${values[index] ?? NOT_REPORTED}`)
+    .join("; ");
+}
+
+/** Whether any step's producer tier is exactly `tier`. */
+function anyTier(
+  steps: readonly DependencyCommandStep[],
+  tier: string,
+): boolean {
+  return steps.some((step) => step.provenance?.tier === tier);
+}
+
 /**
  * Build one consent item per row, in the caller's order.
  *
@@ -142,12 +199,18 @@ export function planInstallConsent(
 ): ConsentItem[] {
   return rows.map((row) => {
     const source = sourceFor(row, host);
+    const steps = stepsOf(row);
     return {
       name: row.name,
       artifact: row.label,
       source,
-      size: null,
-      licence: null,
+      size: perTool(steps, (p) =>
+        typeof p.sizeBytes === "number" ? formatByteCount(p.sizeBytes) : null,
+      ),
+      licence: perTool(steps, (p) => p.licence ?? null),
+      tier: perTool(steps, (p) => p.tier ?? null),
+      elevationTier: anyTier(steps, ELEVATION_TIER),
+      licenceGated: anyTier(steps, LICENCE_GATED_TIER),
       // ANY line, not just the first: a multi-step `command` row (#603) whose
       // SECOND line is `sudo apt-get install -y ninja-build` still needs to
       // flag elevation even though its first line does not.

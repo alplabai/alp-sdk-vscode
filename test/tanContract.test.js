@@ -405,23 +405,12 @@ const DOCTOR_ENVELOPE_MODELS = "packages/alp-core/src/cli/doctorEnvelope.ts";
  * Keys tan's `dataKeys` declares that `doctorEnvelope.ts` deliberately does not
  * model, with the reason. Both are additive keys nothing renders.
  */
-const PROVENANCE_PENDING =
-  "Artifact provenance arrived with the 0.7.0-rc1 pin; the consent screen " +
-  "renders it once #467 models it on MissingPrerequisite.";
-
 const UNMODELLED_DOCTOR_KEYS = {
   generatedAt:
     "The run's timestamp. Nothing renders it — the panel shows the report it " +
     "just fetched, so a stamp would only ever say 'now'. Modelling it would " +
     "invite a surface to print a time that is not the one on screen after a " +
     "refresh races.",
-  // tan 0.7.0-rc1 (tan-cli#1066) flattens alp-sdk's artifact provenance onto
-  // every entry. Recorded here only for the length of the pin-bump commit:
-  // #467 models all four in the commit after it and deletes these rows.
-  "missingPrerequisites[].tier": PROVENANCE_PENDING,
-  "missingPrerequisites[].licence": PROVENANCE_PENDING,
-  "missingPrerequisites[].sourceUrl": PROVENANCE_PENDING,
-  "missingPrerequisites[].sizeBytes": PROVENANCE_PENDING,
 };
 
 /** Field names of `export interface <name>`, each keeping its `?`. Nested brace

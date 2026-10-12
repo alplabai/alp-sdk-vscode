@@ -22,6 +22,7 @@ import type {
   DoctorEnvelopeData,
   MissingPrerequisite,
 } from "../cli/doctorEnvelope";
+import { type PrerequisiteProvenance, normaliseProvenance } from "./provenance";
 import { type DependencyState, dependencyState } from "./state";
 
 // ── The envelope slice this planner reads (see docs/CLI.md) ──────────────────
@@ -31,7 +32,12 @@ import { type DependencyState, dependencyState } from "./state";
 // (deps) slice. Re-exported here so every existing import of this module
 // keeps working unchanged.
 
-export type { DoctorCheckEnvelope, DoctorEnvelopeData, MissingPrerequisite };
+export type {
+  DoctorCheckEnvelope,
+  DoctorEnvelopeData,
+  MissingPrerequisite,
+  PrerequisiteProvenance,
+};
 
 /**
  * A row's status, VERBATIM from tan. Deliberately `string`, not a union: the
@@ -109,6 +115,14 @@ export type DependencyActionEffect = "install" | "open-docs" | "bootstrap";
 export interface DependencyCommandStep {
   tool: string;
   command: string;
+  /**
+   * The SAME entry's artifact provenance (tan-cli#1066, #467), normalised by
+   * `normaliseProvenance` where the step is built. Carried on the step so the
+   * consent screen reads it off what will run — no second join by tool name
+   * anywhere downstream, which could pair a licence with the wrong command.
+   * All-`null` from a tan older than 0.7.0-rc1.
+   */
+  provenance: PrerequisiteProvenance;
 }
 
 /**
@@ -533,9 +547,17 @@ export function planDependencyReport(
   // carries, never a per-check `find`.
   const checkNames = new Set(data.checks.map((check) => check.name));
   const leftover = (prerequisites ?? []).filter((p) => !checkNames.has(p.tool));
-  const leftoverBound: DependencyCommandStep[] = leftover
-    .filter((p): p is { tool: string; command: string } => p.command !== null)
-    .map((p) => ({ tool: p.tool, command: p.command }));
+  const leftoverBound: DependencyCommandStep[] = leftover.flatMap((p) =>
+    p.command !== null
+      ? [
+          {
+            tool: p.tool,
+            command: p.command,
+            provenance: normaliseProvenance(p),
+          },
+        ]
+      : [],
+  );
   const leftoverOmitted = leftover
     .filter((p) => p.command === null)
     .map((p) => p.tool);
@@ -578,7 +600,13 @@ export function planDependencyReport(
       return entry.command !== null
         ? {
             kind: "command",
-            commands: [{ tool: entry.tool, command: entry.command }],
+            commands: [
+              {
+                tool: entry.tool,
+                command: entry.command,
+                provenance: normaliseProvenance(entry),
+              },
+            ],
             // A per-tool match is never partial — one `MissingPrerequisite`
             // entry cannot omit part of itself.
             omittedTools: [],
