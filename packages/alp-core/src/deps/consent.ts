@@ -215,11 +215,26 @@ function anyTierUnreadable(steps: readonly DependencyCommandStep[]): boolean {
   return steps.some((step) => step.provenance?.tierUnreadable === true);
 }
 
-/** Whether any step reports a tier that is neither `A` nor `B`, or one that
- *  could not be read at all. */
-function anyUncheckedTier(steps: readonly DependencyCommandStep[]): boolean {
+/** Whether the row is unreadable as a whole: any step's tier, or a `fix`
+ *  action the planner flagged because the manifest itself was unreadable. */
+function rowTierUnreadable(
+  row: DependencyRow,
+  steps: readonly DependencyCommandStep[],
+): boolean {
   return (
     anyTierUnreadable(steps) ||
+    (row.action?.kind === "fix" && row.action.tierUnreadable === true)
+  );
+}
+
+/** Whether any step reports a tier that is neither `A` nor `B`, or one that
+ *  could not be read at all. */
+function anyUncheckedTier(
+  row: DependencyRow,
+  steps: readonly DependencyCommandStep[],
+): boolean {
+  return (
+    rowTierUnreadable(row, steps) ||
     tiersOf(steps).some(
       (tier) => tier !== null && tier !== PLAIN_TIER && tier !== ELEVATION_TIER,
     )
@@ -251,13 +266,16 @@ export function planInstallConsent(
         typeof p.sizeBytes === "number" ? formatByteCount(p.sizeBytes) : null,
       ),
       licence: perTool(steps, (p) => p.licence ?? null),
-      tier: perTool(steps, (p) =>
-        p.tierUnreadable ? UNREADABLE : canonicalTier(p.tier),
-      ),
+      tier:
+        steps.length === 0 && rowTierUnreadable(row, steps)
+          ? UNREADABLE
+          : perTool(steps, (p) =>
+              p.tierUnreadable ? UNREADABLE : canonicalTier(p.tier),
+            ),
       elevationTier: anyTier(steps, ELEVATION_TIER),
       licenceGated: anyTier(steps, LICENCE_GATED_TIER),
-      startsUnchecked: anyUncheckedTier(steps),
-      tierUnreadable: anyTierUnreadable(steps),
+      startsUnchecked: anyUncheckedTier(row, steps),
+      tierUnreadable: rowTierUnreadable(row, steps),
       // ANY line, not just the first: a multi-step `command` row (#603) whose
       // SECOND line is `sudo apt-get install -y ninja-build` still needs to
       // flag elevation even though its first line does not.

@@ -181,6 +181,10 @@ export interface DependencyFixAction {
   fixId: ToolchainFixId;
   effect: DependencyActionEffect;
   title: string;
+  /** Present (`true`) only when the doctor run reported the bootstrap
+   *  manifest unreadable, so no provenance backs this row: the consent screen
+   *  then starts it unchecked. A fix row has no steps to carry it. */
+  tierUnreadable?: true;
 }
 
 /**
@@ -648,7 +652,12 @@ export function planDependencyReport(
     // extension knows how to remedy — never to parsing `check.fix`, prose.
     const fixId = FIX_IDS[check.name];
     return fixId && check.status !== "pass"
-      ? { kind: "fix", fixId, ...fixPresentation(fixId, host) }
+      ? {
+          kind: "fix",
+          fixId,
+          ...fixPresentation(fixId, host),
+          ...(provenanceUnreadable ? { tierUnreadable: true as const } : {}),
+        }
       : null;
   };
 

@@ -463,6 +463,10 @@ export interface DependencyFixAction {
   fixId: ToolchainFixId;
   effect: DependencyActionEffect;
   title: string;
+  /** Present (`true`) only when the doctor run reported the bootstrap
+   *  manifest unreadable, so no provenance backs this row: the consent screen
+   *  then starts it unchecked. A fix row has no steps to carry it. */
+  tierUnreadable?: true;
 }
 
 /**

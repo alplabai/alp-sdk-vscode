@@ -530,3 +530,59 @@ for (const [label, tiers, winner] of [
     assert.equal(only.command, `install git ${winner}`);
   });
 }
+
+// ---------------------------------------------------------------------------
+// `fix`-kind rows carry no steps, so the manifest signal reaches them directly
+// ---------------------------------------------------------------------------
+
+const fixRows = (manifestChecks) =>
+  plan({
+    checks: [
+      { name: "west", status: "fail", detail: "missing", scope: "host" },
+      { name: "zephyrSdk", status: "fail", detail: "missing", scope: "host" },
+      ...manifestChecks,
+    ],
+    summary: { pass: 0, warn: 1, fail: 2 },
+    missingPrerequisites: [],
+  }).rows.filter((row) => row.action?.kind === "fix");
+
+test("unreadable manifest: fix-kind rows start UNCHECKED with the unreadable note", async () => {
+  // Arrange
+  const rows = fixRows([
+    manifestCheck(
+      "warn",
+      "metadata/bootstrap.json was read, but its artifactProvenance block is not readable: x.",
+    ),
+  ]);
+  const { mod, shown } = loadAdapter();
+
+  // Act
+  const items = planInstallConsent(rows, "darwin");
+  await mod.confirmDependencyInstalls(rows, "darwin");
+
+  // Assert
+  assert.deepEqual(
+    rows.map((r) => r.name),
+    ["west", "zephyrSdk"],
+  );
+  for (const item of items) {
+    assert.equal(item.startsUnchecked, true, item.name);
+    assert.equal(item.tier, "unreadable", item.name);
+  }
+  for (const pick of shown[0]) {
+    assert.equal(pick.picked, false, pick.name);
+    assert.match(pick.description, /tier unreadable/);
+  }
+});
+
+test("readable manifest: fix-kind rows stay checked and 'not reported'", () => {
+  const items = planInstallConsent(
+    fixRows([manifestCheck("pass", "ok")]),
+    "darwin",
+  );
+  assert.equal(items.length, 2);
+  for (const item of items) {
+    assert.equal(item.startsUnchecked, false, item.name);
+    assert.equal(item.tier, null, item.name);
+  }
+});
