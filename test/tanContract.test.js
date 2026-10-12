@@ -268,6 +268,23 @@ const GATED_CODES = {
   // this suite inside `package_and_publish` and `package_darwin_arm64`.
   "monitor.no-port": "frozen",
 
+  // `tan init` refusals, keyed in `packages/alp-core/src/project/
+  // initRefusal.ts`'s `KINDS` table (found by idiom 5 below), which decides
+  // which wizard step the customer is sent back to. tan 0.7.0-rc1 froze
+  // `init.som-unsupported` and names that table as its consumer; the other two
+  // are still reserved there, so a rename of either lands with tan's CI green
+  // and only this row red.
+  "init.som-unsupported": "frozen",
+  "init.invalid-som": "reserved",
+  "init.invalid-cores": "reserved",
+  // Same idiom, `packages/alp-core/src/wizard/scaffoldPayload.ts`'s `KINDS`:
+  // the module wizard's `tan scaffold` refusals. All four reserved at
+  // 0.7.0-rc1 — bound here since that table landed, gated only now.
+  "scaffold.would-overwrite": "reserved",
+  "scaffold.invalid-name": "reserved",
+  "scaffold.name-required": "reserved",
+  "scaffold.invalid-template": "reserved",
+
   "models.panel-not-wired": null,
 };
 
@@ -317,6 +334,11 @@ const ISSUE_CODE_SHAPE = /^[a-z][a-z0-9-]*\.[a-z0-9-]+$/;
  * built by concatenation — is still invisible outside `bootstrap.*`/`presets.*`.
  * Add the idiom here when someone writes one; do not widen the shape filter.
  */
+/** Idiom 5's declaration: a `*KINDS` / `*CODE(S)` constant whose value is an
+ *  object literal, body captured up to the closing brace at column 0. */
+const GATED_CODE_TABLE =
+  /\b(?:[A-Z][A-Z0-9_]*_)?(?:KINDS|CODES?)\b[^=\n]*=\s*(?:Object\.freeze\s*\(\s*)?\{\n([\s\S]*?)\n\}/g;
+
 function scanGatedCodes(roots) {
   const found = new Set();
   const add = (code) => {
@@ -358,6 +380,15 @@ function scanGatedCodes(roots) {
         /\b[A-Z][A-Z0-9_]*CODE\b[^=\n]*=\s*"([^"]*)"/g,
       )) {
         add(m[1]);
+      }
+      // 5. A code-KEYED table — `const KINDS: Record<string, …> = { "fam.code":
+      //    …, }` — looked up with `KINDS[issue.code]`. Neither idiom 2 (an
+      //    array) nor idiom 4 (one string) sees an object's KEYS, so
+      //    `initRefusal.ts`'s three `init.*` codes — one of them frozen at
+      //    0.7.0-rc1 with that table named as its consumer — were bound with
+      //    nothing here noticing. Keys only, and only keys in code shape.
+      for (const m of text.matchAll(GATED_CODE_TABLE)) {
+        for (const key of m[1].matchAll(/^\s*"([^"]*)"\s*:/gm)) add(key[1]);
       }
     }
   }
@@ -688,6 +719,33 @@ test("gated issue codes: every code matched in src/ is classified exactly once",
       "match nobody decided the fate of. Add it to GATED_CODES with the status tan's " +
       "frozen list gives it, or `null` if tan declares it nowhere.",
   );
+});
+
+test("gated issue codes: a code-keyed KINDS table is scanned (idiom 5)", (t) => {
+  // Without idiom 5 the `init.*` rows above would be unreachable by the scan
+  // and the exhaustiveness assertion would red on them as stale. Proved on a
+  // file of its own so it cannot pass by accident of what src/ holds today.
+  const dir = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "gate-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(
+    path.join(dir, "refusal.ts"),
+    [
+      "const KINDS: Readonly<Record<string, Kind>> = {",
+      '  "fam.first-code": "a",',
+      "  // a comment between rows",
+      '  "fam.second-code": "b",',
+      '  "not a code": "c",',
+      "};",
+      "const OTHER = {",
+      '  "fam.unbound-table": "d",',
+      "};",
+      "",
+    ].join("\n"),
+  );
+  assert.deepEqual([...scanGatedCodes([dir])].sort(), [
+    "fam.first-code",
+    "fam.second-code",
+  ]);
 });
 
 test(
