@@ -15,7 +15,6 @@ import type {
   ConfiguratorViewModel,
   CorePanel,
   LibraryEntry,
-  ModelEntry,
   Ota,
 } from "../../types";
 import { consoleRecommendation } from "./consoleRecommendation";
