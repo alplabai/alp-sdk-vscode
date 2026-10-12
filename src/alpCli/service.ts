@@ -14,6 +14,7 @@ import {
   CliUnavailableReason,
   ReleaseAsset,
 } from "./models";
+import { headlineIssue } from "@alp-sdk/core/cli/headlineIssue";
 
 /** The `tan` CLI version this extension build targets for download-on-demand.
  *  Must match a PUBLISHED `v<version>` release tag in `alplabai/tan-cli`
@@ -1319,7 +1320,7 @@ export function classifyUnavailable(raw: string): CliUnavailableReason {
  */
 function summarize(kind: CliExitKind, envelope: AlpEnvelope | null): string {
   const issues = envelope?.issues ?? [];
-  const firstIssue = issues[0]?.message;
+  const firstIssue = headlineIssue(issues)?.message;
   if (firstIssue) {
     const more = issues.length - 1;
     return more > 0 ? `${firstIssue} (+${more} more)` : firstIssue;

@@ -10,6 +10,7 @@ import {
   type WebviewToExtMessage,
 } from "./messages";
 import { buildWebviewHtml } from "./webviewHtml";
+import { headlineIssue } from "@alp-sdk/core/cli/headlineIssue";
 import { buildMemoryView } from "@alp-sdk/core/systemManifest/memoryView";
 import type { SystemManifest } from "@alp-sdk/core/systemManifest/models";
 import { parseSystemManifest } from "@alp-sdk/core/systemManifest/service";
@@ -439,7 +440,9 @@ export class BuildPlanPanel {
             type: "sliceSizesData",
             report: null,
             error:
-              shapeError ?? envelope?.issues?.[0]?.message ?? outcome.message,
+              shapeError ??
+              headlineIssue(envelope?.issues)?.message ??
+              outcome.message,
           };
     void this.panel.webview.postMessage(msg);
   }

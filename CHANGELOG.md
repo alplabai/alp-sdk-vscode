@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **A failed tan command's toast quotes its error again, not an SDK
+  advisory.** tan 0.7.0-rc1 lists `sdk.project-pin-unresolved` and
+  `sdk.global-default-foreign-project` warnings ahead of the command's own
+  error, so a headline read from the first issue named the wrong problem.
+  Every headline now quotes the first error, and falls back to the first
+  issue only when there is none.
+
 - **The dependency consent screen shows each artifact's tier, licence and
   size from the producer (#467).** tan 0.7.0-rc1 (tan-cli#1066) carries
   alp-sdk's artifact provenance on every missing prerequisite, and the
