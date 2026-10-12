@@ -116,6 +116,12 @@ const GATED_CODES = {
   // it. Measured at the pin, a `validate` with no resolvable SDK returns exit
   // 2 carrying exactly this code.
   "validate.sdk-root-unresolved": "reserved",
+  // tan: python/tan/commands/examples_cmd.py (tan-cli#400). Ext: the spelling
+  // lives once, as `EXAMPLES_SDK_ROOT_UNRESOLVED_CODE`
+  // (ideHub/newProjectFlowPanel.ts), matched through `unresolvedSdkReason` to
+  // say why the example catalogue is empty. `reserved` / `consumer: "none"` in
+  // the artefact for the same reason as `validate.sdk-root-unresolved` above.
+  "examples.sdk-root-unresolved": "reserved",
 
   // RETIRED — no current tan emits it, and tan reserves the spelling so it can
   // never come back meaning something else.

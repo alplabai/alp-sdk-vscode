@@ -65,7 +65,7 @@ const PANEL_TITLE = "Alp IDE — New Project";
 
 /** tan's code for "I returned an empty example catalogue because no SDK
  *  resolved" — exit 0 and `ok: true` carry no hint of it. */
-const EXAMPLES_SDK_ROOT_UNRESOLVED = "examples.sdk-root-unresolved";
+const EXAMPLES_SDK_ROOT_UNRESOLVED_CODE = "examples.sdk-root-unresolved";
 
 export class NewProjectFlowPanel {
   private static instance?: NewProjectFlowPanel;
@@ -422,7 +422,7 @@ export class NewProjectFlowPanel {
     // issue and correctly leaves this null.
     this.examplesUnavailableReason = unresolvedSdkReason(
       examplesRes.outcome.envelope,
-      EXAMPLES_SDK_ROOT_UNRESOLVED,
+      EXAMPLES_SDK_ROOT_UNRESOLVED_CODE,
     );
     const examples =
       (
