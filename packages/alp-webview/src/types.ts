@@ -171,6 +171,9 @@ export interface CoreEntry {
    *  without the other. Mirrors `packages/alp-core/src/board/models.ts`. */
   recipe?: string;
   image?: string;
+  /** Per-core toolchain override (#314). Absent = the SoM default; never
+   *  written as `""`. Mirrors `packages/alp-core/src/board/models.ts`. */
+  toolchain?: string;
   peripherals?: string[];
   inference?: CoreInference;
   iot?: CoreIot;
@@ -311,6 +314,8 @@ export interface CorePanel {
   iot: { wifi: boolean; mqtt: boolean; ble: boolean; tls: boolean };
   inferenceArenaKib?: number;
   hwConsole?: boolean;
+  toolchain?: string;
+  defaultToolchain?: string;
 }
 export interface ChipChoice {
   chipId: string;
@@ -344,6 +349,7 @@ export interface ConfiguratorViewModel {
   carriers: { selected?: string; options: BoardPreset[] };
   cores: CorePanel[];
   libraries: string[];
+  toolchains: string[];
   chips: ChipChoice[];
   projectChips: string[];
   validation: ValidationResult;

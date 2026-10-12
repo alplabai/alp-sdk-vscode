@@ -41,6 +41,11 @@ export interface CorePanel {
   iot: { wifi: boolean; mqtt: boolean; ble: boolean; tls: boolean };
   inferenceArenaKib?: number;
   hwConsole?: boolean;
+  /** The board.yaml `cores.<id>.toolchain` override (#314); absent = none. */
+  toolchain?: string;
+  /** The SoM preset's `topology.<id>.toolchain` — what the build uses when
+   *  `toolchain` is absent. Same field the Hardware Explorer column reads. */
+  defaultToolchain?: string;
 }
 
 export interface ChipChoice {
@@ -61,6 +66,9 @@ export interface ConfiguratorViewModel {
   carriers: { selected?: string; options: BoardPreset[] };
   cores: CorePanel[];
   libraries: string[];
+  /** Toolchain ids the SDK catalogue knows (every SoM's topology defaults),
+   *  offered as suggestions only — the field stays free-form (alp-sdk#964). */
+  toolchains: string[];
   chips: ChipChoice[];
   projectChips: string[];
   validation: ValidationResult;
@@ -118,6 +126,7 @@ export function buildConfiguratorViewModel(
   const cores: CorePanel[] = orderedIds.map((id) => {
     const core = board.cores?.[id];
     const iot = core?.iot ?? {};
+    const topo = som?.topology?.find((t) => t.id === id);
     return {
       id,
       inheritedFromTopology: core === undefined,
@@ -133,7 +142,9 @@ export function buildConfiguratorViewModel(
         tls: Boolean(iot.tls),
       },
       inferenceArenaKib: core?.inference?.default_arena_kib,
-      hwConsole: som?.topology?.find((t) => t.id === id)?.hwConsole,
+      hwConsole: topo?.hwConsole,
+      toolchain: core?.toolchain,
+      defaultToolchain: topo?.toolchain,
     };
   });
 
@@ -166,8 +177,21 @@ export function buildConfiguratorViewModel(
     },
     cores,
     libraries: catalogue.libraries.map((l) => l.id),
+    toolchains: catalogueToolchains(catalogue),
     chips,
     projectChips: board.chips ?? [],
     validation: validateBoardConfig(board),
   };
+}
+
+/** Distinct `topology.<core>.toolchain` ids across every SoM, sorted. No
+ *  table of our own: the SDK catalogue is the only vocabulary (#314). */
+function catalogueToolchains(catalogue: SdkCatalogue): string[] {
+  const ids = new Set<string>();
+  for (const som of catalogue.soms) {
+    for (const t of som.topology ?? []) {
+      if (t.toolchain) ids.add(t.toolchain);
+    }
+  }
+  return [...ids].sort();
 }

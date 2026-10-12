@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Pick a core's toolchain in the Board Configurator (#314).** Each core
+  has an optional Toolchain field that writes `cores.<core>.toolchain` to
+  board.yaml, suggests the ids the SDK catalogue knows and shows the SoM
+  default as its placeholder; leaving it empty removes the key and keeps
+  that default. The toolchain a build actually used appears in the Build
+  Plan's toolchain row after the next build.
+
 - **Edit an IPC carve-out or storage partition size straight from the Build
   Plan.** Each IPC link and storage partition has an "Edit in Configurator"
   link that opens the Board Configurator scrolled to that entry's size

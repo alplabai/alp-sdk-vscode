@@ -18,6 +18,11 @@ import type {
   Ota,
 } from "../../types";
 import { consoleRecommendation } from "./consoleRecommendation";
+import {
+  applyToolchainOverride,
+  TOOLCHAIN_HINT,
+  toolchainPlaceholder,
+} from "./toolchainOverride";
 import { coreSiliconClass, runtimeOptions } from "../../shared/coreRuntime";
 import styles from "./ConfiguratorView.module.css";
 import {
@@ -108,11 +113,14 @@ export function TextInput({
   placeholder,
   onChange,
   label,
+  list,
 }: {
   value: string;
   placeholder?: string;
   onChange: (v: string) => void;
   label: string;
+  /** A `<datalist>` id: suggestions without restricting what can be typed. */
+  list?: string;
 }) {
   const [draft, setDraft] = useState(value);
   const focused = useRef(false);
@@ -126,6 +134,7 @@ export function TextInput({
       value={draft}
       placeholder={placeholder}
       aria-label={label}
+      list={list}
       onFocus={() => {
         focused.current = true;
       }}
@@ -735,6 +744,24 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
               />
             </Field>
           </Row>
+          <Field label="Toolchain" hint={TOOLCHAIN_HINT}>
+            <TextInput
+              label={`Toolchain for ${core.id}`}
+              value={core.toolchain || ""}
+              placeholder={toolchainPlaceholder(core.defaultToolchain)}
+              list={`toolchains-${core.id}`}
+              onChange={(v) =>
+                mutate((d) => applyToolchainOverride(ensure(d), v), {
+                  debounce: true,
+                })
+              }
+            />
+            <datalist id={`toolchains-${core.id}`}>
+              {(vm?.toolchains ?? []).map((id) => (
+                <option key={id} value={id} />
+              ))}
+            </datalist>
+          </Field>
           <Field label="Connectivity (IoT)">
             <div className={styles.chips}>
               {(["wifi", "mqtt", "ble", "tls"] as const).map((flag) => {
