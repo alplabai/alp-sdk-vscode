@@ -14,12 +14,15 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 
 const FETCH = path.join(__dirname, "..", "scripts", "tan-surface", "fetch.mjs");
 
 let mod;
 test.before(async () => {
-  mod = await import(FETCH);
+  // A bare absolute path is not an ESM specifier on Windows: `D:\...` reads as
+  // a URL with scheme `d:` and `import()` throws ERR_UNSUPPORTED_ESM_URL_SCHEME.
+  mod = await import(pathToFileURL(FETCH).href);
 });
 
 /** One box row: name, then each later cell starting at its fixed column. */
