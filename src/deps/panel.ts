@@ -309,8 +309,23 @@ export class DependencyPanel {
     // happening.
     if (row.action.effect !== "open-docs") {
       const consented = await confirmDependencyInstalls([row]);
-      if (consented === null || consented.length === 0) {
+      if (consented === null) {
+        // Dismissed: the customer's own cancel, nothing to add.
         log(`[deps] ${row.name}: consent not given, nothing dispatched`);
+        return;
+      }
+      if (consented.length === 0) {
+        // Answered, with the row unchecked. A tier `C` or unrecognised row
+        // STARTS unchecked (it needs its own opt-in), so a bare Enter lands
+        // here — and a log line alone left the click looking dead.
+        log(`[deps] ${row.name}: nothing selected, nothing dispatched`);
+        fireAndForget(
+          vscode.window.showInformationMessage(
+            `Nothing was selected, so ${row.label} was not installed. ` +
+              "Check it in the list, then confirm, to install it.",
+          ),
+          "the nothing-selected notice",
+        );
         return;
       }
     }
