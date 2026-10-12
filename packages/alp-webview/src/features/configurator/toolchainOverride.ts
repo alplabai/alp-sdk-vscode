@@ -26,7 +26,12 @@ export function toolchainPlaceholder(defaultToolchain?: string): string {
   return defaultToolchain ? `${defaultToolchain} (SoM default)` : "SoM default";
 }
 
-/** The hint under the field: where the effective value shows up. */
+/** The hint under the field: where the effective value shows up. No timing
+ *  is promised — the Build Plan can show a live projection as well as the
+ *  manifest of a finished build. */
 export const TOOLCHAIN_HINT =
-  "Optional. Leave empty to keep the SoM default. The toolchain a build " +
-  "actually used appears in the Build Plan's toolchain row after the next build.";
+  "Optional. Leave empty to keep the SoM default. The toolchain the build " +
+  "plan resolves is shown on this core's line in the Build Plan.";
+
+/** One `<datalist>` for the whole Cores section; every field points at it. */
+export const TOOLCHAIN_LIST_ID = "alp-configurator-toolchains";

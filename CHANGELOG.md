@@ -6,8 +6,8 @@
   has an optional Toolchain field that writes `cores.<core>.toolchain` to
   board.yaml, suggests the ids the SDK catalogue knows and shows the SoM
   default as its placeholder; leaving it empty removes the key and keeps
-  that default. The toolchain a build actually used appears in the Build
-  Plan's toolchain row after the next build.
+  that default. The toolchain the build plan resolves is shown on the
+  core's line in the Build Plan.
 
 - **Edit an IPC carve-out or storage partition size straight from the Build
   Plan.** Each IPC link and storage partition has an "Edit in Configurator"

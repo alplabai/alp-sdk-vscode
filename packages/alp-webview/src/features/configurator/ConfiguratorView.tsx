@@ -21,6 +21,7 @@ import { consoleRecommendation } from "./consoleRecommendation";
 import {
   applyToolchainOverride,
   TOOLCHAIN_HINT,
+  TOOLCHAIN_LIST_ID,
   toolchainPlaceholder,
 } from "./toolchainOverride";
 import { coreSiliconClass, runtimeOptions } from "../../shared/coreRuntime";
@@ -642,14 +643,16 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
           <span className={styles.coreInherit}>inherits SoM default</span>
         </div>
         <div className={styles.ghostNote}>
-          Runs the SoM preset&apos;s default image. Override to set this
-          core&apos;s runtime and its own app directory.{" "}
+          Runs the SoM preset&apos;s default image
+          {core.defaultToolchain ? ` with ${core.defaultToolchain}` : ""}.
+          Override to set this core&apos;s runtime, its own app directory or its
+          toolchain.{" "}
           <button
             type="button"
             className={styles.btn}
             onClick={() => mutate((d) => void ensure(d))}
           >
-            Override (set app directory)
+            Override (app directory, toolchain)
           </button>
         </div>
       </div>
@@ -749,18 +752,13 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
               label={`Toolchain for ${core.id}`}
               value={core.toolchain || ""}
               placeholder={toolchainPlaceholder(core.defaultToolchain)}
-              list={`toolchains-${core.id}`}
+              list={TOOLCHAIN_LIST_ID}
               onChange={(v) =>
                 mutate((d) => applyToolchainOverride(ensure(d), v), {
                   debounce: true,
                 })
               }
             />
-            <datalist id={`toolchains-${core.id}`}>
-              {(vm?.toolchains ?? []).map((id) => (
-                <option key={id} value={id} />
-              ))}
-            </datalist>
           </Field>
           <Field label="Connectivity (IoT)">
             <div className={styles.chips}>
@@ -844,6 +842,11 @@ function CoresSection({ cfg }: { cfg: UseConfigurator }) {
       {vm.cores.map((core) => (
         <CoreCard key={core.id} core={core} cfg={cfg} />
       ))}
+      <datalist id={TOOLCHAIN_LIST_ID}>
+        {vm.toolchains.map((id) => (
+          <option key={id} value={id} />
+        ))}
+      </datalist>
     </div>
   );
 }

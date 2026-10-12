@@ -21,6 +21,7 @@ import { createRoot } from "react-dom/client";
 import { AppProvider } from "../../packages/alp-webview/src/shared/AppContext";
 import { ErrorBoundary } from "../../packages/alp-webview/src/shared/ui";
 import {
+  ConfiguratorView,
   NumberInput,
   TextInput,
 } from "../../packages/alp-webview/src/features/configurator/ConfiguratorView";
@@ -1780,6 +1781,189 @@ async function main() {
     }
     console.log(
       `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  configurator-typing: a stale echo cannot eat a keystroke`,
+    );
+  }
+
+  // ── the per-core Toolchain field writes cores.<id>.toolchain (#314) ──
+  // Mounted through the REAL ConfiguratorView and host protocol, so deleting
+  // the field, its datalist or its mutate wiring reds here. Typing posts a
+  // `configuratorUpdate` whose board carries the key; blanking the field
+  // REMOVES it. A core still on the SoM default has no field — "Override"
+  // first creates `cores.<id>: {}` (as for App directory), and blanking the
+  // toolchain afterwards leaves that same `{}`, never an emptied core entry
+  // dropped from `cores` (board.schema.json `cores.minProperties: 1`).
+  {
+    const problemsBefore = problems.length;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    root.render(
+      React.createElement(
+        AppProvider,
+        null,
+        React.createElement(ConfiguratorView),
+      ),
+    );
+    await settle();
+
+    const corePanel = (id: string, inherited: boolean, app?: string) => ({
+      id,
+      inheritedFromTopology: inherited,
+      app,
+      peripherals: [],
+      libraries: [],
+      iot: { wifi: false, mqtt: false, ble: false, tls: false },
+      defaultToolchain: "arm-zephyr-eabi",
+    });
+    const viewModel = (heInherited: boolean) => ({
+      sdkConnected: true,
+      som: { selected: "E1M-AEN801", options: [] },
+      hardware: null,
+      accelerators: [],
+      boardMode: "preset",
+      carriers: { options: [] },
+      cores: [
+        corePanel("m55_hp", false, "./src"),
+        corePanel("m55_he", heInherited),
+      ],
+      libraries: [],
+      toolchains: ["arm-zephyr-eabi", "llvm"],
+      chips: [],
+      projectChips: [],
+      validation: { errors: [], warnings: [] },
+    });
+    const render = (heInherited: boolean, board?: unknown) =>
+      g.__ALP_POST_TO_WEBVIEW__({
+        type: "configuratorRender",
+        viewModel: viewModel(heInherited),
+        board: board ?? {
+          som: { sku: "E1M-AEN801" },
+          cores: { m55_hp: { app: "./src" } },
+        },
+        boardPath: "/project/board.yaml",
+        sdkConnected: true,
+      });
+    render(true);
+    await settle();
+    const coresNav = Array.from(container.querySelectorAll("nav button")).find(
+      (b) => b.textContent === "Cores",
+    ) as HTMLButtonElement | undefined;
+    coresNav?.click();
+    await settle();
+
+    const setValue = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    // Type into the field, then outwait the 200 ms scalar debounce and return
+    // the board of the last `configuratorUpdate`.
+    const typeInto = async (input: HTMLInputElement, text: string) => {
+      const since = (g.__ALP_POSTED__ as unknown[]).length;
+      input.focus();
+      setValue?.call(input, text);
+      input.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 260));
+      await settle();
+      input.blur();
+      const updates = postedSince(since).filter(
+        (m) => m.type === "configuratorUpdate",
+      );
+      return updates[updates.length - 1]?.board as
+        | { cores: Record<string, Record<string, unknown>> }
+        | undefined;
+    };
+    const field = (id: string) =>
+      container.querySelector(
+        `input[aria-label="Toolchain for ${id}"]`,
+      ) as HTMLInputElement | null;
+
+    const hp = field("m55_hp");
+    if (!hp) {
+      problems.push("configurator-toolchain: no Toolchain input for m55_hp");
+    } else {
+      if (hp.placeholder !== "arm-zephyr-eabi (SoM default)") {
+        problems.push(
+          `configurator-toolchain: placeholder is "${hp.placeholder}", not the SoM default`,
+        );
+      }
+      const lists = container.querySelectorAll("datalist");
+      const options = Array.from(
+        document
+          .getElementById(hp.getAttribute("list") || "")
+          ?.querySelectorAll("option") ?? [],
+      ).map((o) => (o as HTMLOptionElement).value);
+      if (lists.length !== 1) {
+        problems.push(
+          `configurator-toolchain: expected one shared datalist, got ${lists.length}`,
+        );
+      }
+      if (
+        JSON.stringify(options) !== JSON.stringify(["arm-zephyr-eabi", "llvm"])
+      ) {
+        problems.push(
+          `configurator-toolchain: suggestions ${JSON.stringify(options)} are not vm.toolchains`,
+        );
+      }
+      const set = await typeInto(hp, "llvm");
+      if (
+        set?.cores?.m55_hp?.toolchain !== "llvm" ||
+        set.cores.m55_hp.app !== "./src"
+      ) {
+        problems.push(
+          `configurator-toolchain: typing posted ${JSON.stringify(set)}`,
+        );
+      }
+      const cleared = await typeInto(hp, "");
+      if (!cleared || "toolchain" in (cleared.cores?.m55_hp ?? {})) {
+        problems.push(
+          `configurator-toolchain: blanking did not remove the key: ${JSON.stringify(cleared)}`,
+        );
+      }
+    }
+
+    // The inherited core: no field until Override, then the same round trip.
+    if (field("m55_he")) {
+      problems.push(
+        "configurator-toolchain: an inherited core rendered an editable field",
+      );
+    }
+    const override = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent === "Override (app directory, toolchain)",
+    ) as HTMLButtonElement | undefined;
+    if (!override) {
+      problems.push(
+        "configurator-toolchain: the inherited core's Override button does not mention the toolchain",
+      );
+    } else {
+      override.click();
+      await settle();
+      // The host's echo: the core is now declared, the local board is kept.
+      render(false);
+      await settle();
+      const he = field("m55_he");
+      if (!he) {
+        problems.push(
+          "configurator-toolchain: no Toolchain input after Override",
+        );
+      } else {
+        const set = await typeInto(he, "llvm");
+        if (set?.cores?.m55_he?.toolchain !== "llvm") {
+          problems.push(
+            `configurator-toolchain: the overridden core did not take the toolchain: ${JSON.stringify(set)}`,
+          );
+        }
+        const cleared = await typeInto(he, "");
+        if (JSON.stringify(cleared?.cores?.m55_he) !== "{}") {
+          problems.push(
+            `configurator-toolchain: blanking left ${JSON.stringify(cleared?.cores?.m55_he)}, not the {} App directory leaves`,
+          );
+        }
+      }
+    }
+    root.unmount();
+    container.remove();
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  configurator-toolchain: the field writes and removes cores.<id>.toolchain`,
     );
   }
 

@@ -115,7 +115,10 @@ test("the view model carries the override, the SoM default and catalogue suggest
         silicon: "x",
         capabilities: {},
         topologyCoreIds: ["m33"],
-        topology: [{ id: "m33", toolchain: "arm-zephyr-eabi" }],
+        topology: [
+          { id: "m33", toolchain: "arm-zephyr-eabi" },
+          { id: "a53", toolchain: "aarch64-other" },
+        ],
         onModule: [],
         preliminary: false,
       },
@@ -137,8 +140,14 @@ test("the view model carries the override, the SoM default and catalogue suggest
   assert.equal(byId.m55_hp.defaultToolchain, "arm-zephyr-eabi");
   assert.equal(byId.a32_cluster.toolchain, undefined);
   assert.equal(byId.a32_cluster.defaultToolchain, "poky-glibc");
-  // Suggestions come from the catalogue only: deduplicated, sorted.
-  assert.deepEqual(vm.toolchains, ["arm-zephyr-eabi", "poky-glibc"]);
+  // Suggestions come from the catalogue only, deduplicated: the selected
+  // SoM's own ids first (sorted), then every other SoM's (sorted) — so
+  // `aarch64-other` comes last although it sorts first.
+  assert.deepEqual(vm.toolchains, [
+    "arm-zephyr-eabi",
+    "poky-glibc",
+    "aarch64-other",
+  ]);
 });
 
 test("the placeholder names the SoM default, or says there is one", async () => {
@@ -150,27 +159,70 @@ test("the placeholder names the SoM default, or says there is one", async () => 
   assert.equal(toolchainPlaceholder(undefined), "SoM default");
 });
 
+/**
+ * Source text with every comment removed — line, trailing and block — while
+ * string and template literals are kept verbatim, so a `//` inside a URL
+ * string is not mistaken for a comment.
+ */
+function stripComments(src) {
+  let out = "";
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    const next = src[i + 1];
+    if (c === "/" && next === "/") {
+      while (i < src.length && src[i] !== "\n") i++;
+    } else if (c === "/" && next === "*") {
+      const end = src.indexOf("*/", i + 2);
+      i = end === -1 ? src.length : end + 2;
+    } else if (c === '"' || c === "'" || c === "`") {
+      let j = i + 1;
+      while (j < src.length && src[j] !== c) j += src[j] === "\\" ? 2 : 1;
+      out += src.slice(i, j + 1);
+      i = j + 1;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
+
+test("the comment stripper drops trailing comments and keeps strings", () => {
+  assert.doesNotMatch(
+    stripComments("const x = 1; // ZEPHYR_TOOLCHAIN_VARIANT"),
+    /ZEPHYR_TOOLCHAIN_VARIANT/,
+  );
+  assert.doesNotMatch(
+    stripComments("a(); /* ZEPHYR_TOOLCHAIN_VARIANT */ b();"),
+    /ZEPHYR_TOOLCHAIN_VARIANT/,
+  );
+  assert.match(
+    stripComments('env["ZEPHYR_TOOLCHAIN_VARIANT"] = v; // set'),
+    /ZEPHYR_TOOLCHAIN_VARIANT/,
+  );
+  assert.match(stripComments('u = "https://x"; y();'), /https:\/\/x/);
+});
+
 test("the toolchain field writes no environment variable", async () => {
-  // Load first: the esbuild test loader itself may touch the environment,
-  // and that is not the field writing anything.
   const { applyToolchainOverride } = await load();
-  const before = { ...process.env };
   const cfg = parseBoardConfig(PRIOR);
   applyToolchainOverride(cfg.cores.m55_hp, "llvm");
   const out = serializeBoardConfig(cfg, PRIOR);
-
-  assert.deepEqual({ ...process.env }, before);
   assert.doesNotMatch(out, /ZEPHYR_TOOLCHAIN_VARIANT/);
 
-  // And no source on the field's path names the plan-owned variable or the
-  // environment at all — its only output is the board.yaml key.
+  // No source this change touched names the plan-owned variable or reaches
+  // for the environment outside a comment — the field's only output is the
+  // board.yaml key. (`board/models.ts` names it in a comment, on purpose.)
   for (const rel of [
     "packages/alp-webview/src/features/configurator/toolchainOverride.ts",
+    "packages/alp-webview/src/features/configurator/ConfiguratorView.tsx",
+    "packages/alp-webview/src/types.ts",
     "packages/alp-core/src/configurator/viewModel.ts",
+    "packages/alp-core/src/board/models.ts",
     "packages/alp-core/src/board/serialize.ts",
   ]) {
-    const src = fs.readFileSync(path.join(ROOT, rel), "utf-8");
-    const code = src.replace(/^\s*(\/\/|\*|\/\*).*$/gm, "");
+    const code = stripComments(fs.readFileSync(path.join(ROOT, rel), "utf-8"));
     assert.doesNotMatch(code, /ZEPHYR_TOOLCHAIN_VARIANT/, rel);
     assert.doesNotMatch(code, /process\.env/, rel);
   }

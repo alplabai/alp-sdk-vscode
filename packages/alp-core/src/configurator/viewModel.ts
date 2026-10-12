@@ -12,6 +12,7 @@ import {
   AcceleratorAvail,
   BoardPreset,
   SdkCatalogue,
+  SomPreset,
 } from "../sdkCatalogue/models";
 
 export interface SomOptionGroup {
@@ -177,21 +178,30 @@ export function buildConfiguratorViewModel(
     },
     cores,
     libraries: catalogue.libraries.map((l) => l.id),
-    toolchains: catalogueToolchains(catalogue),
+    toolchains: catalogueToolchains(catalogue, som),
     chips,
     projectChips: board.chips ?? [],
     validation: validateBoardConfig(board),
   };
 }
 
-/** Distinct `topology.<core>.toolchain` ids across every SoM, sorted. No
- *  table of our own: the SDK catalogue is the only vocabulary (#314). */
-function catalogueToolchains(catalogue: SdkCatalogue): string[] {
-  const ids = new Set<string>();
-  for (const som of catalogue.soms) {
-    for (const t of som.topology ?? []) {
-      if (t.toolchain) ids.add(t.toolchain);
-    }
-  }
-  return [...ids].sort();
+/** Distinct `topology.<core>.toolchain` ids across every SoM: the selected
+ *  SoM's own first, then the rest, each group sorted. No table of our own —
+ *  the SDK catalogue is the only vocabulary (#314). */
+function catalogueToolchains(
+  catalogue: SdkCatalogue,
+  selected: SomPreset | undefined,
+): string[] {
+  const idsOf = (soms: SomPreset[]): string[] => [
+    ...new Set(
+      soms.flatMap((s) =>
+        (s.topology ?? []).flatMap((t) => (t.toolchain ? [t.toolchain] : [])),
+      ),
+    ),
+  ];
+  const own = idsOf(selected ? [selected] : []).sort();
+  const rest = idsOf(catalogue.soms)
+    .filter((id) => !own.includes(id))
+    .sort();
+  return [...own, ...rest];
 }
