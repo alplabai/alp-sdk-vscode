@@ -9,6 +9,10 @@
   that default. The toolchain the build plan resolves is shown on the
   core's line in the Build Plan.
 
+- **A board.yaml value of `<<` or `=` no longer breaks the whole file.**
+  PyYAML reads both bare as tags it cannot construct, so the SDK's
+  validator refused the document; the Configurator now writes them quoted.
+
 - **Edit an IPC carve-out or storage partition size straight from the Build
   Plan.** Each IPC link and storage partition has an "Edit in Configurator"
   link that opens the Board Configurator scrolled to that entry's size
