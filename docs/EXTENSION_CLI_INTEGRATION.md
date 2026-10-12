@@ -950,7 +950,7 @@ Commands the panel shells:
   never rendered as that word.
 - `tan model zoo [--sku <SKU> | --board board.yaml] [--format]` — browse
   curated model-zoo entries (`metadata/model_zoo/<id>.yaml`), each marked
-  `runs_here` for the SoM. Backs the **model-zoo gallery** ("runs on your SoM").
+  `runsHere` for the SoM. Backs the **model-zoo gallery** ("runs on your SoM").
 - `tan model add <zoo-id> [--board board.yaml] [--name NAME] [--models-dir
   DIR]` — fetch the source (URL sha256-verified, or bundled) and append
   `{name,source}` to `board.yaml` `models:`. Non-destructive (duplicate name

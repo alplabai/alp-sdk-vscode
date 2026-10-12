@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **The Models gallery reads `tan model zoo`'s camelCase envelope (#699).**
+  The zoo entry types and the gallery card read `validatedSoms` and
+  `runsHere`, which tan emits from 0.7.0-rc1 (tan-cli#1338), instead of
+  `validated_soms` / `runs_here`, which it never emitted. `tan model add`'s
+  `data.added` was already right. The zoo and add sections still report the
+  gap at the 0.6.0 pin; the short-circuit goes when `SUPPORTED_CLI_VERSION`
+  moves to a tan release that has them.
+
 - **The Build Plan panel is one page again, drawn in VS Code's own
   language.** The summary strip, the "needs attention" list and the
   Slices / Memory / Notes tabs are gone. The page reads top to bottom:

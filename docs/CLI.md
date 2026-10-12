@@ -200,7 +200,7 @@ Subcommands:
   `basis: "compiled"` with the measured placement (`npuPlacementPctReal`);
   only `basis: "compiled"` or `basis: "bench"` may be read as proven.
 - `zoo [--sku <SKU> | --board board.yaml] [--format]` — browse curated
-  model-zoo entries (`metadata/model_zoo/<id>.yaml`), each marked `runs_here`
+  model-zoo entries (`metadata/model_zoo/<id>.yaml`), each marked `runsHere`
   for the SoM (via `validated_soms`). Link + fetch + layer, no weight
   redistribution.
 - `add <zoo-id> [--board board.yaml] [--name NAME] [--models-dir DIR]` — fetch
@@ -552,7 +552,7 @@ Purpose:
 
 Required behavior:
 
-- read `metadata/model_zoo/<id>.yaml` entries and mark each `runs_here` for the
+- read `metadata/model_zoo/<id>.yaml` entries and mark each `runsHere` for the
   SoM (via `validated_soms`)
 - resolve the SoM from `--sku <SKU>` or `--board board.yaml`
 - link + fetch + layer only — no weight redistribution

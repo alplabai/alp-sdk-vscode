@@ -408,7 +408,7 @@ export interface ModelAbResultMessage {
   issues: { code: string; severity: string; message: string }[];
 }
 
-/** A single curated zoo entry from `tan model zoo --board` — `runs_here` is
+/** A single curated zoo entry from `tan model zoo --board` — `runsHere` is
  *  `true`/`false` when the board's `som.sku` was resolvable, `null` when it
  *  wasn't (e.g. no board.yaml yet) — the MVP shows every entry badged rather
  *  than silently hiding the ones it can't validate. */
@@ -417,8 +417,8 @@ export interface ZooEntry {
   task: string;
   description: string;
   license: string;
-  validated_soms: string[];
-  runs_here: boolean | null;
+  validatedSoms: string[];
+  runsHere: boolean | null;
 }
 
 /** Zoo gallery state from `tan model zoo --board`. */

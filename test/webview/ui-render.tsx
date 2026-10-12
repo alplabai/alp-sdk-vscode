@@ -372,10 +372,26 @@ function feedState() {
     ],
     issues: [],
   });
+  // One `tan model zoo` row in tan 0.7's camelCase envelope shape
+  // (`tan/core/model_zoo.py::entry_as_dict` plus `runsHere`), so the badge
+  // check below fails if the view reads a key tan does not emit (#699).
   g.__ALP_POST_TO_WEBVIEW__({
     type: "zooData",
     ok: true,
-    entries: [],
+    entries: [
+      {
+        id: "example-tiny",
+        kind: "tflite",
+        task: "keyword-spotting",
+        description: "d",
+        license: "Apache-2.0",
+        source: { bundled: "example-tiny.tflite" },
+        validatedSoms: ["E1M-AEN801"],
+        compile: [],
+        exampleApp: null,
+        runsHere: true,
+      },
+    ],
     issues: [],
   });
   // A real post-build manifest, not `null` — the System manifest section was
@@ -1269,6 +1285,9 @@ async function main() {
       }
       if (!text.includes("falls back to the cpu silently")) {
         problems.push("models: silent-CPU-fallback caveat missing from the UI");
+      }
+      if (!text.includes("runs here")) {
+        problems.push("models: zoo entry's runsHere badge not rendered (#699)");
       }
     }
 

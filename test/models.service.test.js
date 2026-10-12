@@ -781,8 +781,8 @@ test("toZooData: ok -> entries passthrough", () => {
             task: "example",
             description: "d",
             license: "Apache-2.0",
-            validated_soms: ["E1M-AEN801"],
-            runs_here: true,
+            validatedSoms: ["E1M-AEN801"],
+            runsHere: true,
           },
         ],
       },
@@ -792,7 +792,7 @@ test("toZooData: ok -> entries passthrough", () => {
   const msg = toZooData(outcome);
   assert.equal(msg.ok, true);
   assert.equal(msg.entries.length, 1);
-  assert.equal(msg.entries[0].runs_here, true);
+  assert.equal(msg.entries[0].runsHere, true);
 });
 
 test("toZooData: null envelope -> ok:false + real cause", () => {
@@ -815,10 +815,22 @@ test("toZooAddResult: ok -> added passthrough", () => {
       ok: true,
       exitCode: 0,
       project: {},
+      // tan 0.7's `tan model add` data: the id under `added`, the full row
+      // under `addedEntry` (`model_zoo_cmd.py::_added_row`).
       data: {
+        schemaVersion: 1,
+        sku: null,
         added: "example-tiny",
-        source: "models/example-tiny.tflite",
-        from: "example-tiny",
+        addedEntry: {
+          id: "example-tiny",
+          name: "example-tiny",
+          source: "models/example-tiny.tflite",
+          path: "models/example-tiny.tflite",
+          sha256: "0".repeat(64),
+          bytes: 1024,
+          kind: "tflite",
+          license: "Apache-2.0",
+        },
       },
       issues: [],
     },
