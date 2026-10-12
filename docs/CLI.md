@@ -474,8 +474,7 @@ Required behavior:
 
 - resolve the family from `--family <stem>` or by mapping `--sku <sku>`
   (`E1M-AEN*` → `aen`, `E1M-V2N*` → `v2n`, `E1M-V2M*` → `v2n` — V2M is the
-  same PCB/E1M edge as V2N, so it shares the v2n capability table —
-  `E1M-NX9*` → `imx93`)
+  same PCB/E1M edge as V2N, so it shares the v2n capability table)
 - read `<sdk>/metadata/pinmux/<family>.yaml` and emit its pads (`e1mPad`,
   `e1mFunction`, `owner`, `siliconPeripheral`, `siliconPad`) in the envelope
   `data`, matching the extension's `PinmuxTable`

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **The i.MX 93 mappings for E1M-NX9101 are gone (#700).** The module was
+  never produced and alp-sdk removed it (alplabai/alp-sdk#2782). The
+  Configurator's chip filter and the pinmux loader no longer map `E1M-NX9*`
+  to `imx93`, the `nxp-imx9` chip-family alias went with it, and the
+  baremetal bootstrap no longer points at NXP MCUXpresso. The SoM picker,
+  the `board.yaml` snippet and their docs still list E1M-NX9101, because
+  they are gated to match the vendored alp-sdk v0.16.0, which still ships
+  its preset; they follow when `alp-sdk-upstream` moves to a release without
+  it.
+
 - **The Build Plan panel is one page again, drawn in VS Code's own
   language.** The summary strip, the "needs attention" list and the
   Slices / Memory / Notes tabs are gone. The page reads top to bottom:

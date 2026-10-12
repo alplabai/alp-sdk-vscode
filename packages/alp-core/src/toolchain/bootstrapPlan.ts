@@ -76,7 +76,7 @@ const ZEPHYR_SDK_INSTALLER: BootstrapPointer = {
  * Deliberately carries NO `--version`: this repo tracks tan's version
  * (`SUPPORTED_CLI_VERSION`), not the Zephyr SDK's, so a pin written here would
  * be a number nothing keeps true. `-t arm-zephyr-eabi` is stable — every Alp
- * SoM family (Alif / Renesas / NXP) is Arm — and without it west fetches every
+ * SoM family (Alif / Renesas) is Arm — and without it west fetches every
  * toolchain there is.
  */
 function zephyrSdkPointer(host: BootstrapHost): BootstrapPointer {
@@ -168,10 +168,6 @@ export function planForHost(
       {
         name: "Renesas RZ/V2N CMSIS-Driver pack",
         url: "https://www.renesas.com/us/en/software-tool/flexible-software-package-fsp",
-      },
-      {
-        name: "NXP MCUXpresso for i.MX 93",
-        url: "https://www.nxp.com/design/software/mcuxpresso-software-and-tools/",
       },
     ],
   };
