@@ -423,6 +423,8 @@ export interface PrerequisiteProvenance {
   licence: string | null;
   sourceUrl: string | null;
   sizeBytes: number | null;
+  /** Present (`true`) only when the tier was sent but unreadable. */
+  tierUnreadable?: true;
 }
 
 /**

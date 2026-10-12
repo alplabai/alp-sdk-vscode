@@ -165,6 +165,7 @@ test("MALFORMED provenance degrades per field, never wholesale", () => {
 
   // Assert -- the one good field survives its three bad neighbours.
   assert.deepEqual(read, {
+    tierUnreadable: true,
     tier: null,
     licence: "BSD-3-Clause",
     sourceUrl: null,
@@ -404,3 +405,128 @@ test("ONE unchecked-tier step unchecks the whole rollup line", () => {
   assert.equal(item.startsUnchecked, true);
   assert.equal(item.licenceGated, false, "D is not C; it is unknown");
 });
+
+// ---------------------------------------------------------------------------
+// A tier that is PRESENT but unreadable fails closed (not "not reported")
+// ---------------------------------------------------------------------------
+
+for (const tier of [3, ["C"], { level: "C" }, "", "  ", true]) {
+  test(`malformed wire tier ${JSON.stringify(tier)} starts UNCHECKED and reads as unreadable`, async () => {
+    // Arrange -- through the real normaliser, as the planner builds the step.
+    const provenance = normaliseProvenance({ tool: "vendor", tier });
+    const row = commandRow("vendor", [
+      { tool: "vendor", command: "brew install vendor", provenance },
+    ]);
+    const { mod, shown } = loadAdapter();
+
+    // Act
+    const [item] = planInstallConsent([row], "darwin");
+    await mod.confirmDependencyInstalls([row], "darwin");
+
+    // Assert
+    assert.equal(provenance.tier, null);
+    assert.equal(provenance.tierUnreadable, true);
+    assert.equal(item.startsUnchecked, true);
+    assert.equal(item.tier, "unreadable");
+    assert.equal(shown[0][0].picked, false);
+    assert.match(shown[0][0].description, /tier unreadable/);
+  });
+}
+
+test("an ABSENT or null tier stays checked and 'not reported'", () => {
+  for (const entry of [{ tool: "x" }, { tool: "x", tier: null }]) {
+    const provenance = normaliseProvenance(entry);
+    assert.equal(provenance.tierUnreadable, undefined);
+    const [item] = planInstallConsent(
+      [commandRow("x", [{ tool: "x", command: "brew install x", provenance }])],
+      "darwin",
+    );
+    assert.equal(item.startsUnchecked, false);
+    assert.equal(item.tier, null);
+  }
+});
+
+const manifestCheck = (status, detail) => ({
+  name: "bootstrapManifest",
+  status,
+  detail,
+  scope: "project",
+});
+
+const doctorData = (checks, prerequisites) => ({
+  checks: [
+    {
+      name: "hostPrerequisites",
+      status: "fail",
+      detail: "missing",
+      scope: "host",
+    },
+    ...checks,
+  ],
+  summary: { pass: 0, warn: 1, fail: 1 },
+  missingPrerequisites: prerequisites,
+});
+
+test("doctor reports the provenance block unreadable: every null-tier row starts unchecked", () => {
+  // Arrange -- tan's own wording for the artifactProvenance arm.
+  const data = doctorData(
+    [
+      manifestCheck(
+        "warn",
+        "metadata/bootstrap.json was read, but its artifactProvenance block is not readable: x.",
+      ),
+    ],
+    [
+      { tool: "cmake", command: "brew install cmake", tier: null },
+      { tool: "ninja", command: "brew install ninja", tier: "A" },
+    ],
+  );
+
+  // Act
+  const [cmake, ninja] = rollupOf(plan(data)).action.commands;
+
+  // Assert -- the null tier is unreadable; a readable A is untouched.
+  assert.equal(cmake.provenance.tierUnreadable, true);
+  assert.equal(ninja.provenance.tierUnreadable, undefined);
+  const [item] = planInstallConsent([rollupOf(plan(data))], "darwin");
+  assert.equal(item.startsUnchecked, true);
+});
+
+test("doctor bootstrapManifest passing leaves a null tier 'not reported' and checked", () => {
+  const data = doctorData(
+    [manifestCheck("pass", "ok")],
+    [{ tool: "cmake", command: "brew install cmake", tier: null }],
+  );
+  const [item] = planInstallConsent([rollupOf(plan(data))], "darwin");
+  assert.equal(item.startsUnchecked, false);
+  assert.equal(item.tier, null);
+});
+
+// ---------------------------------------------------------------------------
+// Duplicate prerequisite entries for one tool: the most restrictive wins
+// ---------------------------------------------------------------------------
+
+const dupRow = (...tiers) =>
+  plan({
+    checks: [{ name: "git", status: "fail", detail: "", scope: "host" }],
+    summary: { pass: 0, warn: 0, fail: 1 },
+    missingPrerequisites: tiers.map((tier, i) => ({
+      tool: "git",
+      command: `install git ${i}`,
+      tier,
+    })),
+  }).rows.find((row) => row.name === "git");
+
+for (const [label, tiers, winner] of [
+  ["B beats A", ["A", "B"], 1],
+  ["B beats A (reverse order)", ["B", "A"], 0],
+  ["C beats A and B", ["A", "C", "B"], 1],
+  ["unreadable beats A", ["A", 3], 1],
+  ["unknown word beats B", ["B", "D"], 1],
+  ["tie keeps the first", ["A", "A"], 0],
+]) {
+  test(`duplicate entries: ${label}`, () => {
+    const [only] = dupRow(...tiers).action.commands;
+    assert.equal(only.command, `install git ${winner}`);
+  });
+}

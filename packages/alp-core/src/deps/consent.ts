@@ -33,18 +33,19 @@ import type {
 } from "./planner";
 import {
   canonicalTier,
+  ELEVATION_TIER,
   formatByteCount,
+  LICENCE_GATED_TIER,
+  PLAIN_TIER,
   type PrerequisiteProvenance,
 } from "./provenance";
 
 /** What a cell says when the producer reports nothing for it. */
 export const NOT_REPORTED = "not reported";
 
-/** ADR 0021 §3's tier words this module acts on, compared in `canonicalTier`
- *  form. `A` installs plainly, `B` with elevation; `C` is licence-gated. */
-const PLAIN_TIER = "A";
-const ELEVATION_TIER = "B";
-const LICENCE_GATED_TIER = "C";
+/** What the tier cell says when the producer sent a tier this extension could
+ *  not read — deliberately not `NOT_REPORTED`, which is a different fact. */
+export const UNREADABLE = "unreadable";
 
 /**
  * One line of the consent screen.
@@ -88,9 +89,16 @@ export interface ConsentItem {
    * True when ANY step reports a tier other than `A` or `B` — `C`, or a word
    * this extension does not know (`D`). The gate FAILS CLOSED: such a line
    * starts unchecked. A step reporting no tier at all is not this case; that
-   * is "not reported", and stays checked.
+   * is "not reported", and stays checked. A step whose tier is present but
+   * UNREADABLE (see `tierUnreadable`) is this case too: consent fails closed
+   * on a fact it could not read.
    */
   startsUnchecked: boolean;
+  /** True when ANY step's tier was present but unreadable, or the doctor run
+   *  reported the provenance block unreadable — see
+   *  `PrerequisiteProvenance.tierUnreadable`. The screen says so rather than
+   *  "not reported". */
+  tierUnreadable: boolean;
   /** True when the PRODUCER's command text asks for elevation. */
   needsElevation: boolean;
   /** The action's own effect, unchanged — `install`, `open-docs`, `bootstrap`. */
@@ -202,10 +210,19 @@ function anyTier(
   return tiersOf(steps).includes(tier);
 }
 
-/** Whether any step reports a tier that is neither `A` nor `B`. */
+/** Whether any step's tier was present but unreadable. */
+function anyTierUnreadable(steps: readonly DependencyCommandStep[]): boolean {
+  return steps.some((step) => step.provenance?.tierUnreadable === true);
+}
+
+/** Whether any step reports a tier that is neither `A` nor `B`, or one that
+ *  could not be read at all. */
 function anyUncheckedTier(steps: readonly DependencyCommandStep[]): boolean {
-  return tiersOf(steps).some(
-    (tier) => tier !== null && tier !== PLAIN_TIER && tier !== ELEVATION_TIER,
+  return (
+    anyTierUnreadable(steps) ||
+    tiersOf(steps).some(
+      (tier) => tier !== null && tier !== PLAIN_TIER && tier !== ELEVATION_TIER,
+    )
   );
 }
 
@@ -234,10 +251,13 @@ export function planInstallConsent(
         typeof p.sizeBytes === "number" ? formatByteCount(p.sizeBytes) : null,
       ),
       licence: perTool(steps, (p) => p.licence ?? null),
-      tier: perTool(steps, (p) => canonicalTier(p.tier)),
+      tier: perTool(steps, (p) =>
+        p.tierUnreadable ? UNREADABLE : canonicalTier(p.tier),
+      ),
       elevationTier: anyTier(steps, ELEVATION_TIER),
       licenceGated: anyTier(steps, LICENCE_GATED_TIER),
       startsUnchecked: anyUncheckedTier(steps),
+      tierUnreadable: anyTierUnreadable(steps),
       // ANY line, not just the first: a multi-step `command` row (#603) whose
       // SECOND line is `sudo apt-get install -y ninja-build` still needs to
       // flag elevation even though its first line does not.

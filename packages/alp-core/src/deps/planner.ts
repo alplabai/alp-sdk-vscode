@@ -22,7 +22,11 @@ import type {
   DoctorEnvelopeData,
   MissingPrerequisite,
 } from "../cli/doctorEnvelope";
-import { type PrerequisiteProvenance, normaliseProvenance } from "./provenance";
+import {
+  type PrerequisiteProvenance,
+  normaliseProvenance,
+  tierRestrictiveness,
+} from "./provenance";
 import { type DependencyState, dependencyState } from "./state";
 
 // ── The envelope slice this planner reads (see docs/CLI.md) ──────────────────
@@ -537,6 +541,20 @@ export function planDependencyReport(
   const host = input.host ?? DEFAULT_HOST;
   const prerequisites = data.missingPrerequisites;
   const prerequisiteDataUnavailable = prerequisites === undefined;
+  // tan collapses a malformed alp-sdk tier to wire `null`; its only signal is
+  // the `bootstrapManifest` check going non-pass (tan 0.7.0-rc1 words the
+  // artifactProvenance case "…block is not readable"; the rejected-manifest
+  // case also means no provenance was read). Either way a null tier is no
+  // longer "declared nothing", so the consent gate must fail closed on it.
+  const provenanceUnreadable = data.checks.some(
+    (check) => check.name === "bootstrapManifest" && check.status !== "pass",
+  );
+  const provenanceOf = (entry: unknown): PrerequisiteProvenance => {
+    const provenance = normaliseProvenance(entry);
+    return provenanceUnreadable && provenance.tier === null
+      ? { ...provenance, tierUnreadable: true }
+      : provenance;
+  };
 
   // Pass 1 / pass 2 partition (#603). A prerequisite whose `tool` matches some
   // check's `name` binds to THAT check, exactly as before (`entry` in
@@ -553,7 +571,7 @@ export function planDependencyReport(
           {
             tool: p.tool,
             command: p.command,
-            provenance: normaliseProvenance(p),
+            provenance: provenanceOf(p),
           },
         ]
       : [],
@@ -593,7 +611,13 @@ export function planDependencyReport(
     // A bootstrap is mid-flight and already mutating the toolchain; a second
     // installer racing it is how half-written workspaces happen.
     if (bootstrapRunning) return null;
-    const entry = (prerequisites ?? []).find((p) => p.tool === check.name);
+    // Duplicate entries for one tool: the MOST RESTRICTIVE tier wins (an
+    // unreadable or non-A/B tier beats A/B, B beats A); ties keep tan's order.
+    const entry = (prerequisites ?? [])
+      .filter((p) => p.tool === check.name)
+      .reduce<
+        MissingPrerequisite | undefined
+      >((best, p) => (best === undefined || tierRestrictiveness(provenanceOf(p)) > tierRestrictiveness(provenanceOf(best)) ? p : best), undefined);
     if (entry) {
       // tan spoke for this tool and its answer is FINAL. `command: null` means
       // tan knows no command — show the row, offer nothing.
@@ -604,7 +628,7 @@ export function planDependencyReport(
               {
                 tool: entry.tool,
                 command: entry.command,
-                provenance: normaliseProvenance(entry),
+                provenance: provenanceOf(entry),
               },
             ],
             // A per-tool match is never partial — one `MissingPrerequisite`

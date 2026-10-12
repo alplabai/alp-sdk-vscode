@@ -34,6 +34,17 @@ export interface PrerequisiteProvenance {
   sourceUrl: string | null;
   /** A non-negative whole byte count. */
   sizeBytes: number | null;
+  /**
+   * Set (only ever to `true`) when the producer said SOMETHING about the tier
+   * that is not a readable tier word — a number, an array, an object, a
+   * boolean, an empty string. Distinct from `tier: null` with this absent,
+   * which is "the producer declared no tier". The consent gate treats the two
+   * differently: an unreadable tier is a fact this extension could not read,
+   * and consent fails closed on it. Also set by the planner, on a null tier,
+   * when the doctor run itself reports the provenance block unreadable (tan
+   * collapses a malformed tier to `null` on the wire).
+   */
+  tierUnreadable?: true;
 }
 
 /** The "nothing reported" provenance. */
@@ -61,6 +72,26 @@ export function canonicalTier(value: unknown): string | null {
   return word === null ? null : word.trim().toUpperCase();
 }
 
+/** ADR 0021 §3's tier words this extension acts on, in `canonicalTier` form.
+ *  `A` installs plainly, `B` with elevation; `C` is licence-gated. */
+export const PLAIN_TIER = "A";
+export const ELEVATION_TIER = "B";
+export const LICENCE_GATED_TIER = "C";
+
+/**
+ * How restrictive one entry's provenance is, for choosing among duplicate
+ * entries for one tool: 3 = unreadable or any tier other than `A`/`B`
+ * (including `C`), 2 = `B`, 1 = `A` or nothing declared. Higher wins.
+ */
+export function tierRestrictiveness(
+  provenance: Partial<PrerequisiteProvenance>,
+): number {
+  if (provenance.tierUnreadable) return 3;
+  const tier = canonicalTier(provenance.tier);
+  if (tier === null || tier === PLAIN_TIER) return 1;
+  return tier === ELEVATION_TIER ? 2 : 3;
+}
+
 /** A non-negative safe integer, or `null`. A float, a negative, a numeric
  *  string and a boolean are all refused — the same rules tan applies on its
  *  side, held again here because the envelope is untrusted input. */
@@ -80,8 +111,14 @@ function byteCount(value: unknown): number | null {
 export function normaliseProvenance(entry: unknown): PrerequisiteProvenance {
   if (typeof entry !== "object" || entry === null) return NO_PROVENANCE;
   const record = entry as Record<string, unknown>;
+  const tier = canonicalTier(record.tier);
+  // `null` and a missing key both mean "nothing declared"; anything else that
+  // did not normalise to a tier word is present-but-malformed.
+  const unreadable =
+    tier === null && record.tier !== null && record.tier !== undefined;
   return {
-    tier: canonicalTier(record.tier),
+    ...(unreadable ? { tierUnreadable: true as const } : {}),
+    tier,
     licence: text(record.licence),
     sourceUrl: text(record.sourceUrl),
     sizeBytes: byteCount(record.sizeBytes),

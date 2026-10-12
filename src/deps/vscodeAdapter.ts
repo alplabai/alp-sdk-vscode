@@ -1699,7 +1699,9 @@ function consentPick(item: ConsentItem, row: DependencyRow): ConsentPick {
 function consentNotes(item: ConsentItem): string {
   const notes: string[] = [];
   if (item.licenceGated) notes.push("licence-gated, check to install");
-  else if (item.startsUnchecked) {
+  else if (item.tierUnreadable) {
+    notes.push("tier unreadable, check to install");
+  } else if (item.startsUnchecked) {
     notes.push("unrecognised tier, check to install");
   }
   if (item.needsElevation || item.elevationTier) {
