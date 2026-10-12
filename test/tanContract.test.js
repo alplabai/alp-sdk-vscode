@@ -197,20 +197,19 @@ const GATED_CODES = {
   // (`src/alpCli/service.ts`) is now that consumer, and `planCliOutcome` routes
   // the whole toast on it, so the note's premise no longer holds.
   //
-  // The status stays `reserved` because that is what tan declares TODAY and
-  // this file asserts tan's declaration, not the one we would prefer.
-  // Promoting it is an upstream ask against tan-cli, not an edit to the
-  // vendored corpus.
+  // FROZEN from tan 0.7.0-rc1: tan-cli#885 promoted it, and the pin bump that
+  // first carried that promotion is the one that flips this row (#655), in
+  // the same change rather than as a follow-up.
   //
   // Worth knowing when reading the consumer: this code is OVERLOADED on tan
   // releases older than tan-cli#399. The artefact's own notes record that
   // `new-som` refusals and `faultdecode`'s reached consumers "as
   // `cli.parse-error` on a `command: "cli"` envelope" before that change, and
   // that an interrupted run "fell into the `cli.parse-error` fallback" before
-  // `cli.interrupted` existed. Against the PINNED 0.6.0 all three have
+  // `cli.interrupted` existed. Against the pinned 0.7.0-rc1 all three have
   // their own codes, so the branch means what it says; on an older binary
   // reached through `alpSdk.cliPath` it can over-report "wrong command line".
-  "cli.parse-error": "reserved",
+  "cli.parse-error": "frozen",
 
   // RESERVED in the artefact ("consumer: none -- no consumer matches this code
   // yet"), and this extension now DOES match it: `src/debug.ts` uses it to tell
@@ -261,24 +260,13 @@ const GATED_CODES = {
   // `consumerEffect` for real. tan's record and this one now agree about the
   // cost of a rename.
   //
-  // `"reserved"` below is therefore NOT stale, and must not be "corrected" to
-  // `"frozen"` on its own: this row is asserted against the
-  // `envelope-contract.json` published for the PINNED tan, and v0.6.0's copy --
-  // cut before #1158 -- still says `reserved`. `scripts/fetch-tan-contract.mjs`
-  // fetches for `SUPPORTED_CLI_VERSION`, never `latest`, so tan's `main` moving
-  // cannot reach this gate. Only the pin can.
-  //
-  // Which makes the red DATED rather than possible: the first bump of
-  // `SUPPORTED_CLI_VERSION` onto a tan release carrying `dd6ac839` fires the
-  // equality assertion below with `tan vX declares monitor.no-port "frozen",
-  // not "reserved"`. Flip it to `"frozen"` in the SAME change as that pin bump,
-  // never as a follow-up -- alp-sdk-vscode#423 is the precedent, and its reason
-  // holds here unchanged: `release-vsix.yml:131` and `:355` run this suite
-  // inside `package_and_publish` and `package_darwin_arm64`, so a pin bump that
-  // defers this line does not red a PR, it fails the RELEASE. There is no
-  // escape hatch to lean on either -- `TAN_CONTRACT_OFFLINE=1` downgrades a
-  // MISSING artefact and nothing else, and is ignored outright under CI.
-  "monitor.no-port": "reserved",
+  // This row is asserted against the `envelope-contract.json` published for
+  // the PINNED tan, never `latest`, so the flip was DATED: v0.6.0's copy, cut
+  // before #1158, said `reserved`; v0.7.0-rc1's says `frozen`, and the pin
+  // bump onto it flips this row in the same change (#655). A deferred flip
+  // would not red a PR, it would fail the RELEASE -- `release-vsix.yml` runs
+  // this suite inside `package_and_publish` and `package_darwin_arm64`.
+  "monitor.no-port": "frozen",
 
   "models.panel-not-wired": null,
 };
@@ -417,12 +405,23 @@ const DOCTOR_ENVELOPE_MODELS = "packages/alp-core/src/cli/doctorEnvelope.ts";
  * Keys tan's `dataKeys` declares that `doctorEnvelope.ts` deliberately does not
  * model, with the reason. Both are additive keys nothing renders.
  */
+const PROVENANCE_PENDING =
+  "Artifact provenance arrived with the 0.7.0-rc1 pin; the consent screen " +
+  "renders it once #467 models it on MissingPrerequisite.";
+
 const UNMODELLED_DOCTOR_KEYS = {
   generatedAt:
     "The run's timestamp. Nothing renders it — the panel shows the report it " +
     "just fetched, so a stamp would only ever say 'now'. Modelling it would " +
     "invite a surface to print a time that is not the one on screen after a " +
     "refresh races.",
+  // tan 0.7.0-rc1 (tan-cli#1066) flattens alp-sdk's artifact provenance onto
+  // every entry. Recorded here only for the length of the pin-bump commit:
+  // #467 models all four in the commit after it and deletes these rows.
+  "missingPrerequisites[].tier": PROVENANCE_PENDING,
+  "missingPrerequisites[].licence": PROVENANCE_PENDING,
+  "missingPrerequisites[].sourceUrl": PROVENANCE_PENDING,
+  "missingPrerequisites[].sizeBytes": PROVENANCE_PENDING,
 };
 
 /** Field names of `export interface <name>`, each keeping its `?`. Nested brace

@@ -48,13 +48,16 @@
 // site the extractor calls `flash` is a site `isFlashArgv` recognises.
 
 /**
- * Options of `tan flash` that CONSUME the next token, at the 0.6.0 pin.
+ * Options of `tan flash` that CONSUME the next token, at the 0.7.0-rc1 pin.
  *
  * Exactly the entries of `commands.flash.options` carrying a `metavar` in the
- * vendored surface (their metavars: PATH, PATH, CORE_ID, <text|json>, NAME,
- * PATH, PATH, PATH). The five booleans — `--confirm`, `--dry-run`, `--help`,
- * `--recover`, `--skip-missing-tools` — are deliberately absent: these lists
- * are consulted only to decide whether to skip a token.
+ * vendored surface. Six of them — `--jlink PATH`, `--probe-serial SN`,
+ * `--probe-usb-path BUS-PORT`, `--raw FILE@ADDR`, `--wait SECONDS` and
+ * `--watch ADDR[:WORDS][@PERIOD-MS]` — arrived in 0.7.0-rc1 and were carried
+ * here ahead of the pin (#701) until it moved onto them. The booleans
+ * (`--confirm`, `--dry-run`, `--recover`, `--ram`, `--ram-console`, …) are
+ * deliberately absent: these lists are consulted only to decide whether to
+ * skip a token.
  */
 const PINNED_FLASH_VALUE_TAKING_FLAGS = [
   "--board-yaml",
@@ -62,52 +65,40 @@ const PINNED_FLASH_VALUE_TAKING_FLAGS = [
   "--core",
   "--format",
   "--helper",
+  "--jlink",
+  "--probe-serial",
+  "--probe-usb-path",
   "--project",
+  "--raw",
   "--sdk-root",
   "--setools-dir",
+  "--wait",
+  "--watch",
 ] as const;
 
 /**
- * Value-taking `tan flash` options that tan 0.7.0-rc1 added AFTER the 0.6.0
- * pin (#701), transcribed from `python/tan/commands/flash_cmd.py` at the
- * `v0.7.0-rc1` tag: `--jlink PATH`, `--probe-serial SN`,
- * `--probe-usb-path BUS-PORT`, `--raw FILE@ADDR`, `--wait SECONDS` and
- * `--watch ADDR[:WORDS][@PERIOD-MS]`.
+ * Value-taking `tan flash` options known from a tan NEWER than the pin.
  *
- * WHY THEY ARE KNOWN BEFORE THE PIN MOVES: `alpSdk.cliPath` can point the
- * extension at a newer tan than the pin, and there `--probe-serial
- * 000801234567` would otherwise leave the serial to be read as APP_PATH.
- * Against the pinned 0.6.0 they cost nothing — tan exits 2 with `No such
- * option` before anything runs, whatever arity this file assumes.
- *
- * The 0.7 switches (`--ram`, `--ram-console`, `--readback`, `--no-reset`,
- * `--no-device-config`, `--assume-he`, `--atoc-unqueryable`,
- * `--replace-atoc`) need no entry: an unknown flag already reads as boolean.
- * `--ram-console` in particular is a switch, not a value-taker.
+ * Empty at 0.7.0-rc1: the six #701 added here moved into the pinned list above
+ * with the re-pin. Kept as a slot because `alpSdk.cliPath` can point the
+ * extension at a newer tan than the pin, and a value-taker this file does not
+ * know reads as boolean, leaving its value to be taken for APP_PATH.
  *
  * `test/flash.consent.test.js` asserts that no entry here is in the vendored
- * surface yet, so the re-pin that vendors them reds the gate until they are
- * moved into the pinned list above and this set is emptied.
+ * surface, so the re-pin that vendors one reds the gate until it moves.
  */
 export const FLASH_VALUE_TAKING_FLAGS_AHEAD_OF_PIN: ReadonlySet<string> =
-  new Set([
-    "--jlink",
-    "--probe-serial",
-    "--probe-usb-path",
-    "--raw",
-    "--wait",
-    "--watch",
-  ]);
+  new Set<string>();
 
 /** Every `tan flash` option that consumes the next token: the pinned surface
- *  plus the ones known to be coming. */
+ *  plus any known to be coming. */
 export const FLASH_VALUE_TAKING_FLAGS: ReadonlySet<string> = new Set([
   ...PINNED_FLASH_VALUE_TAKING_FLAGS,
   ...FLASH_VALUE_TAKING_FLAGS_AHEAD_OF_PIN,
 ]);
 
 /**
- * ROOT-position options that consume the next token, at the 0.6.0 pin.
+ * ROOT-position options that consume the next token, at the 0.7.0-rc1 pin.
  *
  * Exactly the members of the surface's `globalOptions` that carry a `metavar`
  * in some command's option map. `globalOptions` is a bare name list with no

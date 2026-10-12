@@ -4,13 +4,16 @@
 //
 // The panel is a thin `runAlpCommand(["model", ...])` shell over NINE
 // subcommands — list, doctor, check, zoo, add, prep, run, ab, build.
-// RE-MEASURED against the pinned CLI (`SUPPORTED_CLI_VERSION = "0.6.0"`, GA —
-// this used to read `0.6.0-rc1`, and the whole surface was re-run rather than
-// relabelled, per #609): the GA tag still implements exactly one of the nine,
-// `build`.
 //
-// The other eight do NOT refuse identically, and an earlier revision of this
-// header said they did. Measured per subcommand, GA:
+// AT THE 0.7.0-rc1 PIN ALL NINE EXIST (tan-cli#674), so the pinned binary never
+// sends `model.unknown-subcommand` for any of them, and `unsupportedModel-
+// Subcommand` answers with the extension-owned `models.panel-not-wired`
+// instead. This classifier stays because an older tan reached through
+// `alpSdk.cliPath` or PATH still refuses exactly as tabled below.
+//
+// Through tan 0.6.0 GA (measured, per #609) the pin implemented one of the
+// nine, `build`, and the other eight did NOT refuse identically. Measured per
+// subcommand, 0.6.0 GA:
 //
 //   tan model list                    exit 1  model.unknown-subcommand
 //   tan model doctor                  exit 1  model.unknown-subcommand

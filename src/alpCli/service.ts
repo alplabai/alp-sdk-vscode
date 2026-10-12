@@ -93,9 +93,16 @@ import {
  *  customer resolving their own older tan through `alpSdk.cliPath` or PATH still
  *  hits the identical Kconfig abort. `RENESAS_BUILD_CLI_VERSION` in
  *  `src/alpCli/somCliFloor.ts` is the matching guard, and it compares against
- *  the PROBED version for exactly the reason `RENODE_CORE_CLI_VERSION` does. */
+ *  the PROBED version for exactly the reason `RENODE_CORE_CLI_VERSION` does.
+ *
+ *  `0.7.0-rc1` is the pin now, a PRE-RELEASE again and on purpose: three
+ *  things wait on it at once — `tan model zoo`/`add` (tan-cli#1338, #699),
+ *  per-entry artifact provenance on `missingPrerequisites[]` (tan-cli#1066,
+ *  #467), and the two GATED_CODES that tan froze after 0.6.0 (#655). It flips
+ *  to `"0.7.0"` when that tag ships. `RENESAS_BUILD_CLI_VERSION` does not
+ *  move, for the reason given above. */
 
-export const SUPPORTED_CLI_VERSION = "0.6.0";
+export const SUPPORTED_CLI_VERSION = "0.7.0-rc1";
 
 /**
  * Every published `alplabai/tan-cli` tag that does NOT carry an
@@ -231,6 +238,11 @@ export const HOSTS_WITHOUT_RELEASE_ASSET: Readonly<
   // No `aarch64-pc-windows-msvc`, no `aarch64-unknown-linux-gnu`. Without this
   // row the pin bump would promise those two hosts an asset and 404 them.
   "0.6.0": ["win32/arm64", "linux/arm64"],
+  // MEASURED against the published tag: `gh release view v0.7.0-rc1 --repo
+  // alplabai/tan-cli` lists the same four archives as v0.6.0, plus
+  // `checksums.txt`, `envelope-contract.json` and a new `dependency-lock.txt`.
+  // Still no `aarch64-pc-windows-msvc` and no `aarch64-unknown-linux-gnu`.
+  "0.7.0-rc1": ["win32/arm64", "linux/arm64"],
 };
 
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */

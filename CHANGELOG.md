@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **The extension pins tan `0.7.0-rc1`.** `SUPPORTED_CLI_VERSION` moves
+  from `0.6.0` to the `v0.7.0-rc1` pre-release, which carries
+  `tan model zoo`/`add` (tan-cli#1338) and per-entry artifact provenance on
+  `missingPrerequisites[]` (tan-cli#1066). It moves to `0.7.0` when that tag
+  ships. `cli.parse-error` and `monitor.no-port` are frozen in the pinned
+  contract now, and the contract gate says so (#655). The `--plan`,
+  `--manifest`, `--manifest-from` and `--no-auto-bootstrap` build flags are
+  retired at this pin, not deferred, and every `tan model` subcommand
+  exists, so the Models panel reports the ones it does not call yet as
+  unwired rather than missing. The surface fetcher learnt the new help
+  layouts it needed to record the pin (a short `-D` alias, `NAME=VALUE`,
+  `FILE@ADDR`, bare `a|b` choices, one-letter metavars). The six flash
+  options #701 carried ahead of the pin are in the pinned table now.
+  `RENESAS_BUILD_CLI_VERSION` stays at `0.6.0-rc1`.
+
 - **The flash consent gate reads tan 0.7's new flash options with the
   right arity (#701).** `--probe-serial`, `--probe-usb-path`, `--watch`,
   `--raw`, `--wait` and `--jlink` now swallow their value, so

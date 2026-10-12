@@ -16,15 +16,14 @@ First-class IDE support for projects built against the
   launch-profile planning, and support-bundle surfaces are available
   without embedding debugger implementation into the extension.
 * **Models / edge-AI panel — hidden at this pin.** A full-tab preview over the
-  `tan model` CLI whose build action runs `tan model build`, the one `model`
-  subcommand tan 0.6.0 implements. Its NPU-coverage badge
-  (`full-eligible` / `partial` / `cpu-only` / `undetermined`), Prep Model, Run
-  Model, A-B Compare and Model Zoo screens are written against eight `model`
-  subcommands this CLI does not have, so the panel reports that gap in a
-  banner instead of running them (tan-cli#674); both of its commands,
+  `tan model` CLI whose build action runs `tan model build`. The pinned tan
+  0.7.0-rc1 implements all nine `model` subcommands (tan-cli#674), but its
+  NPU-coverage badge (`full-eligible` / `partial` / `cpu-only` /
+  `undetermined`), Prep Model, Run Model, A-B Compare and Model Zoo screens are not
+  wired to them yet, so the panel says so instead of running them; both of its commands,
   `Alp: Models` and `Alp: Build Model`, are hidden from the command palette
-  (#525). The intent is to re-expose the whole surface once tan implements
-  those subcommands (#524): a before-you-build eligibility badge, INT8
+  (#525). The intent is to re-expose the whole surface once the panel is
+  wired to those subcommands (#524): a before-you-build eligibility badge, INT8
   quantization against a calibration folder with an fp32-vs-int8 accuracy
   report, host-reference single and A-B runs, and a "runs on your SoM" zoo
   gallery. Even then the badge is a conservative offline estimate and a host

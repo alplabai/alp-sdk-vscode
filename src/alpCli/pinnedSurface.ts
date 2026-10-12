@@ -42,13 +42,25 @@ import { SUPPORTED_CLI_VERSION } from "./service";
 /**
  * Every subcommand `tan model` implements at `SUPPORTED_CLI_VERSION`.
  *
- * ONE. The Models panel drives nine (list, doctor, check, zoo, add, prep, run,
- * ab, build) and this pin has `build` — the other eight are tan-cli#674, and
- * this repo's half of it is #524.
+ * ALL NINE the Models panel drives, from 0.7.0-rc1 on. Through 0.6.0 this was
+ * `["build"]` alone; tan-cli#674 landed the other eight, so every
+ * `unsupportedModelSubcommand` call now answers with the extension-owned
+ * "arrived, not wired" verdict rather than tan's refusal code. Wiring the panel
+ * to them is this repo's half, #524.
  *
  * Held to `surface.json`'s `commands.model.subcommandValues` by the gate.
  */
-export const MODEL_SUBCOMMANDS: readonly string[] = ["build"];
+export const MODEL_SUBCOMMANDS: readonly string[] = [
+  "build",
+  "doctor",
+  "check",
+  "list",
+  "zoo",
+  "add",
+  "prep",
+  "run",
+  "ab",
+];
 
 /** tan's own issue code for "that subcommand does not exist in this build",
  *  measured from the binary. Mirrored in the webview's `cliSurface.ts`, which
@@ -164,11 +176,16 @@ export function unsupportedModelSubcommand(subcommand: string): CliOutcome {
 // ── inert options, and WHY each one is inert ─────────────────────────────────
 
 /**
- * The four situations `surface.json`'s `inert: true` collapses into one
- * boolean. Only `deferred` will ever start doing something.
+ * The five situations `surface.json`'s `inert: true` collapses into one
+ * boolean. Only `deferred` will ever start doing something, and only
+ * `retired` refuses rather than ignoring: tan parses it and answers
+ * `build.flag-retired`, exit 2. `deferred` has no instance from 0.7.0-rc1 on —
+ * tan-cli#427 retired or dropped every flag it covered — and stays in the
+ * union because the next deferral would arrive under it.
  */
 export type InertKind =
   | "deferred"
+  | "retired"
   | "compatibility"
   | "parity"
   | "not-applicable";
@@ -194,21 +211,15 @@ export type InertKind =
  * remembered.
  */
 export const INERT_OPTIONS: Readonly<Record<string, InertKind>> = {
-  // DEFERRED — click accepts it, `build` has not implemented it yet, and
-  // tan-cli#427 tracks its arrival. The only kind that will ever start doing
-  // something, and therefore the only one a "not yet" sentence is true of.
-  "build --all": "deferred",
-  "build --ci": "deferred",
-  "build --manifest": "deferred",
-  "build --manifest-from": "deferred",
-  "build --no-auto-bootstrap": "deferred",
-  "build --no-color": "deferred",
-  "build --non-interactive": "deferred",
-  "build --plan": "deferred",
-  "build --pristine": "deferred",
-  "build --quiet": "deferred",
-  "build --target": "deferred",
-  "build --verbose": "deferred",
+  // RETIRED — click still parses it, and tan refuses it with
+  // `build.flag-retired` (exit 2), its help reading "Retired -- … (tan-cli#427)".
+  // Through 0.6.0 all four were `deferred` beside eight more; 0.7.0-rc1 made
+  // `--pristine` live, dropped the seven global ergonomics flags from `build`
+  // altogether, and retired these four. There is nothing to wait for.
+  "build --manifest": "retired",
+  "build --manifest-from": "retired",
+  "build --no-auto-bootstrap": "retired",
+  "build --plan": "retired",
 
   // COMPATIBILITY — accepted so a caller written against an older tan does not
   // break. Never going to act; there is nothing to wait for.
@@ -292,7 +303,7 @@ export const INERT_OPTIONS: Readonly<Record<string, InertKind>> = {
  *  purpose: it gets the upstream issue and its URL instead, because it is the
  *  one kind with something to point at. */
 const INERT_KIND_REASON: Readonly<
-  Record<Exclude<InertKind, "deferred">, string>
+  Record<Exclude<InertKind, "deferred" | "retired">, string>
 > = {
   compatibility:
     "it is kept so callers written against an older tan keep working",
@@ -318,11 +329,11 @@ export const BUILD_DEFERRED_REF = "tan-cli#427";
  * The `tan build` flags the Build Plan panel needs and this pin does not
  * implement.
  *
- * Deferred, NOT ignored and NOT misspelled: click accepts all three, which is
- * exactly why they cost three spawns and produced a failure three layers from
- * its cause (#541). Twelve of `tan build`'s twenty-two options are inert at
- * this pin; only the three this panel would send are listed, because a list of
- * flags nothing sends is a list nothing can keep true.
+ * Deferred through 0.6.0 and RETIRED from 0.7.0-rc1 — never misspelled: click
+ * accepts all three, which is exactly why they cost three spawns and produced
+ * a failure three layers from its cause (#541). Only the three this panel
+ * would send are listed, because a list of flags nothing sends is a list
+ * nothing can keep true; `RETIRED_BUILD_OPTIONS` carries the fourth.
  *
  * Held to `surface.json`'s `commands.build.options[…].inert` by the gate —
  * including the other direction, that `--materialise` and `--plan-from`, which
@@ -389,13 +400,12 @@ export const BUILD_DEFERRED_RESTORE_REF = "#580";
  *
  * ── Why this is not just a value in `INERT_OPTIONS` ─────────────────────────
  *
- * `INERT_OPTIONS` mirrors the pinned RECORDING, and the recording is correct:
- * on tan `0.6.0` these three still refuse with `cli.command-deferred` and the
- * message still names tan-cli#427. Changing their kind there would make the
- * table disagree with the binary it claims to describe.
- *
- * What changed is not the binary's behaviour but the DECISION behind it.
- * tan-cli#427 closed having RETIRED them rather than delivered them:
+ * `INERT_OPTIONS` mirrors the pinned RECORDING, and from 0.7.0-rc1 the
+ * recording agrees: all four are `retired` there, refused with
+ * `build.flag-retired`. Through 0.6.0 they still refused with
+ * `cli.command-deferred`, which is why this table existed first — the
+ * DECISION changed before the binary did. tan-cli#427 closed having RETIRED
+ * them rather than delivered them:
  *
  *   build_cmd.py:229   _RETIRED_FLAGS = { "--plan", "--manifest", "--manifest-from" }
  *
@@ -431,6 +441,10 @@ export const RETIRED_BUILD_OPTIONS: Readonly<Record<string, string>> =
     "--manifest-from":
       "`build/system-manifest.yaml` is plain YAML written by `tan build`, and " +
       "a caller reads it directly rather than asking the CLI to hand it over.",
+    // Retired in 0.7.0-rc1, after #427 had left it deferred through 0.6.0.
+    "--no-auto-bootstrap":
+      "`tan build` never bootstraps implicitly, so there is nothing for it to " +
+      "disable -- run `tan bootstrap` yourself when a workspace needs it.",
   });
 
 /**
@@ -480,6 +494,14 @@ export function deferredBuildOptionMessage(
   }
 
   const kind = inertKindOf(command, flag);
+  if (kind === "retired") {
+    // Retired on a command with no replacement text above. Still a refusal,
+    // never "accepted and ignored".
+    return (
+      `\`tan ${command} ${flag}\` is retired: tan ${SUPPORTED_CLI_VERSION} ` +
+      "refuses it, and it is not coming back. Nothing was run."
+    );
+  }
   if (kind === null) {
     return (
       `\`tan ${command} ${flag}\` is NOT deferred in tan ` +

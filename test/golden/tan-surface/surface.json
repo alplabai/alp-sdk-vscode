@@ -1,8 +1,8 @@
 {
-  "version": "0.6.0",
-  "capturedAt": "2026-08-30",
-  "sourceDigest": "28112bfd9d9a28d1d0300e9701de8ce79e538bc1e318df222075919a997197ec",
-  "contentDigest": "a307a4cbe9f67c5b42ee78f7149b8ee89f05e9735d59179b76e3da584e60dbfd",
+  "version": "0.7.0-rc1",
+  "capturedAt": "2026-10-12",
+  "sourceDigest": "a8845e21a3060f6520219ecb9e8f29774bf6709aa68e66911b2f891840dfb7d8",
+  "contentDigest": "095240db9f9a16ce9faf3e123c2feaf5ac8749b6dd9b914e9a19be4ddbea7d8c",
   "globalOptions": [
     "--project",
     "--board-yaml",
@@ -58,7 +58,21 @@
           "metavar": null,
           "valueOptional": false
         },
+        "--no-patches": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
         "--no-pip": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--no-toolchain": {
           "inert": false,
           "ref": null,
           "marker": null,
@@ -107,11 +121,11 @@
       "subcommandValues": [],
       "refusingSubcommands": {},
       "options": {
-        "--all": {
-          "inert": true,
-          "ref": "tan-cli#427",
-          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
-          "metavar": null,
+        "--board": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "TARGET",
           "valueOptional": false
         },
         "--board-yaml": {
@@ -128,11 +142,18 @@
           "metavar": "DIR",
           "valueOptional": false
         },
-        "--ci": {
-          "inert": true,
-          "ref": "tan-cli#427",
-          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
-          "metavar": null,
+        "--core": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "ID",
+          "valueOptional": false
+        },
+        "--define": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "NAME=VALUE",
           "valueOptional": false
         },
         "--execute": {
@@ -159,14 +180,14 @@
         "--manifest": {
           "inert": true,
           "ref": "tan-cli#427",
-          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
+          "marker": "Retired -- a native `tan build` already writes `build/system-manifest.yaml` (tan-cli#427)",
           "metavar": null,
           "valueOptional": false
         },
         "--manifest-from": {
           "inert": true,
           "ref": "tan-cli#427",
-          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
+          "marker": "Retired -- open FILE directly, it is plain YAML (tan-cli#427)",
           "metavar": "FILE",
           "valueOptional": false
         },
@@ -187,28 +208,14 @@
         "--no-auto-bootstrap": {
           "inert": true,
           "ref": "tan-cli#427",
-          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
-          "metavar": null,
-          "valueOptional": false
-        },
-        "--no-color": {
-          "inert": true,
-          "ref": "tan-cli#427",
-          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
-          "metavar": null,
-          "valueOptional": false
-        },
-        "--non-interactive": {
-          "inert": true,
-          "ref": "tan-cli#427",
-          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
+          "marker": "Retired -- `tan build` never bootstraps implicitly (tan-cli#427)",
           "metavar": null,
           "valueOptional": false
         },
         "--plan": {
           "inert": true,
           "ref": "tan-cli#427",
-          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
+          "marker": "Retired -- superseded by `--plan-from` (tan-cli#427)",
           "metavar": null,
           "valueOptional": false
         },
@@ -220,9 +227,9 @@
           "valueOptional": false
         },
         "--pristine": {
-          "inert": true,
-          "ref": "tan-cli#427",
-          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
+          "inert": false,
+          "ref": null,
+          "marker": null,
           "metavar": null,
           "valueOptional": false
         },
@@ -233,13 +240,6 @@
           "metavar": "PATH",
           "valueOptional": false
         },
-        "--quiet": {
-          "inert": true,
-          "ref": "tan-cli#427",
-          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
-          "metavar": null,
-          "valueOptional": false
-        },
         "--sdk-root": {
           "inert": false,
           "ref": null,
@@ -247,18 +247,11 @@
           "metavar": "PATH",
           "valueOptional": false
         },
-        "--target": {
-          "inert": true,
-          "ref": "tan-cli#427",
-          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
-          "metavar": "EMIT",
-          "valueOptional": false
-        },
-        "--verbose": {
-          "inert": true,
-          "ref": "tan-cli#427",
-          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
-          "metavar": null,
+        "-D": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "NAME=VALUE",
           "valueOptional": false
         }
       }
@@ -578,8 +571,8 @@
         },
         "--build": {
           "inert": true,
-          "ref": "tan-cli#290",
-          "marker": "Accepted for compatibility (tan-cli#290)",
+          "ref": null,
+          "marker": "Accepted for compatibility",
           "metavar": null,
           "valueOptional": false
         },
@@ -894,7 +887,7 @@
         "--project": {
           "inert": true,
           "ref": null,
-          "marker": "(unused: faultdecode is HW-free)",
+          "marker": "`--project`/`--sdk-root`/`--board-yaml`/`--target`/`--all`/`--verbose`/ `--quiet`/`--non-interactive`/`--ci` are declared, not consumed",
           "metavar": "PATH",
           "valueOptional": false
         },
@@ -908,7 +901,7 @@
         "--sdk-root": {
           "inert": true,
           "ref": null,
-          "marker": "(unused; see below)",
+          "marker": "`--project`/`--sdk-root`/`--board-yaml`/`--target`/`--all`/`--verbose`/ `--quiet`/`--non-interactive`/`--ci` are declared, not consumed",
           "metavar": "PATH",
           "valueOptional": false
         },
@@ -940,6 +933,20 @@
       "subcommandValues": [],
       "refusingSubcommands": {},
       "options": {
+        "--assume-he": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--atoc-unqueryable": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
         "--board-yaml": {
           "inert": false,
           "ref": null,
@@ -996,6 +1003,41 @@
           "metavar": "NAME",
           "valueOptional": false
         },
+        "--jlink": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--no-device-config": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--no-reset": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--probe-serial": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SN",
+          "valueOptional": false
+        },
+        "--probe-usb-path": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "BUS-PORT",
+          "valueOptional": false
+        },
         "--project": {
           "inert": false,
           "ref": null,
@@ -1003,7 +1045,42 @@
           "metavar": "PATH",
           "valueOptional": false
         },
+        "--ram": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--ram-console": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--raw": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "FILE@ADDR",
+          "valueOptional": false
+        },
+        "--readback": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
         "--recover": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--replace-atoc": {
           "inert": false,
           "ref": null,
           "marker": null,
@@ -1029,6 +1106,20 @@
           "ref": null,
           "marker": null,
           "metavar": null,
+          "valueOptional": false
+        },
+        "--wait": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SECONDS",
+          "valueOptional": false
+        },
+        "--watch": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "ADDR[:WORDS][@PERIOD-MS]",
           "valueOptional": false
         }
       }
@@ -1302,6 +1393,13 @@
           "ref": null,
           "marker": null,
           "metavar": "ID",
+          "valueOptional": false
+        },
+        "--topology": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "TOPOLOGY",
           "valueOptional": false
         },
         "--verbose": {
@@ -1587,12 +1685,41 @@
       }
     },
     "model": {
-      "maxPositionals": 1,
+      "maxPositionals": 2,
       "subcommandValues": [
-        "build"
+        "build",
+        "doctor",
+        "check",
+        "list",
+        "zoo",
+        "add",
+        "prep",
+        "run",
+        "ab"
       ],
       "refusingSubcommands": {},
       "options": {
+        "--against": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--against-capture": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "FILE",
+          "valueOptional": false
+        },
+        "--against-project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
         "--board": {
           "inert": false,
           "ref": null,
@@ -1605,6 +1732,48 @@
           "ref": null,
           "marker": null,
           "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--calibration": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "DIR",
+          "valueOptional": false
+        },
+        "--capture": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "FILE",
+          "valueOptional": false
+        },
+        "--confirm": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--core": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "CORE_ID",
+          "valueOptional": false
+        },
+        "--device": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--exact": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
           "valueOptional": false
         },
         "--format": {
@@ -1621,11 +1790,32 @@
           "metavar": null,
           "valueOptional": false
         },
+        "--input": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--jlink": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
         "--metadata-root": {
           "inert": false,
           "ref": null,
           "marker": null,
           "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--min-samples": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "N",
           "valueOptional": false
         },
         "--out": {
@@ -1635,6 +1825,27 @@
           "metavar": "PATH",
           "valueOptional": false
         },
+        "--per-channel": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--probe-serial": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SN",
+          "valueOptional": false
+        },
+        "--probe-usb-path": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "BUS-PORT",
+          "valueOptional": false
+        },
         "--project": {
           "inert": false,
           "ref": null,
@@ -1642,11 +1853,32 @@
           "metavar": "PATH",
           "valueOptional": false
         },
+        "--runs": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "N",
+          "valueOptional": false
+        },
         "--sdk-root": {
           "inert": false,
           "ref": null,
           "marker": null,
           "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sku": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SKU",
+          "valueOptional": false
+        },
+        "--wait": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SECONDS",
           "valueOptional": false
         }
       }
@@ -1663,6 +1895,48 @@
           "metavar": "<int>",
           "valueOptional": false
         },
+        "--break-key": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--break-timeout": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<float>",
+          "valueOptional": false
+        },
+        "--break-uboot": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--capture": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--duration": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<float>",
+          "valueOptional": false
+        },
+        "--filter": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<colors|direct|default|nocontrol|printable>",
+          "valueOptional": false
+        },
         "--format": {
           "inert": false,
           "ref": null,
@@ -1677,7 +1951,77 @@
           "metavar": null,
           "valueOptional": false
         },
+        "--log": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--non-interactive": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--on": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "REGEX",
+          "valueOptional": false
+        },
         "--port": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--prompt": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--reopen-at": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "BAUD",
+          "valueOptional": false
+        },
+        "--send": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "TEXT",
+          "valueOptional": false
+        },
+        "--send-after": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SECONDS",
+          "valueOptional": false
+        },
+        "--send-gap": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SECONDS",
+          "valueOptional": false
+        },
+        "--send-on": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "REGEX",
+          "valueOptional": false
+        },
+        "--until": {
           "inert": false,
           "ref": null,
           "marker": null,
@@ -1980,6 +2324,69 @@
         }
       }
     },
+    "probe": {
+      "maxPositionals": 3,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--build-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--core": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "m55_he|m55_hp",
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--jlink": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--probe-serial": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SN",
+          "valueOptional": false
+        },
+        "--probe-usb-path": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "BUS-PORT",
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        }
+      }
+    },
     "quality": {
       "maxPositionals": -1,
       "subcommandValues": [],
@@ -2029,11 +2436,109 @@
         }
       }
     },
+    "reset": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--confirm-baud": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "BAUD",
+          "valueOptional": false
+        },
+        "--confirm-console": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PORT",
+          "valueOptional": false
+        },
+        "--confirm-timeout": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SECONDS",
+          "valueOptional": false
+        },
+        "--confirm-window": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SECONDS",
+          "valueOptional": false
+        },
+        "--expect": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "REGEX",
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--jlink": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--probe-serial": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SN",
+          "valueOptional": false
+        },
+        "--probe-usb-path": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "BUS-PORT",
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--pulse-ms": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "MS",
+          "valueOptional": false
+        }
+      }
+    },
     "run": {
       "maxPositionals": 0,
       "subcommandValues": [],
       "refusingSubcommands": {},
       "options": {
+        "--atoc-unqueryable": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
         "--board-yaml": {
           "inert": false,
           "ref": null,
@@ -2081,6 +2586,13 @@
           "ref": null,
           "marker": null,
           "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--replace-atoc": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
           "valueOptional": false
         },
         "--sdk-root": {
@@ -2224,7 +2736,8 @@
         "list",
         "current",
         "install",
-        "switch"
+        "switch",
+        "remove"
       ],
       "refusingSubcommands": {
         "install": {
@@ -2240,6 +2753,13 @@
           "ref": null,
           "marker": null,
           "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--force": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
           "valueOptional": false
         },
         "--format": {
