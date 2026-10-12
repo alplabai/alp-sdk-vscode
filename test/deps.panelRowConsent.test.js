@@ -43,7 +43,6 @@ function openPanel(consent) {
           reveal() {},
           dispose() {},
         }),
-        showInformationMessage: async (message) => info.push(message),
       },
       ViewColumn: { Active: 1 },
       Uri: { joinPath: (...p) => p.join("/") },
@@ -51,7 +50,7 @@ function openPanel(consent) {
     },
     "../environment/vscodeAdapter": { danglingWestManifest: () => null },
     "../ideHub/webviewHtml": { buildWebviewHtml: () => "<html></html>" },
-    "../notify/vscodeAdapter": { notifyAsync() {} },
+    "../notify/vscodeAdapter": { notifyAsync: (plan) => info.push(plan) },
     "../project/vscodeAdapter": {
       collectProjectContext: () => ({ workspaceRoot: "/ws" }),
     },
@@ -107,7 +106,8 @@ test("Enter with the row unchecked tells the customer nothing was installed", as
 
   assert.deepEqual(panel.dispatched, []);
   assert.equal(panel.info.length, 1);
-  assert.match(panel.info[0], /Vendor tool was not installed/);
+  assert.match(panel.info[0].message, /Nothing was selected/);
+  assert.match(panel.info[0].detail, /Vendor tool/);
 });
 
 test("dismissing the consent screen stays silent", async () => {
