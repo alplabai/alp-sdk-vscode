@@ -556,7 +556,7 @@ export function ModelsView() {
             <p>
               <strong>These model tools are not available here yet.</strong> NPU
               coverage, prep, run and A/B compare are not wired into this panel
-              — building models and the model zoo still work.
+              yet. The model zoo is available below.
             </p>
           ) : (
             <p>
