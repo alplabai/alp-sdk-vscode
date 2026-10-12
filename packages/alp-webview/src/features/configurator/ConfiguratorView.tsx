@@ -138,6 +138,14 @@ export function TextInput({
   useEffect(() => {
     if (!focused.current) setDraft(value);
   }, [value]);
+  // A disabled input gets no blur, so a focus that ended by disabling would
+  // leave `focused` stuck and the draft frozen: release it and follow `value`.
+  useEffect(() => {
+    if (disabled) {
+      focused.current = false;
+      setDraft(value);
+    }
+  }, [disabled, value]);
   return (
     <input
       className={styles.control}
@@ -649,6 +657,7 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
   // A key already in the file stays editable (so it can be cleared) even when
   // the schema rejects it.
   const hasKey = core.toolchain !== undefined || core.toolchainInvalid;
+  const toolchainOk = vm?.toolchainSupported !== false;
 
   if (core.inheritedFromTopology) {
     return (
@@ -669,14 +678,16 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
         <div className={styles.ghostNote}>
           Runs the SoM preset&apos;s default image
           {core.defaultToolchain ? ` with ${core.defaultToolchain}` : ""}.
-          Override to set this core&apos;s runtime, its own app directory or its
-          toolchain.{" "}
+          Override to set this core&apos;s runtime, its own app directory
+          {toolchainOk ? " or its toolchain" : ""}.{" "}
           <button
             type="button"
             className={styles.btn}
             onClick={() => mutate((d) => void ensure(d))}
           >
-            Override (app directory, toolchain)
+            {toolchainOk
+              ? "Override (app directory, toolchain)"
+              : "Override (app directory)"}
           </button>
         </div>
       </div>

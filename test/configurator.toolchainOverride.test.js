@@ -310,3 +310,42 @@ test("the toolchain field writes no environment variable", async () => {
     assert.doesNotMatch(code, /process\.env/, rel);
   }
 });
+
+test("the schema gate fails closed when an SDK is resolved but its schema is not served", () => {
+  const {
+    buildSchemaProvenance,
+  } = require("../packages/alp-core/dist/validation/schemaProvenance.js");
+  const vendoredText = fs.readFileSync(
+    path.join(ROOT, "schemas", "board.schema.json"),
+    "utf-8",
+  );
+  const input = (sdkRoot, board) => ({
+    sdkRoot,
+    sdkVersion: null,
+    sdkReads: { board },
+  });
+
+  // No SDK at all: the bundled schema (which has the key) is what validates.
+  assert.equal(
+    buildSchemaProvenance(input(null, { ok: false, reason: "none" }))
+      .boardDeclaresCoreToolchain,
+    true,
+  );
+  // SDK resolved, schema served and declaring the key.
+  assert.equal(
+    buildSchemaProvenance(input("/sdk", { ok: true, text: vendoredText }))
+      .boardDeclaresCoreToolchain,
+    true,
+  );
+  // SDK resolved but its schema is unreadable or rejected: unknown, so closed.
+  assert.equal(
+    buildSchemaProvenance(input("/sdk", { ok: false, reason: "ENOENT" }))
+      .boardDeclaresCoreToolchain,
+    false,
+  );
+  assert.equal(
+    buildSchemaProvenance(input("/sdk", { ok: true, text: "not json" }))
+      .boardDeclaresCoreToolchain,
+    false,
+  );
+});

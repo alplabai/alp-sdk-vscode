@@ -50,8 +50,8 @@ export const TOOLCHAIN_HINT =
   "plan resolves is shown on this core's line in the Build Plan.";
 
 /** `<datalist>` id for one suggestion list: cores offering the same list share
- *  one datalist. Characters outside [A-Za-z0-9_-] are replaced, and a hash of
- *  the exact list keeps two lists that sanitise alike apart. */
+ *  one datalist. The id is a djb2 hash of the exact list in base 36, so equal
+ *  lists collide on purpose and different lists get different ids. */
 export function toolchainListId(suggestions: readonly string[]): string {
   const key = suggestions.join("\n");
   let h = 5381;

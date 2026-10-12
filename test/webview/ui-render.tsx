@@ -1976,6 +1976,42 @@ async function main() {
         "configurator-toolchain: an existing key on a rejecting schema is not surfaced/editable",
       );
     }
+    // Disabled while focused (the key was just cleared on a rejecting
+    // schema): the draft resyncs instead of staying stuck on focus.
+    {
+      const hpInput = field("m55_hp");
+      if (hpInput) {
+        hpInput.focus();
+        setValue?.call(hpInput, "stale");
+        hpInput.dispatchEvent(new window.Event("input", { bubbles: true }));
+        await settle();
+        render(true, undefined, (vm) => ({ ...vm, toolchainSupported: false }));
+        await settle();
+        const after = field("m55_hp");
+        if (!after?.disabled || after.value !== "") {
+          problems.push(
+            `configurator-toolchain: disabled-while-focused kept "${after?.value}" (disabled=${after?.disabled})`,
+          );
+        }
+      }
+    }
+    // The inherited card stops promising a toolchain override.
+    {
+      const buttons = Array.from(container.querySelectorAll("button")).map(
+        (b) => b.textContent,
+      );
+      if (
+        !buttons.includes("Override (app directory)") ||
+        buttons.includes("Override (app directory, toolchain)") ||
+        /toolchain\./.test(
+          container.querySelector('[class*="ghostNote"]')?.textContent ?? "",
+        )
+      ) {
+        problems.push(
+          `configurator-toolchain: inherited card on a rejecting schema still mentions the toolchain: ${JSON.stringify(buttons)}`,
+        );
+      }
+    }
     render(true, undefined, (vm) => ({
       ...vm,
       cores: [{ ...vm.cores[0], toolchainInvalid: true }, vm.cores[1]],

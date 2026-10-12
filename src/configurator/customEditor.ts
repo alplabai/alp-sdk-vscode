@@ -138,6 +138,13 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
       postRender(parse());
     });
 
+    // The toolchain field's availability follows the resolved SDK's board
+    // schema, so an `alpSdk.*` setting edit (SDK path) while the editor is open
+    // re-renders with the new answer instead of leaving the old gate up.
+    const configSub = vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("alpSdk")) postRender(parse());
+    });
+
     // Reset the webview's dirty baseline whenever the document is saved —
     // whether via the webview's Save button or a native Ctrl+S.
     const saveSub = vscode.workspace.onDidSaveTextDocument((saved) => {
@@ -251,6 +258,7 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
 
     panel.onDidDispose(() => {
       changeSub.dispose();
+      configSub.dispose();
       saveSub.dispose();
     });
   }

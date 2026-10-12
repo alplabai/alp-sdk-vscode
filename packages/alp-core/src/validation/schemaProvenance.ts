@@ -132,7 +132,8 @@ export interface SchemaProvenance {
    * `$defs.core_entry.properties.toolchain` (alp-sdk#964, first in v0.17.0-rc1).
    * Older SDKs make `core_entry` `additionalProperties: false`, so writing the
    * key fails their validation. Falls back to the bundled schema (which
-   * declares it) whenever the SDK's copy is not served.
+   * declares it) only when no SDK is resolved; with an SDK resolved but its
+   * schema unreadable or rejected the answer is unknown, so false.
    */
   readonly boardDeclaresCoreToolchain: boolean;
 }
@@ -274,7 +275,9 @@ export function buildSchemaProvenance(
     comparisons,
     unknownBoardKeys: unknownBoardKeysIn(board?.served ?? null),
     boardDeclaresCoreToolchain:
-      board?.served == null || schemaDeclaresCoreToolchain(board.served),
+      input.sdkRoot === null
+        ? true
+        : board?.served != null && schemaDeclaresCoreToolchain(board.served),
   };
 }
 
