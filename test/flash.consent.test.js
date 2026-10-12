@@ -561,8 +561,17 @@ test("FLASH_VALUE_TAKING_FLAGS_AHEAD_OF_PIN names nothing the pin already has", 
         "from FLASH_VALUE_TAKING_FLAGS_AHEAD_OF_PIN into the pinned list in " +
         "packages/alp-core/src/flash/argv.ts.",
     );
-    assert.ok(FLASH_VALUE_TAKING_FLAGS.has(name));
   }
+  // Pinned as data, so an entry dropped from (or slipped into) the set is
+  // caught here rather than only by the behavioural arity test.
+  assert.deepEqual(sortedSet(FLASH_VALUE_TAKING_FLAGS_AHEAD_OF_PIN), [
+    "--jlink",
+    "--probe-serial",
+    "--probe-usb-path",
+    "--raw",
+    "--wait",
+    "--watch",
+  ]);
 });
 
 test("ROOT_VALUE_TAKING_FLAGS is exactly the metavar'd global options", () => {
