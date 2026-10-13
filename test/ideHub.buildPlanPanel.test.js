@@ -44,7 +44,13 @@ const root = path.join(__dirname, "..");
 
 function loadWithStubs(relPath, stubs) {
   const modPath = require.resolve(path.join(root, "out", relPath));
+  // #484: the panel's navigation actions live in a sibling module that
+  // resolves the same stubbed specifiers, so it is re-loaded with them.
+  const navPath = require.resolve(
+    path.join(root, "out", "ideHub", "buildPlanNavigation.js"),
+  );
   delete require.cache[modPath];
+  delete require.cache[navPath];
   const originalLoad = Module._load;
   Module._load = function (request, ...rest) {
     return Object.prototype.hasOwnProperty.call(stubs, request)
@@ -56,6 +62,7 @@ function loadWithStubs(relPath, stubs) {
   } finally {
     Module._load = originalLoad;
     delete require.cache[modPath];
+    delete require.cache[navPath];
   }
 }
 
@@ -96,6 +103,7 @@ function mountPanel({
   boardYamlPath = workspaceRoot ? path.join(workspaceRoot, "board.yaml") : null,
   showTextDocument: showTextDocumentOverride = null,
   clipboardWriteText: clipboardWriteTextOverride = null,
+  executeCommand: executeCommandOverride = null,
 } = {}) {
   const calls = [];
   const posted = [];
@@ -105,6 +113,11 @@ function mountPanel({
   const opened = [];
   const logs = [];
   const clipboard = [];
+  // #484: every `vscode.commands.executeCommand` call — how
+  // `openInConfigurator` opens the Configurator custom editor.
+  const executed = [];
+  // Every write path a navigation action must never reach.
+  const writes = [];
   // #484: every plan `notifyAsync` was handed —
   // the user-visible half. A raw `log()` call alone reaches only the "Alp
   // SDK" output channel, which nothing surfaces on its own; this is what
@@ -160,6 +173,25 @@ function mountPanel({
       // #580: the panel reads the manifest now rather than posting `manifest:
       // null`, so the stub has to be able to answer.
       readFileSync: () => MANIFEST_YAML,
+      writeFileSync: (...args) => writes.push(["fs.writeFileSync", ...args]),
+      writeFile: (...args) => writes.push(["fs.writeFile", ...args]),
+    },
+    // The same write paths under every spelling a module could import.
+    "node:fs": {
+      existsSync: () => true,
+      statSync: () => ({ mtimeMs: 0 }),
+      readFileSync: () => MANIFEST_YAML,
+      writeFileSync: (...args) =>
+        writes.push(["node:fs.writeFileSync", ...args]),
+      writeFile: (...args) => writes.push(["node:fs.writeFile", ...args]),
+    },
+    "fs/promises": {
+      writeFile: async (...args) =>
+        writes.push(["fs/promises.writeFile", ...args]),
+    },
+    "node:fs/promises": {
+      writeFile: async (...args) =>
+        writes.push(["node:fs/promises.writeFile", ...args]),
     },
     vscode: {
       window: {
@@ -176,6 +208,16 @@ function mountPanel({
             ? [{ uri: { fsPath: workspaceRoot } }]
             : undefined;
         },
+        applyEdit: (...args) => {
+          writes.push(["workspace.applyEdit", ...args]);
+          return Promise.resolve(true);
+        },
+        fs: {
+          writeFile: (...args) => {
+            writes.push(["workspace.fs.writeFile", ...args]);
+            return Promise.resolve();
+          },
+        },
         createFileSystemWatcher: () => ({
           onDidChange(handler) {
             watcherHandlers.push(handler);
@@ -188,6 +230,14 @@ function mountPanel({
             return { dispose() {} };
           },
         }),
+      },
+      commands: {
+        executeCommand:
+          executeCommandOverride ??
+          ((...args) => {
+            executed.push(args);
+            return Promise.resolve();
+          }),
       },
       ViewColumn: { Active: 1 },
       Uri: {
@@ -242,7 +292,11 @@ function mountPanel({
     opened,
     logs,
     clipboard,
+    executed,
+    writes,
     notifications,
+    openInConfigurator: (section, name) =>
+      onMessage({ type: "openInConfigurator", section, name }),
     requestBuildPlan: () => onMessage({ type: "requestBuildPlan" }),
     fileChanged: () => watcherHandlers.forEach((handler) => handler()),
     openBoardYaml: () => onMessage({ type: "openBoardYaml" }),
@@ -551,4 +605,128 @@ test("copyText notifies when the clipboard write is refused", async () => {
   assert.equal(plan.message, "Copying to the clipboard failed.");
   assert.match(plan.detail ?? "", /EBUSY/);
   assert.equal(plan.severity, "error");
+});
+
+// ── #484: `openInConfigurator` ──────────────────────────────────────────────
+//
+// Navigation only: the Build Plan never writes board.yaml. It asks the host to
+// open the Configurator (the one board.yaml writer) at an entry, and the host
+// resolves the path itself, under the same precondition `openBoardYaml` uses.
+
+const focusRegistry = () =>
+  require(path.join(root, "out", "configurator", "focusRegistry.js"))
+    .focusRegistry;
+
+test("openInConfigurator opens the Configurator custom editor on the resolved board.yaml and queues the focus", async () => {
+  const boardYamlPath = path.join(WORKSPACE_ROOT, "config", "board.yaml");
+  const { executed, notifications, openInConfigurator } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+    boardYamlPath,
+  });
+  openInConfigurator("ipc", "alp_default_rpmsg");
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(notifications, []);
+  assert.equal(executed.length, 1);
+  const [command, uri, viewType] = executed[0];
+  assert.equal(command, "vscode.openWith");
+  assert.equal(uri.fsPath, boardYamlPath);
+  assert.equal(viewType, "alp.boardConfigurator");
+  assert.deepEqual(focusRegistry().takePendingFocus(boardYamlPath), {
+    section: "ipc",
+    name: "alp_default_rpmsg",
+  });
+});
+
+test("openInConfigurator raises the noBoardYaml precondition and opens nothing when no board.yaml resolves", async () => {
+  const { executed, notifications, openInConfigurator } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+    boardYamlPath: null,
+  });
+  assert.doesNotThrow(() => openInConfigurator("storage", "data"));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(executed, []);
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0].message, "No board.yaml in this folder yet.");
+  assert.equal(notifications[0].severity, "warning");
+});
+
+test("openInConfigurator notifies when the Configurator cannot be opened", async () => {
+  const boardYamlPath = path.join(WORKSPACE_ROOT, "board.yaml");
+  const { notifications, openInConfigurator } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+    boardYamlPath,
+    executeCommand: () => Promise.reject(new Error("no such editor")),
+  });
+  openInConfigurator("storage", "data");
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0].severity, "error");
+  assert.equal(
+    focusRegistry().takePendingFocus(boardYamlPath),
+    null,
+    "a failed open leaves no focus queued for a later, unrelated open",
+  );
+});
+
+test("openInConfigurator refuses a malformed request without opening anything", async () => {
+  const boardYamlPath = path.join(WORKSPACE_ROOT, "board.yaml");
+  const { executed, openInConfigurator } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+    boardYamlPath,
+  });
+  for (const [section, name] of [
+    ["slices", "m55_hp"],
+    ["ipc", ""],
+    ["ipc", 42],
+    ["__proto__", "x"],
+  ]) {
+    openInConfigurator(section, name);
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(executed, []);
+});
+
+test("openInConfigurator only navigates: one vscode.openWith, no edit, no file write", async () => {
+  const boardYamlPath = path.join(WORKSPACE_ROOT, "board.yaml");
+  const { executed, writes, openInConfigurator } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+    boardYamlPath,
+  });
+  openInConfigurator("storage", "data");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(
+    executed.map((call) => call[0]),
+    ["vscode.openWith"],
+  );
+  assert.deepEqual(writes, []);
+  focusRegistry().takePendingFocus(boardYamlPath);
+});
+
+test("openInConfigurator: an older open failing does not withdraw a newer request", async () => {
+  const boardYamlPath = path.join(WORKSPACE_ROOT, "board.yaml");
+  let call = 0;
+  const { openInConfigurator } = mountPanel({
+    workspaceRoot: WORKSPACE_ROOT,
+    boardYamlPath,
+    executeCommand: () => {
+      call += 1;
+      // A's open fails, and only AFTER B has been requested and opened.
+      return call === 1
+        ? new Promise((_, reject) =>
+            setImmediate(() => reject(new Error("A failed"))),
+          )
+        : Promise.resolve();
+    },
+  });
+  openInConfigurator("ipc", "A");
+  openInConfigurator("ipc", "B");
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(focusRegistry().takePendingFocus(boardYamlPath), {
+    section: "ipc",
+    name: "B",
+  });
 });

@@ -20,7 +20,11 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { AppProvider } from "../../packages/alp-webview/src/shared/AppContext";
 import { ErrorBoundary } from "../../packages/alp-webview/src/shared/ui";
-import { TextInput } from "../../packages/alp-webview/src/features/configurator/ConfiguratorView";
+import {
+  NumberInput,
+  TextInput,
+} from "../../packages/alp-webview/src/features/configurator/ConfiguratorView";
+import { useFocusEntry } from "../../packages/alp-webview/src/features/configurator/focusEntry";
 import { OverviewView } from "../../packages/alp-webview/src/features/overview";
 import { SidebarHubView } from "../../packages/alp-webview/src/features/sidebar-hub";
 import { SetupFlowView } from "../../packages/alp-webview/src/features/setup-flow";
@@ -2138,6 +2142,201 @@ async function main() {
     checkHeadingOutline(container, "memory-aen", problems);
     console.log(
       `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-aen: bands, tiers, ghosts and verbatim reasons`,
+    );
+  }
+
+  // ── "Edit in Configurator" on the AEN ipc row: navigates, never writes (#484) ──
+  // The Interconnect row for the blocked `alp_default_rpmsg` link offers the
+  // link; clicking it posts exactly `openInConfigurator` with that name and
+  // nothing a host could write. With no provenance the verdict is not known
+  // to be the last build's, so the row says so; with a fresh one it does not.
+  {
+    const problemsBefore = problems.length;
+    const NOT_FRESH = "may not reflect the last build — rebuild after editing";
+    const FRESH = "rebuild after editing to see tan's verdict";
+    const manifest = parseSystemManifest(aenFixtureText);
+    const stale = await mountBuildPlan(manifest);
+    const link = stale.querySelector(
+      '[data-open-in-configurator="ipc:alp_default_rpmsg"]',
+    ) as HTMLButtonElement | null;
+    if (!link) {
+      problems.push(
+        "configurator-link: no Edit in Configurator on the ipc row",
+      );
+    } else {
+      if (!(stale.textContent || "").includes(NOT_FRESH)) {
+        problems.push(
+          "configurator-link: no last-build note without provenance",
+        );
+      }
+      const before = (g.__ALP_POSTED__ as unknown[]).length;
+      link.click();
+      await settle();
+      const posted = postedSince(before);
+      const open = posted.filter((m) => m.type === "openInConfigurator");
+      if (
+        open.length !== 1 ||
+        open[0].section !== "ipc" ||
+        open[0].name !== "alp_default_rpmsg" ||
+        Object.keys(open[0]).sort().join(",") !== "name,section,type"
+      ) {
+        problems.push(
+          `configurator-link: expected one bare openInConfigurator, got ${JSON.stringify(posted)}`,
+        );
+      }
+    }
+    stale.remove();
+    const fresh = await mountBuildPlan(manifest, [], {
+      writtenAt: new Date(0).toISOString(),
+      freshness: "fresh",
+      reason: null,
+    });
+    const freshText = fresh.textContent || "";
+    if (freshText.includes(NOT_FRESH) || !freshText.includes(FRESH)) {
+      problems.push(
+        "configurator-link: a fresh manifest must say only that a rebuild judges the edit",
+      );
+    }
+    fresh.remove();
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  configurator-link: ipc row navigates to the Configurator by name`,
+    );
+  }
+
+  // ── the Configurator lands on the entry it was sent to (#484) ──
+  // `focusEntry` opens the section, scrolls to and highlights the size field
+  // whose `data-focus-entry` matches — and does NOT focus it: a focused
+  // number input steps on ArrowUp/Down and the wheel, a silent resize. THE
+  // GUARD IS `document.activeElement`: this DOM shim does not step a number
+  // input on keys or wheel at all, so the key/wheel loop below is only a
+  // smoke check that no handler of ours reacts — it cannot prove the
+  // browser would not step a focused field. Nothing is posted either.
+  // An undeclared name shows a notice, creates nothing, and the notice
+  // survives a re-render with a new-but-equal board.
+  {
+    const problemsBefore = problems.length;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    let opened = 0;
+    let changes = 0;
+    const board = {
+      som: { sku: "E1M-AEN801" },
+      cores: {},
+      ipc: [{ name: "link0", kind: "rpmsg", endpoints: [] }],
+    };
+    const openSection = () => {
+      opened += 1;
+    };
+    function Probe({ board }: { board: unknown }) {
+      const notice = useFocusEntry(
+        board as never,
+        true,
+        openSection,
+        "advanced",
+      );
+      return React.createElement(
+        "div",
+        null,
+        notice && React.createElement("p", { "data-notice": "" }, notice),
+        React.createElement(NumberInput, {
+          label: "IPC carve-out KiB",
+          value: "16",
+          onChange: () => {
+            changes += 1;
+          },
+          focusKey: "ipc:link0",
+        }),
+      );
+    }
+    const root = createRoot(container);
+    root.render(React.createElement(Probe, { board }));
+    await settle();
+    const postedBefore = (g.__ALP_POSTED__ as unknown[]).length;
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "focusEntry",
+      section: "ipc",
+      name: "link0",
+    });
+    await settle();
+    const input = container.querySelector(
+      '[data-focus-entry="ipc:link0"]',
+    ) as HTMLInputElement | null;
+    if (opened !== 1) problems.push("configurator-focus: section not opened");
+    if (!input) {
+      problems.push("configurator-focus: the carve-out field is missing");
+    } else {
+      if (document.activeElement === input) {
+        problems.push(
+          "configurator-focus: the number field was focused — arrow keys and the wheel would resize it",
+        );
+      }
+      if (!input.hasAttribute("data-focus-flash")) {
+        problems.push(
+          "configurator-focus: the landed field is not highlighted",
+        );
+      }
+      // Smoke check only (see above): the shim never steps a number input.
+      for (const key of ["ArrowUp", "ArrowDown", "PageUp", "PageDown"]) {
+        pressKey(input, key);
+      }
+      input.dispatchEvent(
+        new (g.WheelEvent ?? Event)("wheel", {
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await settle();
+      if (input.value !== "16" || changes !== 0) {
+        problems.push(
+          `configurator-focus: landing let keys/wheel change the value (${changes} onChange, value "${input.value}")`,
+        );
+      }
+    }
+    if (postedSince(postedBefore).length !== 0) {
+      problems.push(
+        `configurator-focus: landing posted ${JSON.stringify(postedSince(postedBefore))}`,
+      );
+    }
+    const postedMid = (g.__ALP_POSTED__ as unknown[]).length;
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "focusEntry",
+      section: "storage",
+      name: "nvs",
+    });
+    await settle();
+    const notice = container.querySelector("[data-notice]")?.textContent || "";
+    if (!notice.includes('"nvs"') || !notice.includes("nothing was created")) {
+      problems.push(`configurator-focus: missing-entry notice was "${notice}"`);
+    }
+    if (postedSince(postedMid).length !== 0 || changes !== 0) {
+      problems.push(
+        "configurator-focus: a missing entry posted or changed something",
+      );
+    }
+    // Every `configuratorRender` hands over a NEW board object; an equal one
+    // must not wipe the notice.
+    root.render(React.createElement(Probe, { board: { ...board } }));
+    await settle();
+    if (!container.querySelector("[data-notice]")) {
+      problems.push(
+        "configurator-focus: an equal re-rendered board wiped the notice",
+      );
+    }
+    // Once the board declares the entry, the notice no longer holds.
+    root.render(
+      React.createElement(Probe, {
+        board: { ...board, storage: [{ name: "nvs", size_kib: 8 }] },
+      }),
+    );
+    await settle();
+    if (container.querySelector("[data-notice]")) {
+      problems.push(
+        "configurator-focus: the notice outlived the entry it said was missing",
+      );
+    }
+    container.remove();
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  configurator-focus: focusEntry highlights the field, never focuses, writes or creates`,
     );
   }
 

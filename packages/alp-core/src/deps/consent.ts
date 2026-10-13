@@ -14,7 +14,7 @@
 // Segger's J-Link and the vendor NPU compilers) needs an authority, and this
 // module is not one.
 //
-// MEASURED, alp-sdk v0.16.0 through v0.17.0-rc2: 8 entries, every one tier
+// MEASURED, alp-sdk v0.16.0 through v0.17.0: 8 entries, every one tier
 // `"A"`, `sizeBytes` null on all 8, `licence` null for `xz` and `7zip`. So
 // today `size` still reads "not reported" everywhere, `licence` is real for
 // cmake/ninja/git/python/wget, and rows whose tool has no entry — `west`,

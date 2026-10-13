@@ -219,7 +219,6 @@ export interface Boot {
 export interface OtaServer {
   url: string;
   tenant?: string;
-  tls_ca_bundle?: string;
 }
 export interface Ota {
   provider: "mender" | "hawkbit" | "mcumgr" | "none";
@@ -247,6 +246,13 @@ export interface Diagnostics {
 }
 
 /** An AI model to compile + package into .alpmodel (board.schema.json `models`). */
+/** Mirrors `@alp-sdk/core/board/models`'s `DrpaiCompile`. */
+export interface DrpaiCompile {
+  input_shape: string | number[];
+  input_name: string;
+  images: string;
+  product?: string;
+}
 export interface ModelEntry {
   name: string;
   source: string;
@@ -255,7 +261,7 @@ export interface ModelEntry {
   /** Per-backend NPU compile configuration (paths to config/calibration/spec). */
   compile?: {
     deepx_dxm1?: { config: string; calibration: string };
-    drpai?: { spec: string };
+    drpai?: DrpaiCompile;
   };
 }
 
@@ -821,6 +827,7 @@ export interface ManifestSlice {
   reason?: string;
   flash_method?: string;
   flash_args?: Record<string, unknown>;
+  flash_method_resolved?: string;
 }
 export interface ManifestIpcLink {
   name: string;
@@ -852,6 +859,7 @@ export interface SystemManifest {
   ipc: ManifestIpcLink[];
   helper_mcus: ManifestHelperMcu[];
   boot_order: unknown[];
+  ownership?: Record<string, string>;
   storage?: unknown[];
 }
 /**
@@ -962,6 +970,23 @@ export interface MemoryRegion {
   authorityClass: MemoryAuthorityClass;
   cores: string[];
   reason: string | null;
+  /** Fail-closed, computed host-side by `regionTargetLock`. Read through
+   *  `lockOf` in `features/build-plan/targetLock.ts`, which treats an
+   *  absent verdict as locked. */
+  targetLock: MemoryRegionTargetLock;
+}
+
+/** Mirrors `@alp-sdk/core/systemManifest/memoryView`'s `TargetLockField`. */
+export type TargetLockField = "ipc" | "storage";
+
+export interface TargetLock {
+  locked: boolean;
+  reason: string;
+}
+
+export interface MemoryRegionTargetLock {
+  ipc: TargetLock;
+  storage: TargetLock;
 }
 
 export type MemoryConflictKind =
@@ -1075,6 +1100,18 @@ export interface NewProjectPreviewDataMessage {
   files: NewProjectFileChange[] | null;
 }
 
+/**
+ * Host → Configurator (#484): scroll to, focus and briefly highlight one
+ * entry's size field (`ipc[].carve_out_kb` / `storage[].size_kib`), found by
+ * `name`. A name board.yaml does not declare opens the section and says so;
+ * nothing is ever created.
+ */
+export interface ConfiguratorFocusEntryMessage {
+  type: "focusEntry";
+  section: "ipc" | "storage";
+  name: string;
+}
+
 export type ExtToWebviewMessage =
   | StateUpdateMessage
   | SdkReleasesLoadedMessage
@@ -1083,6 +1120,7 @@ export type ExtToWebviewMessage =
   | FocusSectionMessage
   | ConfiguratorRenderMessage
   | ConfiguratorSavedMessage
+  | ConfiguratorFocusEntryMessage
   | DependencyReportMessage
   | HardwareExplorerDataMessage
   | ProjectLocationPickedMessage
@@ -1268,6 +1306,18 @@ export interface CopyTextMessage {
   text: string;
 }
 
+/**
+ * Build Plan → host (#484): open the Board Configurator on the project's
+ * board.yaml at one ipc or storage entry, by `name`. Navigation only — it
+ * carries no value to write; the Configurator remains the one board.yaml
+ * writer. The host resolves the path itself (`collectProjectContext()`).
+ */
+export interface OpenInConfiguratorMessage {
+  type: "openInConfigurator";
+  section: "ipc" | "storage";
+  name: string;
+}
+
 export type WebviewToExtMessage =
   | ReadyMessage
   | RunCommandMessage
@@ -1296,6 +1346,7 @@ export type WebviewToExtMessage =
   | FlashSliceMessage
   | OpenBoardYamlMessage
   | CopyTextMessage
+  | OpenInConfiguratorMessage
   | RequestModelsMessage
   | BuildModelMessage
   | CheckModelFitMessage

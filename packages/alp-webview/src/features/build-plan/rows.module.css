@@ -417,3 +417,12 @@
   border-left-color: var(--border-widget);
   font-family: var(--text-mono);
 }
+
+/* #484: "Edit in Configurator" plus, when the verdict may be old, the one
+   line saying so. Inline text, no chrome. */
+.configLink {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}

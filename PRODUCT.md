@@ -53,7 +53,7 @@ Four mechanisms a neighboring embedded extension could not truthfully copy:
   `board.yaml` and `system-manifest.yaml` validate against *that SDK's own*
   schemas at `<sdkRoot>/metadata/schemas/`. The extension pins no SDK version,
   so this is the only way the two can agree. The vendored copies
-  (`VENDORED_SDK_TAG = "v0.15.0"`) are the fallback for the common first-run
+  (`VENDORED_SDK_TAG = "v0.17.0"`) are the fallback for the common first-run
   state: a customer with no SDK yet.
 - **Native-first shell.** `docs/ADR-native-shell-ux.md` (Accepted, 2026-06-05)
   commits the shell to VS Code primitives — Activity Bar trees, status bar,
@@ -77,13 +77,12 @@ Four mechanisms a neighboring embedded extension could not truthfully copy:
   `overview`, `sidebar-hub`, `setup-flow`, `new-project-flow`,
   `existing-project-flow`, `sdk-manager`, `configurator`, `dependencies`,
   `hardware-explorer`, `build-plan`, `models`.
-- **Target hardware:** 11 E1M SoM SKUs across three families, from
+- **Target hardware:** 13 E1M SoM SKUs across three families, from
   `E1M_MODULES` in `src/ideHub/projectScaffold.ts` —
   `alif-ensemble`: `E1M-AEN301`, `E1M-AEN401`, `E1M-AEN501`, `E1M-AEN601`,
-  `E1M-AEN701`, `E1M-AEN801`;
-  `renesas-rzv2n`: `E1M-V2N101`, `E1M-V2N102`;
-  `renesas-rzv2n-deepx`: `E1M-V2M101`, `E1M-V2M102`;
-  `nxp-imx9`: `E1M-NX9101`.
+  `E1M-AEN701`, `E1M-AEN801`, `E1M-AEN803`;
+  `renesas-rzv2n`: `E1M-V2N101`, `E1M-V2N102`, `E1M-V2N103`;
+  `renesas-rzv2n-deepx`: `E1M-V2M101`, `E1M-V2M102`, `E1M-V2M103`.
 - **Dependencies on other extensions:** `extensionDependencies` are
   `redhat.vscode-yaml` and `marus25.cortex-debug`; `extensionPack` adds
   `ms-vscode.cpptools` and `vadimcn.vscode-lldb`.

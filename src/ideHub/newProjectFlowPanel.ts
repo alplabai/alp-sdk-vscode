@@ -891,7 +891,8 @@ export class NewProjectFlowPanel {
       // works, while `init.som-unsupported` is not — no SoM change helps when
       // the template ships no tree for that family, so the way out is another
       // template or an example. Examples carry their own board.yaml and
-      // scaffold onto any SoM (verified for E1M-NX9101 on the pinned tan).
+      // scaffold onto any SoM (measured on the pinned tan against alp-sdk
+      // v0.16.0-rc1).
       const refusal = classifyInitRefusal(outcome.envelope?.issues);
       if (refusal) {
         // The core layout is refused on a different screen from the other two,

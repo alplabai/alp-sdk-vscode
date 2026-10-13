@@ -1733,7 +1733,7 @@ function consentNotes(item: ConsentItem): string {
  * TIERS ARE THE PRODUCER'S. ADR 0021 §3 asks for three; tan 0.7.0-rc1
  * (tan-cli#1066) carries alp-sdk's tier per `missingPrerequisites[]` entry, and
  * that is the only source — #467 rules out a local table keyed on tool name.
- * Measured on alp-sdk v0.16.0 through v0.17.0-rc2, every reported tier is
+ * Measured on alp-sdk v0.16.0 through v0.17.0, every reported tier is
  * `A`; a row with no producer entry says "not reported" rather than a tier
  * this extension invented.
  */

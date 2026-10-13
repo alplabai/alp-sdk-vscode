@@ -1,4 +1,13 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { deepxPathMissing, drpaiPathMissing } from "./drpaiInputs";
+import { focusKeyOf, useFocusEntry } from "./focusEntry";
 import { Icon } from "../../shared/ui";
 import type {
   BoardConfig,
@@ -6,7 +15,6 @@ import type {
   ConfiguratorViewModel,
   CorePanel,
   LibraryEntry,
-  ModelEntry,
   Ota,
 } from "../../types";
 import { consoleRecommendation } from "./consoleRecommendation";
@@ -140,11 +148,14 @@ export function NumberInput({
   placeholder,
   onChange,
   label,
+  focusKey,
 }: {
   value: string;
   placeholder?: string;
   onChange: (v: string) => void;
   label: string;
+  /** `data-focus-entry`, so "Edit in Configurator" can land here (#484). */
+  focusKey?: string;
 }) {
   const [draft, setDraft] = useState(value);
   const focused = useRef(false);
@@ -158,6 +169,7 @@ export function NumberInput({
       value={draft}
       placeholder={placeholder}
       aria-label={label}
+      data-focus-entry={focusKey}
       onFocus={() => {
         focused.current = true;
       }}
@@ -462,20 +474,6 @@ function ProjectSection({ cfg }: { cfg: UseConfigurator }) {
       <HardwareCard vm={vm} />
     </div>
   );
-}
-
-/** DeepX NPU compile target enabled but missing its config/calibration path(s).
- *  A configurator-time gate so the user fixes it here instead of hitting a
- *  downstream `alp generate` file-not-found. */
-function deepxPathMissing(m: ModelEntry): boolean {
-  const d = m.compile?.deepx_dxm1;
-  return !!d && (!d.config.trim() || !d.calibration.trim());
-}
-
-/** DRP-AI NPU compile target enabled but missing its spec path. */
-function drpaiPathMissing(m: ModelEntry): boolean {
-  const d = m.compile?.drpai;
-  return !!d && !d.spec.trim();
 }
 
 /** The runtime a core naturally runs (its SoM-topology default). */
@@ -1169,6 +1167,10 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
 
       {/* Storage */}
       <AdvCard title="Storage partitions">
+        <p className={styles.secHelp} data-resize-warning="">
+          Resizing a partition can move the partitions after it, and data
+          already on the device may be lost.
+        </p>
         <div className={styles.partList}>
           {storage.length === 0 ? (
             <span className={styles.selEmpty}>no partitions</span>
@@ -1190,6 +1192,7 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                 />
                 <NumberInput
                   label="Partition size KiB"
+                  focusKey={focusKeyOf("storage", p.name)}
                   value={p.size_kib != null ? String(p.size_kib) : ""}
                   placeholder="size KiB"
                   onChange={(v) =>
@@ -1480,6 +1483,7 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                 />
                 <NumberInput
                   label="IPC carve-out KiB"
+                  focusKey={focusKeyOf("ipc", e.name)}
                   value={e.carve_out_kb != null ? String(e.carve_out_kb) : ""}
                   placeholder="KiB"
                   onChange={(v) =>
@@ -1600,8 +1604,8 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                   }`}
                   title={
                     drpaiPathMissing(m)
-                      ? "DRP-AI is enabled but its spec path is empty — fill it in the YAML, or `alp generate` fails with file-not-found."
-                      : "Compile for the Renesas DRP-AI NPU — fill the spec path in YAML"
+                      ? "DRP-AI is enabled but input_shape, input_name or images is empty — fill them in the YAML, or `alp generate` fails with file-not-found."
+                      : "Compile for the Renesas DRP-AI NPU — fill input_shape, input_name and images in YAML"
                   }
                 >
                   <input
@@ -1612,8 +1616,12 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                         const mm = d.models![i];
                         mm.compile = mm.compile || {};
                         if (e.target.checked)
-                          // Schema requires the spec path; seed empty for the user to fill.
-                          mm.compile.drpai = mm.compile.drpai || { spec: "" };
+                          // Schema requires these three; seed empty for the user to fill.
+                          mm.compile.drpai = mm.compile.drpai || {
+                            input_shape: "",
+                            input_name: "",
+                            images: "",
+                          };
                         else {
                           delete mm.compile.drpai;
                           if (!mm.compile.deepx_dxm1) delete mm.compile;
@@ -1734,6 +1742,15 @@ function ReviewSection({ cfg }: { cfg: UseConfigurator }) {
 export function ConfiguratorView() {
   const cfg = useConfigurator();
   const [active, setActive] = useState<ConfiguratorSection>("project");
+  // #484: the Build Plan's "Edit in Configurator" lands in Advanced, where
+  // the IPC and storage entries are edited.
+  const openAdvanced = useCallback(() => setActive("advanced"), []);
+  const focusNotice = useFocusEntry(
+    cfg.board,
+    cfg.loaded,
+    openAdvanced,
+    active,
+  );
   const {
     sdkConnected,
     dirty,
@@ -1831,7 +1848,14 @@ export function ConfiguratorView() {
             </button>
           ))}
         </nav>
-        <main className={styles.main}>{renderSection()}</main>
+        <main className={styles.main}>
+          {focusNotice && (
+            <p className={styles.secHelp} role="status" data-focus-notice="">
+              {focusNotice}
+            </p>
+          )}
+          {renderSection()}
+        </main>
       </div>
 
       {validation.errors.length > 0 && (

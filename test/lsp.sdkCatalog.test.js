@@ -386,7 +386,7 @@ test("som.sku value completion falls back to every shipped SoM without a catalog
   // them. Bump it when the SDK ships a new SoM.
   assert.equal(
     labels.length,
-    11,
+    13,
     "the fallback must offer every SKU the SDK ships, not a subset",
   );
 });

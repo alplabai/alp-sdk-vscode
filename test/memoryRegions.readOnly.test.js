@@ -22,15 +22,14 @@
 // lands it, rather than quietly outliving its reason.
 //
 // #484 PHASE 2 landed read-only backdrop+table rendering FROM `memory[]`
-// (alp-sdk#1365 / alp-sdk#2030) WITHOUT re-vendoring this schema — that
-// stays #662, tag-only. So the tripwire below has NOT fired: the vendored
-// copy still declares the same eight root keys, even though a real
-// manifest from a new-enough SDK now carries a ninth (`memory`). D5 was
-// re-taken against that landed contract anyway, because `write_authority`
-// ships optional on both sides (no schema-required, no default) — the
-// precondition below was never about the KEY existing, only about
-// authority being unambiguous once it does. It still is not, so the map
-// stays read-only.
+// (alp-sdk#1365 / alp-sdk#2030). #662 then re-vendored the schema from
+// alp-sdk v0.17.0, which declares `memory` (and `ownership`) as root
+// keys, so the tripwire below HAS fired and now pins the ten rc2 keys. The
+// D5 decision was re-taken after that vendor: whether a region may be an
+// edit TARGET is the fail-closed `regionTargetLock` (keyed on the row's
+// `status`, `kind` and exact `write_authority`, with an absent authority
+// locked), and the view itself still never writes — "Edit in Configurator"
+// only navigates to the Configurator, the one board.yaml writer.
 //
 // ---------------------------------------------------------------------------
 // WHAT THIS GATE GUARANTEES, AND WHAT IT DELIBERATELY DOES NOT
@@ -38,8 +37,10 @@
 //
 // THE PROPERTY, EXACTLY: no module in the Memory view's import closure
 // imports the host transport module (`src/vscode.ts`), except
-// `blockedFindingActions.ts` — which may send exactly the two message types
-// named below, read from the AST of its own `postMessage(...)` call sites.
+// `blockedFindingActions.ts` — which may send exactly the three message types
+// named below (two act on a finding, one navigates to the Configurator),
+// each with exactly its listed keys, read from the AST of its own
+// `postMessage(...)` call sites.
 //
 // That is NARROWER than "the memory view has no path back to the extension
 // host", which is what this header used to claim, and the gap is not
@@ -199,7 +200,7 @@ const TRANSPORT_MODULE = joinPath(SRC, "vscode.ts");
 /** The one file this gate lets use the host transport at all. The approved
  *  design is "open the declaring file, copy its text, both through host
  *  messages", which needs SOME transport; recording the exception here,
- *  scoped to this one file and the two message kinds below, is how that need
+ *  scoped to this one file and the message kinds below, is how that need
  *  is met without reopening "the memory view has no path back to the host"
  *  for the strip modules this gate exists to keep passive. */
 const SANCTIONED_HOST_FILE = joinPath(
@@ -217,7 +218,22 @@ const SANCTIONED_HOST_FILE = joinPath(
  *  that approved the two entries already here, and say in that review why
  *  the new message does not write memory-map data, the same case made for
  *  these two. */
-const SANCTIONED_MESSAGE_TYPES = ["openBoardYaml", "copyText"];
+const SANCTIONED_MESSAGE_TYPES = [
+  "openBoardYaml",
+  "copyText",
+  "openInConfigurator",
+];
+
+/** The exact property keys each sanctioned message may carry. None names a
+ *  value to write: `openInConfigurator` (#484) is NAVIGATION — it opens the
+ *  Board Configurator, the extension's one board.yaml writer, at an entry
+ *  chosen by section and name, and the reader edits there. A key outside
+ *  these sets (a size, an address, a `board`) is refused at the AST. */
+const SANCTIONED_MESSAGE_KEYS = {
+  openBoardYaml: ["type"],
+  copyText: ["type", "text"],
+  openInConfigurator: ["type", "section", "name"],
+};
 
 /** Names that may never be referenced by a module in the derived set. The
  *  global `acquireVsCodeApi` is the transport's own source, so reaching for
@@ -833,6 +849,14 @@ function checkPostMessageCall(call, file, ast, is) {
         "is refused outright",
     );
     assert.ok(
+      is.isPropertyAssignment(property) ||
+        is.isShorthandPropertyAssignment(property),
+      `${where}: postMessage(...) carries a ` +
+        `${ast.formatSyntaxKind(property.kind)} — only plain \`key: value\` ` +
+        "or shorthand properties are auditable; a method or accessor runs " +
+        "code when the host reads the message",
+    );
+    assert.ok(
       !property.name || !is.isComputedPropertyName(property.name),
       `${where}: postMessage(...) uses a computed property key — a message ` +
         "must be written with plain, literal keys so it can be audited",
@@ -864,6 +888,17 @@ function checkPostMessageCall(call, file, ast, is) {
       "concatenation cannot be audited by this gate and is refused " +
       "outright, whatever it might evaluate to",
   );
+  const keys = argument.properties.map((p) => p.name?.text).sort();
+  const allowedKeys = SANCTIONED_MESSAGE_KEYS[initializer.text];
+  if (allowedKeys) {
+    assert.deepEqual(
+      keys,
+      [...allowedKeys].sort(),
+      `${where}: postMessage({ type: "${initializer.text}" }) carries keys ` +
+        `${JSON.stringify(keys)}, not exactly ${JSON.stringify(allowedKeys)} ` +
+        "— the memory view navigates and copies, it never posts a value to write",
+    );
+  }
   assert.ok(
     SANCTIONED_MESSAGE_TYPES.includes(initializer.text),
     `${where}: postMessage(...) posts message type "${initializer.text}", ` +
@@ -986,13 +1021,15 @@ test("the memory view has no path back to the host, except the one sanctioned ex
   }
 });
 
-test("the memory view offers no editing affordance", async () => {
+test("the memory view navigates, never writes", async () => {
   const graph = await moduleGraph();
   assertNothingWasDropped(graph);
 
   // A control that takes a value is the shape of an edit. Buttons and
-  // keyboard handlers are allowed and present (selecting a strip item);
-  // they change what is DRAWN, never what is stored.
+  // keyboard handlers are allowed and present (selecting a strip item, and
+  // "Edit in Configurator", which opens the Configurator at an entry and
+  // carries no value — see SANCTIONED_MESSAGE_KEYS); they change what is
+  // DRAWN or where the reader is taken, never what is stored.
   for (const file of graph.reachable) {
     const source = read(file);
     for (const forbidden of [
@@ -1023,12 +1060,12 @@ test("the memory view offers no editing affordance", async () => {
   }
 });
 
-test("the contract still cannot tell a customer band from a secure one", () => {
-  // The tripwire. `system-manifest-v1` carries no region view today; when it
-  // grows one, this fails and the read-only decision above must be re-taken
-  // with the new data in hand — including whether `owner` is schema-REQUIRED,
-  // because an omitted owner that renders as unlocked is the same fail-open
-  // the whole design exists to avoid.
+test("system-manifest-v1 root keys are pinned", () => {
+  // The tripwire. `system-manifest-v1` pins its root keys here; when they
+  // change, this fails and the target-lock predicate (`regionTargetLock`)
+  // must be re-checked with the new data in hand — an omitted or unknown
+  // authority that renders as unlocked is the same fail-open the whole
+  // design exists to avoid.
   const schema = JSON.parse(
     read(joinPath(REPO, "schemas", "system-manifest-v1.schema.json")),
   );
@@ -1042,15 +1079,20 @@ test("the contract still cannot tell a customer band from a secure one", () => {
       "hw_info",
       "slices",
       "ipc",
+      "ownership",
       "helper_mcus",
       "boot_order",
       "storage",
+      "memory",
     ],
-    "system-manifest-v1 grew or lost a root key. If a region/memory view " +
-      "landed, re-read #484 D5: the map may become editable only over " +
-      "board.yaml (ipc[].carve_out_kb, storage[].size_kib / offset_kib), " +
-      "never over the SoM preset, and only once `owner` arrives " +
-      "schema-required with no default.",
+    "system-manifest-v1 grew or lost a root key. Re-read #484 D5 before " +
+      "accepting it: whether a memory[] region may be an edit TARGET is " +
+      "decided ONLY by the fail-closed allowlist `regionTargetLock` in " +
+      "packages/alp-core/src/systemManifest/memoryView/targetLock.ts " +
+      "(status ok + write_authority exactly customer_runtime + resolved " +
+      "base/size + a kind that fits the field), pinned by " +
+      "test/memoryRegions.targetLock.test.js. A new root key must not " +
+      "unlock anything by itself — check that predicate still holds.",
   );
   assert.equal(schema.additionalProperties, false);
 });

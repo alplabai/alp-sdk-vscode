@@ -10,14 +10,15 @@
 // are drawn as dashed ghosts after the strip, never dropped: the reason they
 // have no address is the one actionable half, and it is one click away.
 //
-// STILL READ-ONLY. `write_authority` is optional on both `som-preset-v1`
-// and `system-manifest-v1` (promotion to required is alp-sdk#2024), so an
-// editable affordance over a map that cannot always tell `storage` from
-// `atoc` remains a live hazard — writing the ATOC can leave the part
-// unbootable. `test/memoryRegions.readOnly.test.js` fails if this file or
-// anything it imports grows a write path; the two host messages the ghosts
-// send (open the board config, copy a reason) go through the one sanctioned
-// module, `blockedFindingActions.ts`.
+// STILL READ-ONLY. Nothing here writes: a region shows its fail-closed
+// target lock (`targetLock.ts`), and a carve-out or partition offers "Edit
+// in Configurator", which NAVIGATES to the Board Configurator — the one
+// writer of the board config — at that entry. Writing the ATOC can leave
+// the part unbootable, so `test/memoryRegions.readOnly.test.js` fails if
+// this file or anything it imports grows a write path; every host message
+// (open the board config, copy a reason, open the Configurator) goes
+// through the one sanctioned module, `blockedFindingActions.ts`, with its
+// keys pinned at the AST.
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Icon } from "../../shared/ui";
@@ -29,6 +30,8 @@ import {
   openDeclaringFile,
 } from "./blockedFindingActions";
 import { formatBytes, formatOffsetRange, formatRange } from "./format";
+import { lockLine } from "./targetLock";
+import { ConfiguratorLink, configuratorTargetOf } from "./ConfiguratorLink";
 import {
   buildRows,
   buildUnplacedRows,
@@ -134,7 +137,43 @@ function Pair({
 const capitalise = (word: string): string =>
   word.charAt(0).toUpperCase() + word.slice(1);
 
-function RowDetail({ row }: { row: Row }) {
+/** "Edit in Configurator" for a carve-out or partition; nothing otherwise.
+ *  A partition's offset is shown read-only above — pinning or moving it is
+ *  a hand edit in the board config, through the existing Open button. */
+function EntryLinks({
+  id,
+  fresh,
+  withOpen = true,
+}: {
+  id: string;
+  fresh: boolean;
+  /** False where the caller already renders its own Open button. */
+  withOpen?: boolean;
+}) {
+  const target = configuratorTargetOf(id);
+  if (!target) return null;
+  return (
+    <div className={styles.detailActions}>
+      <ConfiguratorLink
+        section={target.section}
+        name={target.name}
+        fresh={fresh}
+      />
+      {withOpen && target.section === "storage" && (
+        <button
+          type="button"
+          className={styles.ghostBtn}
+          title="The offset is not edited from here — hand-edit the board config to change it"
+          onClick={openDeclaringFile}
+        >
+          Open {BOARD_CONFIG_LABEL}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function RowDetail({ row, fresh }: { row: Row; fresh: boolean }) {
   return (
     <dl className={styles.detail} aria-live="polite" data-keep-selection="">
       {row.origin === "span" ? (
@@ -166,6 +205,32 @@ function RowDetail({ row }: { row: Row }) {
         </Pair>
       )}
       {row.authorityText && <Pair label="Authority">{row.authorityText}</Pair>}
+      {/* The host's fail-closed verdict on whether this region may be the
+          target of an edit. Shown, never acted on: no region is edited
+          from this view. */}
+      {row.targetLock && (
+        <Pair label="Target">
+          <span className={styles.lockLines}>
+            {(["ipc", "storage"] as const).map((field) => {
+              const lock = (row.targetLock as NonNullable<Row["targetLock"]>)[
+                field
+              ];
+              return (
+                <span
+                  key={field}
+                  data-target-lock={field}
+                  data-locked={lock.locked}
+                >
+                  {lock.locked && (
+                    <Icon name="lock" size={12} className={styles.lockIcon} />
+                  )}
+                  {lockLine(field, lock)}
+                </span>
+              );
+            })}
+          </span>
+        </Pair>
+      )}
       {/* A slot named after its only core says nothing new in a Cores pair. */}
       {row.cores.length > 0 &&
         !(row.cores.length === 1 && row.cores[0] === row.name) && (
@@ -175,11 +240,12 @@ function RowDetail({ row }: { row: Row }) {
         )}
       {row.note && <Pair label="Note">{row.note}</Pair>}
       {row.reason && <pre className={styles.reason}>{row.reason}</pre>}
+      {row.origin === "span" && <EntryLinks id={row.id} fresh={fresh} />}
     </dl>
   );
 }
 
-function GhostDetail({ ghost }: { ghost: UnplacedRow }) {
+function GhostDetail({ ghost, fresh }: { ghost: UnplacedRow; fresh: boolean }) {
   // Only a board.yaml entry (an IPC carve-out, a storage partition) is the
   // reader's to edit; an unresolved SoM region is declared in the SoM
   // preset, so it gets the reason and no button.
@@ -203,6 +269,9 @@ function GhostDetail({ ghost }: { ghost: UnplacedRow }) {
         </pre>
       ) : (
         <Pair label="Reason">none reported</Pair>
+      )}
+      {declaredInBoardConfig && (
+        <EntryLinks id={ghost.id} fresh={fresh} withOpen={false} />
       )}
       {declaredInBoardConfig && (
         <div className={styles.detailActions}>
@@ -286,6 +355,7 @@ export function MemoryStrip({
   picked: pickedFromOutside,
   onPick,
   onResolve,
+  fresh = false,
 }: {
   memory: MemoryView;
   budgets: Map<string, SliceSize>;
@@ -300,6 +370,9 @@ export function MemoryStrip({
    *  included, so the page can mark the matching core without re-deriving
    *  this component's default. */
   onResolve?: (id: string | null) => void;
+  /** True only when the manifest is known to describe the last build;
+   *  otherwise every "Edit in Configurator" says the verdict may be old. */
+  fresh?: boolean;
 }) {
   const [stripRef, width] = useMeasuredWidth();
   const uid = useId();
@@ -430,6 +503,14 @@ export function MemoryStrip({
                           })}
                     >
                       {r.width >= NAME_MIN_PX && r.name}
+                      {row?.fullyLocked && r.width >= NAME_MIN_PX && (
+                        <Icon
+                          name="lock"
+                          size={10}
+                          className={styles.lockIcon}
+                          aria-label="locked: not an edit target"
+                        />
+                      )}
                       {r.tier && (
                         <span className={styles.tierMark} data-tier={r.tier} />
                       )}
@@ -551,9 +632,9 @@ export function MemoryStrip({
         </p>
       ))}
       {selectedRow ? (
-        <RowDetail row={selectedRow} />
+        <RowDetail row={selectedRow} fresh={fresh} />
       ) : selectedGhost ? (
-        <GhostDetail ghost={selectedGhost} />
+        <GhostDetail ghost={selectedGhost} fresh={fresh} />
       ) : order.length > 0 ? (
         <p className={styles.detailHint}>
           Select a slot or region for its exact range and size.

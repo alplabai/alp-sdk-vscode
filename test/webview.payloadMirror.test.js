@@ -81,7 +81,7 @@ const CONFIGURATOR_REL =
 const BOARD_REL = "packages/alp-core/src/board/models.ts";
 const MANIFEST_REL = "packages/alp-core/src/systemManifest/models.ts";
 const STALENESS_REL = "packages/alp-core/src/systemManifest/staleness.ts";
-const MEMORY_REL = "packages/alp-core/src/systemManifest/memoryView.ts";
+const MEMORY_REL = "packages/alp-core/src/systemManifest/memoryView/types.ts";
 const PLANNER_REL = "packages/alp-core/src/deps/planner.ts";
 const PROVENANCE_REL = "packages/alp-core/src/deps/provenance.ts";
 const STATE_REL = "packages/alp-core/src/deps/state.ts";
@@ -119,6 +119,8 @@ const MODELS = [
   { mirror: "MemoryConflict", file: MEMORY_REL },
   { mirror: "MemoryView", file: MEMORY_REL },
   { mirror: "MemoryRegion", file: MEMORY_REL },
+  { mirror: "TargetLock", file: MEMORY_REL },
+  { mirror: "MemoryRegionTargetLock", file: MEMORY_REL },
 
   // ── board.yaml ──
   { mirror: "BoardConfig", file: BOARD_REL },
@@ -132,6 +134,7 @@ const MODELS = [
   { mirror: "BootSigning", file: BOARD_REL },
   { mirror: "Boot", file: BOARD_REL },
   { mirror: "OtaServer", file: BOARD_REL },
+  { mirror: "DrpaiCompile", file: BOARD_REL },
   { mirror: "Ota", file: BOARD_REL },
   { mirror: "IpcEntry", file: BOARD_REL },
   { mirror: "ModelEntry", file: BOARD_REL },
@@ -257,6 +260,14 @@ const KNOWN_UNMIRRORED = {
     "unstarted PinmuxConfigurator work, which will need a real mirrored model.",
   "BoardConfig.pins?":
     "Pin references, same story as e1m_routes: preserved, never rendered.",
+  "BoardConfig.camera_connectors?":
+    "Camera connectors (alp-sdk v0.17.0). Modelled in core so the C1 " +
+    "round-trip keeps them; no panel renders or edits them, and the mirror's " +
+    "index signature preserves the key.",
+  "BoardConfig.cameras?":
+    "Camera modules fitted to connectors (rc2). Same story as camera_connectors.",
+  "BoardConfig.ownership?":
+    "Per-product core ownership override (rc2). Preserved, not rendered.",
   "BoardConfig.features?":
     "An opaque feature bag (Record<string, unknown>) the SDK resolves. Nothing " +
     "in the webview can meaningfully render an untyped map.",
@@ -322,6 +333,7 @@ const ALIASES = [
   { mirror: "MemorySpanKind", file: MEMORY_REL },
   { mirror: "MemoryAuthorityClass", file: MEMORY_REL },
   { mirror: "MemoryConflictKind", file: MEMORY_REL },
+  { mirror: "TargetLockField", file: MEMORY_REL },
   // The three OPEN unions on `MemoryRegion` (#664). `(string & {})` is a
   // member like any other here: it is what keeps the union open, so a side
   // that drops it starts rejecting values the other side still emits, and a

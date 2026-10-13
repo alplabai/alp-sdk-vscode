@@ -92,6 +92,8 @@ const {
 
 test("chipFamilyForSku maps SKU prefixes to chip family tokens", () => {
   assert.equal(chipFamilyForSku("E1M-AEN801"), "aen");
+  // E1M-NX9101 left the SKU list in alp-sdk v0.17.0.
+  assert.equal(chipFamilyForSku("E1M-NX9101"), undefined);
   assert.equal(chipFamilyForSku("E1M-V2N101"), "v2n");
   assert.equal(chipFamilyForSku("E1M-V2M101"), "v2n-m1");
   assert.equal(chipFamilyForSku("E1M-NOPE"), undefined);
@@ -123,5 +125,21 @@ test("chipsForSom filters chips by the SKU's family token", () => {
     chipsForSom(cat, "E1M-V2M101").map((c) => c.chipId),
     ["lsm6dso", "deepx_dxm1"],
   );
+  assert.deepEqual(chipsForSom(cat, "E1M-NX9101"), []);
   assert.deepEqual(chipsForSom(cat, "E1M-NOPE"), []);
+});
+
+test("chipsForSom matches the family token exactly — no vendor alias survives NX9's retirement", () => {
+  const cat = {
+    soms: [],
+    boards: [],
+    libraries: [],
+    socs: [],
+    chips: [
+      { chipId: "murata_lbee5pl2dl", displayName: "", families: ["nxp-imx9"] },
+    ],
+  };
+  for (const sku of ["E1M-AEN801", "E1M-V2N101", "E1M-V2M101", "E1M-NX9101"]) {
+    assert.deepEqual(chipsForSom(cat, sku), [], sku);
+  }
 });

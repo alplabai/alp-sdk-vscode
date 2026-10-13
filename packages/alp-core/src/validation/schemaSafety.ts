@@ -31,8 +31,8 @@
 /**
  * Largest SDK schema this will serve, in UTF-16 code units.
  *
- * The two real schemas are far smaller (board.schema.json is ~45 KB at
- * v0.16.0, up from ~43 KB at v0.15.0), so the cap only ever fires on
+ * The two real schemas are far smaller (board.schema.json is 58640 bytes at
+ * v0.17.0, up from ~45 KB at v0.16.0), so the cap only ever fires on
  * something that is not a schema.
  * Measured in code units rather than bytes because the caller has already
  * decoded the file; the difference cannot matter three orders of magnitude

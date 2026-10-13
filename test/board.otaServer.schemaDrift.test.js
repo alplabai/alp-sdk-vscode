@@ -12,12 +12,10 @@
 // path emits no CA variable at all. A schema that accepts a TLS pin and
 // silently ignores it is worse than one that rejects it.
 //
-// That removal is NOT here yet, and cannot be: `schemas/board.schema.json` is a
-// BYTE-EXACT vendored copy of alp-sdk `v0.16.0` (`BOARD_SCHEMA_SHA256`), and
-// every alp-sdk TAG still declares the property -- `v0.15.0`, `v0.16.0` and
-// `main` all carry it; only `dev` has the removal. There is no tag to
-// re-vendor from. Editing the copy by hand would break the sha gate and make
-// it misrepresent the tag it names.
+// The removal is here as of the v0.17.0 vendor: `schemas/board.schema.json`
+// is a BYTE-EXACT copy of that tag (`BOARD_SCHEMA_SHA256`), which no longer
+// declares the property, and both TypeScript copies dropped it in the same
+// commit. This gate stays so the next removal fails the same way.
 //
 // ── Why this gate, and not a TODO ──────────────────────────────────────────
 //

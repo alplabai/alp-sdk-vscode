@@ -64,9 +64,10 @@ Click a template card to select it (the card highlights with a blue border).
 
 Select the target E1M module from the grouped list:
 
-- **Alif Ensemble** — E1M-AEN801, AEN301, AEN401, AEN501, AEN601, AEN801
-- **Renesas RZ/V2N** — E1M-V2N101, V2N102, V2M101 (+ DEEPX DX-M1), V2M102
-- **NXP i.MX 9** — E1M-NX9101
+- **Alif Ensemble** — E1M-AEN801, AEN803, AEN301, AEN401, AEN501, AEN601,
+  AEN701
+- **Renesas RZ/V2N** — E1M-V2N101, V2N102, V2N103, V2M101 (+ DEEPX DX-M1),
+  V2M102, V2M103
 
 The selected module determines the `som.sku` value written to `board.yaml`.
 
