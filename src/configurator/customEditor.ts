@@ -24,6 +24,7 @@ import { buildWebviewHtml } from "../ideHub/webviewHtml";
 import { planFailure, planSuccess } from "../notify/service";
 import { notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
+import { readSchemaProvenance } from "../schemaProvenance";
 import { loadSdkCatalogue } from "../sdkCatalogue/vscodeAdapter";
 import { log } from "../util";
 import { CONFIGURATOR_VIEW_TYPE, focusRegistry } from "./focusRegistry";
@@ -102,7 +103,9 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
       );
       const message: ExtToWebviewMessage = {
         type: "configuratorRender",
-        viewModel: buildConfiguratorViewModel(board, catalogue),
+        viewModel: buildConfiguratorViewModel(board, catalogue, {
+          toolchainSupported: readSchemaProvenance().boardDeclaresCoreToolchain,
+        }),
         board,
         boardPath: document.uri.fsPath,
         sdkConnected: catalogue.soms.length > 0,
@@ -133,6 +136,13 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
       // (e.g. the user editing the YAML in a side-by-side text editor).
       if (document.getText() === lastWrittenText) return;
       postRender(parse());
+    });
+
+    // The toolchain field's availability follows the resolved SDK's board
+    // schema, so an `alpSdk.*` setting edit (SDK path) while the editor is open
+    // re-renders with the new answer instead of leaving the old gate up.
+    const configSub = vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("alpSdk")) postRender(parse());
     });
 
     // Reset the webview's dirty baseline whenever the document is saved —
@@ -248,6 +258,7 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
 
     panel.onDidDispose(() => {
       changeSub.dispose();
+      configSub.dispose();
       saveSub.dispose();
     });
   }

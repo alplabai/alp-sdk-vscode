@@ -70,6 +70,16 @@ export interface CoreEntry {
    */
   recipe?: string;
   image?: string;
+  /**
+   * Per-core toolchain override (#314, alp-sdk#964, schema first in v0.17.0-rc1): a
+   * free-form id replacing the SoM preset's `topology.<core_id>.toolchain`
+   * default, carried verbatim into the plan's `slices[].toolchain`. ABSENT
+   * means "keep the derived default" — never write `""`.
+   *
+   * This is the ONLY toolchain input the extension writes. The plan owns
+   * `ZEPHYR_TOOLCHAIN_VARIANT`; see `test/alpCli.planOwnedEnv.test.js`.
+   */
+  toolchain?: string;
   peripherals?: string[];
   extra_libraries?: ExtraLibrary[];
   memory?: CoreMemory;
