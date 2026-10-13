@@ -10,7 +10,7 @@
 // declares nothing. This module reads those keys and nothing else — never
 // `bootstrap.json`, never a table keyed on tool name. tan owns the facts.
 //
-// MEASURED, alp-sdk v0.16.0 through v0.17.0-rc2: 8 entries (`7zip`, `cmake`,
+// MEASURED, alp-sdk v0.16.0 through v0.17.0: 8 entries (`7zip`, `cmake`,
 // `git`, `ninja`, `python`, `python3`, `wget`, `xz`), every one tier `"A"`,
 // `sizeBytes` null on all 8, `licence` null for `xz` and `7zip`. Rows whose
 // tool has no entry (`west`, `zephyrSdk`, `setools`, `jlink`) carry no step

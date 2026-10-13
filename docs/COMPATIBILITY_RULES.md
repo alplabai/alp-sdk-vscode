@@ -181,13 +181,16 @@ long as the consumed contracts hold. Record each assessed SDK release here.
       consults the provider per validation pass and exposes no "revalidate now".
       Every other document picks up the new schema at once.
 
-- **alp-sdk v0.17.0-rc2 — compatible; both schemas re-vendored, `ownership` and
-  `memory` now in the vendored contract** (assessed 2026-10-11, PRE-RELEASE
-  tag). Tag `v0.17.0-rc2`, commit `84a6e0d21`. `vendoredSchemas.ts` stays the
-  single source for the tag and both hashes
-  (board `3a1770d9…`, system-manifest `581d3540…`). Re-vendored ahead of the
-  stable tag so #484's edit half has a contract to build on; re-assess when
-  `v0.17.0` is cut. `SUPPORTED_CLI_VERSION` is **not** moved (stays `0.6.0`).
+- **alp-sdk v0.17.0 — compatible; both schemas re-vendored, `ownership` and
+  `memory` now in the vendored contract** (assessed 2026-10-13, GA tag). Tag
+  `v0.17.0`, commit `84132b98a`. `vendoredSchemas.ts` stays the single source
+  for the tag and both hashes (board `3a1770d9…`, system-manifest `581d3540…`).
+  The re-vendor began at `v0.17.0-rc2` (2026-10-11, commit `84a6e0d21`) so
+  #484's edit half had a contract to build on; the GA tag leaves both schemas
+  byte-identical to rc2 (its only schema change is
+  `on-module-links-v2.schema.json`, which this extension does not vendor), so
+  the hashes did not move. `SUPPORTED_CLI_VERSION` is **not** moved by this
+  entry.
   - `system-manifest-v1.schema.json` (+120/-4). Root keys go **8 → 10**, still
     `additionalProperties: false`: `schema_version, generated_by, hw_info,
     slices, ipc, ownership, helper_mcus, boot_order, storage, memory`. The

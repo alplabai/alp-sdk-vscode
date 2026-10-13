@@ -12,7 +12,7 @@
 // path emits no CA variable at all. A schema that accepts a TLS pin and
 // silently ignores it is worse than one that rejects it.
 //
-// The removal is here as of the v0.17.0-rc2 vendor: `schemas/board.schema.json`
+// The removal is here as of the v0.17.0 vendor: `schemas/board.schema.json`
 // is a BYTE-EXACT copy of that tag (`BOARD_SCHEMA_SHA256`), which no longer
 // declares the property, and both TypeScript copies dropped it in the same
 // commit. This gate stays so the next removal fails the same way.

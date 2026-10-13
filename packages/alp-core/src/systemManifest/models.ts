@@ -82,7 +82,7 @@ export interface ManifestIpcLink {
  *
  * The schema states there is no absent-means-`customer` default, so a reader
  * must distinguish "no policy declared" from every declared value — see
- * `ManifestHelperMcu.flash_policy`. v0.17.0-rc2 ships 13 SoM presets, and
+ * `ManifestHelperMcu.flash_policy`. v0.17.0 ships 13 SoM presets, and
  * every one declares its helper `recovery_only`. Enforcement is tan's
  * (`flash_plan.py::helper_flash_gate`, tan-cli#611) and its ABSENT-policy
  * branch only skips when a method AND a channel are both declared -- which is
@@ -140,7 +140,7 @@ export interface SystemManifest {
   storage?: unknown[];
   /** The SoM's own region table (#484 phase 2) — present only from an
    *  alp-sdk that carries alp-sdk#1365's `memory[]` pane (landed in
-   *  alp-sdk#2030; vendored schema since v0.17.0-rc2) and only
+   *  alp-sdk#2030; vendored schema since v0.17.0) and only
    *  when it resolves at least one region for this SoM. `unknown[]` at
    *  this boundary for the same reason `storage` is: every field is
    *  narrowed from scratch in `memoryView.ts`, never cast. */

@@ -34,7 +34,7 @@ const { E1M_MODULES } = require("../out/ideHub/projectScaffold.js");
  *  `E1M_MODULES` would assert only that one filter equals itself; a catalog
  *  edit that dropped `family` from a Renesas entry would then silently stop
  *  warning and stay green. */
-// V2N103/V2M103 (alp-sdk v0.17.0-rc2) are memory-tier variants of the V2N101
+// V2N103/V2M103 (alp-sdk v0.17.0) are memory-tier variants of the V2N101
 // PCB and silicon, so the same Renesas configure path -- and the same floor --
 // applies; #502 itself measured the first four.
 const BROKEN_SKUS = [

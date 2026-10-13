@@ -21,7 +21,8 @@
   The bundled schemas and the new-project SoM list now match alp-sdk
   v0.17.0, adding `cameras`, `camera_connectors`, `ownership` and the
   `memory` pane, dropping `ota.server.tls_ca_bundle`, `drpai.spec` and
-  E1M-NX9101, and adding E1M-AEN803, E1M-V2N103 and E1M-V2M103.
+  E1M-NX9101, and adding E1M-AEN803, E1M-V2N103 and E1M-V2M103. Developed against
+  v0.17.0-rc2; v0.17.0 leaves both schemas byte-identical.
 
 - **A failed tan command's toast quotes its error again, not an SDK
   advisory.** tan 0.7.0-rc1 lists `sdk.project-pin-unresolved` and
@@ -74,10 +75,8 @@
   Configurator's chip filter and the pinmux loader no longer map `E1M-NX9*`
   to `imx93`, the `nxp-imx9` chip-family alias went with it, and the
   baremetal bootstrap no longer points at NXP MCUXpresso. The SoM picker,
-  the `board.yaml` snippet and their docs still list E1M-NX9101, because
-  they are gated to match the vendored alp-sdk v0.16.0, which still ships
-  its preset; they follow when `alp-sdk-upstream` moves to a release without
-  it.
+  the `board.yaml` snippet and their docs no longer list E1M-NX9101 either,
+  now that `alp-sdk-upstream` has moved to alp-sdk v0.17.0.
 
 - **The Models gallery reads `tan model zoo`'s camelCase envelope (#699).**
   The zoo entry types and the gallery card read `validatedSoms` and

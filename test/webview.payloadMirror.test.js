@@ -261,7 +261,7 @@ const KNOWN_UNMIRRORED = {
   "BoardConfig.pins?":
     "Pin references, same story as e1m_routes: preserved, never rendered.",
   "BoardConfig.camera_connectors?":
-    "Camera connectors (alp-sdk v0.17.0-rc2). Modelled in core so the C1 " +
+    "Camera connectors (alp-sdk v0.17.0). Modelled in core so the C1 " +
     "round-trip keeps them; no panel renders or edits them, and the mirror's " +
     "index signature preserves the key.",
   "BoardConfig.cameras?":
