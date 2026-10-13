@@ -28,7 +28,7 @@ const catalogue = {
     {
       name: "e1m-evk",
       displayName: "",
-      hostsSomFamilies: ["alif-ensemble", "nxp-imx9"],
+      hostsSomFamilies: ["alif-ensemble"],
       populated: { lsm6dso: true },
     },
     {
@@ -98,6 +98,8 @@ test("chipFamilyForSku maps SKU prefixes to chip family tokens", () => {
   assert.equal(chipFamilyForSku("E1M-V2M101"), "v2n-m1");
   assert.equal(chipFamilyForSku("E1M-NOPE"), undefined);
   assert.equal(chipFamilyForSku(""), undefined);
+  // E1M-NX9101 was never produced and alp-sdk removed it (#700).
+  assert.equal(chipFamilyForSku("E1M-NX9101"), undefined);
 });
 
 test("chipsForSom filters chips by the SKU's family token", () => {
@@ -113,7 +115,6 @@ test("chipsForSom filters chips by the SKU's family token", () => {
         families: ["aen", "v2n", "v2n-m1"],
       },
       { chipId: "deepx_dxm1", displayName: "", families: ["v2n-m1"] },
-      { chipId: "imx_only", displayName: "", families: ["imx93"] },
     ],
   };
   assert.deepEqual(

@@ -81,8 +81,22 @@ const BOX_BOTTOM = /^╰─+╯\s*$/;
 const BOX_ROW = /^│(.*)│\s*$/;
 
 /** The BODY of a metavar cell: `PATH`, `CORE_ID`, `HOST:PORT`, `ARGS...`,
- *  `<text|json>`, `<int>`, `{quick,pr,full,release}`. */
-const METAVAR_BODY = /<[^>]*>|\{[^}]*\}|[A-Z][A-Z0-9_:.-]*(?:\.\.\.)?/;
+ *  `<text|json>`, `<int>`, `{quick,pr,full,release}`, `NAME=VALUE`,
+ *  `FILE@ADDR`, `ADDR[:WORDS][@PERIOD-MS]`, `m55_he|m55_hp`. The `=`, `@`,
+ *  inline optional groups and the bare lowercase choice list arrived with tan
+ *  0.7.0-rc1 (`build --define`, `flash --raw`, `flash --watch`,
+ *  `probe --core`); an inline group carries no whitespace, which is what
+ *  keeps it apart from a trailing ` [x>=0]` range constraint, and a bare
+ *  choice list needs at least one `|`, which keeps a lowercase help word out. */
+const METAVAR_BODY =
+  /<[^>]*>|\{[^}]*\}|[a-z0-9_-]+(?:\|[a-z0-9_-]+)+|[A-Z][A-Z0-9_:.=@-]*(?:\[[^\]\s]+\])*(?:\.\.\.)?/;
+
+/** A SHORT-alias cell: rich renders a Click short flag in its OWN column
+ *  between the long name and the metavar (`--define  -D  NAME=VALUE  …`).
+ *  tan 0.7.0-rc1 is the first pin to ship one (`build -D`); before it, every
+ *  box was name / metavar / help and a short cell read as the help column,
+ *  which split the vote below and refused the whole capture. */
+const SHORT_FLAG_CELL = /^-[A-Za-z0-9]$/;
 
 /** A metavar cell: a body, or a body in SQUARE BRACKETS, either optionally
  *  followed by a range constraint (`SECS [x>=0]`). Anything else in that
@@ -133,8 +147,9 @@ export function parseMetavarCell(cell) {
   };
 }
 
-/** `--flag` or `--flag,--alias` — tan renders aliases comma-joined with no
- *  space (`--board,--board-yaml`) and ships no short flags. */
+/** `--flag` or `--flag,--alias` — tan renders long aliases comma-joined with
+ *  no space (`--board,--board-yaml`). A short alias sits in its own column and
+ *  `parseBoxEntries` folds it into the same comma-joined name (`--define,-D`). */
 const FLAG_CELL = /^--?[^\s,]+(?:,\s*--?[^\s,]+)*$/;
 
 /** The wordings tan uses for "this flag parses here and does nothing here".
@@ -174,8 +189,15 @@ const FLAG_CELL = /^--?[^\s,]+(?:,\s*--?[^\s,]+)*$/;
  *  each is wrapped `(?:…)?` so it cannot change WHETHER a flag is inert — a
  *  reworded tail costs a fuller marker, never the detection. */
 const INERT_PATTERNS = [
-  // `tan build`'s twelve (tan-cli#427).
+  // `tan build`'s twelve (tan-cli#427), through 0.6.0.
   /Accepted by other commands; not implemented for `[^`]*` yet(?:\s*\((tan-cli#\d+)\))?/,
+  // `tan build --plan`/`--manifest`/`--manifest-from`/`--no-auto-bootstrap`
+  // from 0.7.0-rc1: "Retired -- superseded by `--plan-from` (tan-cli#427)".
+  // Click still PARSES these and tan refuses them (`build.flag-retired`, exit
+  // 2), so a call site sending one must red exactly as an inert one does —
+  // recording them live would let it through. Anchored at the START of the
+  // help cell so a sentence that merely mentions retirement cannot match.
+  /^Retired --(?:[^(]*\((tan-cli#\d+)\))?/,
   // `tan doctor --build` (tan-cli#290).
   /Accepted for compatibility(?:\s*\((tan-cli#\d+)\))?/,
   // `tan renode --board-yaml`, `tan renode --image-bundle`. The tail stops at
@@ -514,7 +536,15 @@ function findHelpColumn(rows, nameCol, context) {
   const votes = new Map();
   for (const row of rows) {
     if (!row.trim() || indentOf(row) !== nameCol) continue;
-    const cells = [...row.matchAll(/\S(?:.*?\S)?(?=\s\s|$)/g)];
+    // The tail group is LAZY (`??`): a greedy one let a ONE-character cell
+    // (`model --runs N`, new in 0.7.0-rc1) run on into the help text after it,
+    // so that row voted for the metavar column.
+    const all = [...row.matchAll(/\S(?:.*?\S)??(?=\s\s|$)/g)];
+    // A short-alias column is neither metavar nor help; drop it before voting.
+    const cells =
+      all.length >= 3 && SHORT_FLAG_CELL.test(all[1][0])
+        ? [all[0], ...all.slice(2)]
+        : all;
     if (cells.length < 2) continue;
     const isMetavar = cells.length >= 3 && METAVAR_CELL.test(cells[1][0]);
     const helpCell = isMetavar ? cells[2] : cells[1];
@@ -581,7 +611,13 @@ export function parseBoxEntries(rows, context = "a help box") {
     if (indentOf(row) === nameCol) {
       const left = helpCol > nameCol ? row.slice(0, helpCol) : row;
       const right = helpCol > nameCol ? row.slice(helpCol) : "";
-      const tokens = left.trim().split(/\s+/);
+      const split = left.trim().split(/\s+/);
+      // A short alias becomes a second spelling of the same option, so the
+      // gate accepts `-D` exactly where it accepts `--define`.
+      const hasShort = split.length > 1 && SHORT_FLAG_CELL.test(split[1]);
+      const tokens = hasShort
+        ? [`${split[0]},${split[1]}`, ...split.slice(2)]
+        : split;
       // Split on whitespace, so a range constraint (`SECS [x>=0]`) arrives as
       // two tokens and only the first is offered here — the same metavar the
       // cell-level pattern reads when it sees the whole cell.
@@ -686,10 +722,11 @@ export function parseSubcommandValues(argumentEntries) {
     (candidate) => candidate.name.replace(/[[\]]/g, "") === "SUBCOMMAND",
   );
   if (!entry) return [];
-  const enumeration = (entry.help.split(/\.(?:\s|$)/)[0] ?? "").replace(
-    /,?\s+or\s+/g,
-    ", ",
-  );
+  // tan 0.7.0-rc1's `model` writes the list pipe-separated
+  // ("build | doctor | … | ab."), so `|` is normalised the same way.
+  const enumeration = (entry.help.split(/\.(?:\s|$)/)[0] ?? "")
+    .replace(/,?\s+or\s+/g, ", ")
+    .replace(/\s*\|\s*/g, ", ");
   const values = enumeration
     .split(/\s*,\s*/)
     .map((value) => value.trim())

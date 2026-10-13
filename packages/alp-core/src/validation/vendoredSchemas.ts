@@ -19,12 +19,12 @@
  */
 
 /** The alp-sdk tag `schemas/*.json` were vendored from. */
-export const VENDORED_SDK_TAG = "v0.17.0-rc2";
+export const VENDORED_SDK_TAG = "v0.17.0";
 
 /**
  * sha256 of `schemas/board.schema.json` over its LF-normalized bytes.
  *
- * The v0.17.0-rc2 bump is the largest since v0.15.0 and the first to move the
+ * The v0.17.0 bump is the largest since v0.15.0 and the first to move the
  * TOP-LEVEL PROPERTY SET: 21 keys become 24, still `additionalProperties:
  * false`. The three new keys -- `camera_connectors`, `cameras`, `ownership` --
  * are added to `BOARD_KEY_ORDER` (`packages/alp-core/src/board/models.ts`) so
@@ -43,7 +43,7 @@ export const BOARD_SCHEMA_SHA256 =
  * sha256 of `schemas/system-manifest-v1.schema.json` over its LF-normalized
  * bytes.
  *
- * v0.17.0-rc2 grows the ROOT property set from eight keys to ten, still
+ * v0.17.0 grows the ROOT property set from eight keys to ten, still
  * `additionalProperties: false`: `ownership` (resolved `{instance: core}`
  * map, omitted when the SoM has no assignable resources) and `memory` (the
  * resolved region pane, rows closed with required name/source/kind/status).
@@ -63,7 +63,7 @@ export type VendoredSchemaId = "board" | "systemManifest";
  *
  * `vendored` is relative to the extension install root; `sdk` is relative to a
  * resolved `<sdkRoot>`. Both files are present at every alp-sdk tag this
- * extension supports (verified v0.11.0..v0.17.0-rc2), but the reader still treats
+ * extension supports (verified v0.11.0..v0.17.0), but the reader still treats
  * a missing file as a normal outcome rather than an error -- a customer can
  * point `alpSdk.sdkPath` at any directory.
  */

@@ -23,7 +23,7 @@
 //
 // #484 PHASE 2 landed read-only backdrop+table rendering FROM `memory[]`
 // (alp-sdk#1365 / alp-sdk#2030). #662 then re-vendored the schema from
-// alp-sdk v0.17.0-rc2, which declares `memory` (and `ownership`) as root
+// alp-sdk v0.17.0, which declares `memory` (and `ownership`) as root
 // keys, so the tripwire below HAS fired and now pins the ten rc2 keys. The
 // D5 decision was re-taken after that vendor: whether a region may be an
 // edit TARGET is the fail-closed `regionTargetLock` (keyed on the row's

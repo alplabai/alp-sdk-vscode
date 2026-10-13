@@ -83,6 +83,7 @@ const MANIFEST_REL = "packages/alp-core/src/systemManifest/models.ts";
 const STALENESS_REL = "packages/alp-core/src/systemManifest/staleness.ts";
 const MEMORY_REL = "packages/alp-core/src/systemManifest/memoryView/types.ts";
 const PLANNER_REL = "packages/alp-core/src/deps/planner.ts";
+const PROVENANCE_REL = "packages/alp-core/src/deps/provenance.ts";
 const STATE_REL = "packages/alp-core/src/deps/state.ts";
 const CATALOGUE_REL = "packages/alp-core/src/sdkCatalogue/models.ts";
 const SDK_REL = "packages/alp-core/src/sdk/models.ts";
@@ -141,6 +142,8 @@ const MODELS = [
   // ── dependency panel ──
   { mirror: "DependencyLatest", file: PLANNER_REL },
   { mirror: "DependencyCommandStep", file: PLANNER_REL },
+  // #467: carried on every step, so the mirror declares it too.
+  { mirror: "PrerequisiteProvenance", file: PROVENANCE_REL },
   // The two `DependencyAction` union members (#603, third review, major 4):
   // named interfaces specifically so this walk reaches them — the union type
   // itself is invisible to it, which is how `omittedTools` grew on both
@@ -258,7 +261,7 @@ const KNOWN_UNMIRRORED = {
   "BoardConfig.pins?":
     "Pin references, same story as e1m_routes: preserved, never rendered.",
   "BoardConfig.camera_connectors?":
-    "Camera connectors (alp-sdk v0.17.0-rc2). Modelled in core so the C1 " +
+    "Camera connectors (alp-sdk v0.17.0). Modelled in core so the C1 " +
     "round-trip keeps them; no panel renders or edits them, and the mirror's " +
     "index signature preserves the key.",
   "BoardConfig.cameras?":

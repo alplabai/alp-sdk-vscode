@@ -426,6 +426,20 @@ export type DependencyActionEffect = "install" | "open-docs" | "bootstrap";
 export interface DependencyCommandStep {
   tool: string;
   command: string;
+  /** The step's artifact provenance (#467). The view does not render it —
+   *  the consent screen is host-side — so it is declared for completeness. */
+  provenance: PrerequisiteProvenance;
+}
+
+/** Mirrors `PrerequisiteProvenance` in packages/alp-core/src/deps/
+ *  provenance.ts: tan's four provenance keys, normalised host-side. */
+export interface PrerequisiteProvenance {
+  tier: string | null;
+  licence: string | null;
+  sourceUrl: string | null;
+  sizeBytes: number | null;
+  /** Present (`true`) only when the tier was sent but unreadable. */
+  tierUnreadable?: true;
 }
 
 /**
@@ -464,6 +478,10 @@ export interface DependencyFixAction {
   fixId: ToolchainFixId;
   effect: DependencyActionEffect;
   title: string;
+  /** Present (`true`) only when the doctor run reported the bootstrap
+   *  manifest unreadable, so no provenance backs this row: the consent screen
+   *  then starts it unchecked. A fix row has no steps to carry it. */
+  tierUnreadable?: true;
 }
 
 /**
@@ -718,7 +736,7 @@ export interface ModelAbResultMessage {
   issues: { code: string; severity: string; message: string }[];
 }
 
-/** A single curated zoo entry from `tan model zoo --board` — `runs_here` is
+/** A single curated zoo entry from `tan model zoo --board` — `runsHere` is
  *  `true`/`false` when the board's `som.sku` was resolvable, `null` when it
  *  wasn't (e.g. no board.yaml yet) — the MVP shows every entry badged rather
  *  than silently hiding the ones it can't validate. */
@@ -727,8 +745,8 @@ export interface ZooEntry {
   task: string;
   description: string;
   license: string;
-  validated_soms: string[];
-  runs_here: boolean | null;
+  validatedSoms: string[];
+  runsHere: boolean | null;
 }
 
 /** Zoo gallery state from `tan model zoo --board`. */

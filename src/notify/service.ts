@@ -10,6 +10,7 @@
 // classified `CliOutcome` is in scope, so an exit-2 validation failure reads
 // like a crash — `planCliOutcome` reads `outcome.severity` and nothing else.
 
+import { headlineIssue } from "@alp-sdk/core/cli/headlineIssue";
 import { CliOutcome } from "../alpCli/models";
 import { cliUsageErrorDump } from "../alpCli/service";
 import {
@@ -311,7 +312,7 @@ export function planCliOutcome(
   //    plan so nothing after issues[0] is unreachable (the old `summarize()`
   //    dropped the rest, and no surface ever showed them).
   const issues = outcome.envelope.issues ?? [];
-  const first = issues[0]?.message;
+  const first = headlineIssue(issues)?.message;
   const more = Math.max(0, issues.length - 1);
   const generic = outcome.ok
     ? `${ctx.operation} finished.`

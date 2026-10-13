@@ -61,6 +61,10 @@ const {
 
 const { SUPPORTED_CLI_VERSION } = require("../out/alpCli/service.js");
 
+/** A `tan model` verb no tan implements. From 0.7.0-rc1 every verb the panel
+ *  drives is real, so the "not implemented" branch is exercised with this. */
+const UNIMPLEMENTED_VERB = "quantise";
+
 // The whole file rests on the recording describing the binary we pin. The
 // surface contract asserts this first for the same reason; repeated here
 // because these constants are read by the SHIPPED extension, so a snapshot
@@ -94,23 +98,30 @@ test("MODEL_SUBCOMMANDS is exactly what the pinned tan implements", () => {
   );
 });
 
-test("`build` is implemented, and the panel spawns exactly it", () => {
+test("every verb the panel drives is implemented, and a made-up one is not", () => {
   // The control under the assertion above: an empty snapshot and an empty
   // constant compare equal, and every derived alarm would then fire on a CLI
-  // that implements everything.
-  assert.equal(
-    isModelSubcommandImplemented("build"),
-    true,
-    "`tan model build` is the ONE subcommand this pin implements — if this " +
-      "is false, either the recording is empty or the constant is",
-  );
-  for (const verb of ["list", "doctor", "check", "zoo", "add", "prep", "run"]) {
+  // that implements everything. From 0.7.0-rc1 the pin implements all nine
+  // (tan-cli#674); through 0.6.0 it was `build` alone.
+  for (const verb of [
+    "build",
+    "list",
+    "doctor",
+    "check",
+    "zoo",
+    "add",
+    "prep",
+    "run",
+    "ab",
+  ]) {
     assert.equal(
       isModelSubcommandImplemented(verb),
-      false,
-      `\`tan model ${verb}\` is not implemented at this pin (${MODEL_SURFACE_REF})`,
+      true,
+      `\`tan model ${verb}\` is implemented at this pin — if this is false, ` +
+        "either the recording is empty or the constant is",
     );
   }
+  assert.equal(isModelSubcommandImplemented(UNIMPLEMENTED_VERB), false);
 });
 
 test("`tan model` has no `--model` option, which is why per-model build is not expressible", () => {
@@ -128,7 +139,7 @@ test("`tan model` has no `--model` option, which is why per-model build is not e
 });
 
 test("the synthesised refusal is the shape the webview classifier reads", () => {
-  const outcome = unsupportedModelSubcommand("zoo");
+  const outcome = unsupportedModelSubcommand(UNIMPLEMENTED_VERB);
 
   assert.equal(outcome.ok, false);
   assert.equal(outcome.exitCode, 1);
@@ -147,7 +158,7 @@ test("the synthesised refusal is the shape the webview classifier reads", () => 
   const message = outcome.envelope.issues[0].message;
   assert.match(
     message,
-    /zoo/,
+    new RegExp(UNIMPLEMENTED_VERB),
     "the refusal must name the subcommand asked for",
   );
   assert.ok(
@@ -245,18 +256,16 @@ test("the deferred message says at least what the CLI's own refusal said", () =>
   // The regression bar, stated as an assertion rather than as a hope. tan's
   // own text, measured: "`tan build --plan` is deferred and not available in
   // this build (see https://github.com/alplabai/tan-cli/issues/427)."
-  // `--no-auto-bootstrap`, NOT `--plan`. tan-cli#427 closed by retiring
-  // `--plan`/`--manifest`/`--manifest-from` and left this one deferred
-  // (`build_cmd.py:202  _DEFERRED_FLAGS = ("--no-auto-bootstrap",)`), so it is
-  // the flag that still exercises this branch — and it stays the right subject
-  // across the next re-pin, since it is deferred on tan's `dev` too.
+  // `--no-auto-bootstrap`, the last flag tan-cli#427 left deferred through
+  // 0.6.0 — 0.7.0-rc1 retired it too, so no `build` flag is deferred any more
+  // and the bar is now held by the retired wording.
   const message = deferredBuildOptionMessage("--no-auto-bootstrap");
   assert.match(
     message,
     /tan build --no-auto-bootstrap/,
     "the flag, as a command line",
   );
-  assert.match(message, /deferred/);
+  assert.match(message, /is retired/);
   assert.match(message, /tan-cli#427/);
   assert.match(
     message,
@@ -345,7 +354,7 @@ test("a `model` verb this pin DOES implement is not described as missing", () =>
 
 test("a `model` verb this pin does NOT implement still reports the gap", () => {
   // The direction that must not regress while fixing the other one.
-  const outcome = unsupportedModelSubcommand("zoo");
+  const outcome = unsupportedModelSubcommand(UNIMPLEMENTED_VERB);
   assert.match(outcome.message, /is not implemented/);
   assert.equal(
     outcome.envelope.issues[0].code,
@@ -399,15 +408,17 @@ test("a `build` flag this pin does NOT defer is not described as deferred", () =
   );
 });
 
-test("a `build` flag this pin DOES defer still reads as deferred", () => {
-  // Not `DEFERRED_BUILD_OPTIONS` any more: all three of its entries were
-  // RETIRED by tan-cli#427, so reading them here would assert the wrong half
-  // and leave the deferred branch untested.
-  assert.match(
-    deferredBuildOptionMessage("--no-auto-bootstrap"),
-    /is deferred in tan/,
-    "the one flag #427 left deferred",
+test("no `build` flag is deferred at this pin, and none reads as deferred", () => {
+  // 0.7.0-rc1 retired the last one (`--no-auto-bootstrap`) and made
+  // `--pristine` live, so the `deferred` kind has no instance. A message that
+  // still said "deferred" about any build flag would promise a wait.
+  const deferred = Object.entries(INERT_OPTIONS).filter(
+    ([, kind]) => kind === "deferred",
   );
+  assert.deepEqual(deferred, []);
+  for (const flag of Object.keys(RETIRED_BUILD_OPTIONS)) {
+    assert.doesNotMatch(deferredBuildOptionMessage(flag), /is deferred in tan/);
+  }
 });
 
 test("the panel's three flags read as RETIRED, naming a replacement", () => {
@@ -441,17 +452,27 @@ test("the panel's three flags read as RETIRED, naming a replacement", () => {
 test("every flag the panel wanted is one tan actually retired", () => {
   // Two hand-maintained lists that must agree is the drift this repo keeps
   // getting bitten by. Pinned rather than merged: they answer different
-  // questions (what the PANEL wanted vs what TAN retired) and only happen to
-  // coincide today. The day they stop, this is a red rather than a message
-  // that quietly falls back to the deferred wording.
-  const retired = Object.keys(RETIRED_BUILD_OPTIONS).sort();
+  // questions (what the PANEL wanted vs what TAN retired). Every flag the
+  // panel wanted is retired; tan also retired `--no-auto-bootstrap`, which
+  // the panel never sent. And every retired entry must be what the RECORDING
+  // calls retired, in both directions, so the replacement text cannot outlive
+  // the refusal it explains.
+  for (const flag of DEFERRED_BUILD_OPTIONS) {
+    assert.ok(
+      flag in RETIRED_BUILD_OPTIONS,
+      `${flag} is one the panel wanted and RETIRED_BUILD_OPTIONS has no ` +
+        "replacement for it",
+    );
+  }
+  const recordedRetired = Object.entries(INERT_OPTIONS)
+    .filter(([key, kind]) => kind === "retired" && key.startsWith("build "))
+    .map(([key]) => key.slice("build ".length))
+    .sort();
   assert.deepEqual(
-    [...DEFERRED_BUILD_OPTIONS].sort(),
-    retired,
-    "DEFERRED_BUILD_OPTIONS and RETIRED_BUILD_OPTIONS disagree. If tan " +
-      "retired a flag the panel never wanted, drop it from the panel's list; " +
-      "if the panel wants one tan did NOT retire, it is deferred and needs no " +
-      "entry here.",
+    Object.keys(RETIRED_BUILD_OPTIONS).sort(),
+    recordedRetired,
+    "RETIRED_BUILD_OPTIONS and the retired `build` flags in INERT_OPTIONS " +
+      "disagree",
   );
   for (const [flag, replacement] of Object.entries(RETIRED_BUILD_OPTIONS)) {
     assert.ok(
@@ -499,12 +520,12 @@ test("every inert option in the recording is classified, and nothing else is", (
   );
 });
 
-test("a `deferred` classification is backed by the recording's own upstream ref", () => {
-  // The kinds are declared, not derived — but `deferred` is the one kind that
-  // makes a promise, so it is the one the recording can still check. Every
-  // other kind is permanent and has no ref to check against.
+test("a `deferred` or `retired` classification is backed by the recording's own upstream ref", () => {
+  // The kinds are declared, not derived — but `deferred` makes a promise and
+  // `retired` withdraws one, so they are the two the recording can still
+  // check. Every other kind is permanent and has no ref to check against.
   for (const [key, kind] of Object.entries(INERT_OPTIONS)) {
-    if (kind !== "deferred") continue;
+    if (kind !== "deferred" && kind !== "retired") continue;
     const [command, flag] = key.split(" ");
     assert.equal(
       SNAPSHOT.commands?.[command]?.options?.[flag]?.ref,
@@ -540,17 +561,21 @@ test("the classification is not vacuous: all four kinds are present", () => {
   // `faultdecode`, `inspect`, `pinmux`, `support-bundle` and `trace` — none
   // `deferred` (the recording's `ref` is null on every one, so none names an
   // upstream issue to wait for).
+  //
+  // 51 -> 43 is the 0.7.0-rc1 re-pin: `build`'s twelve `deferred` flags became
+  // four `retired` ones (`--pristine` went live, and the seven global
+  // ergonomics flags left `build` altogether), so `deferred` has no instance.
   const kinds = new Set(Object.values(INERT_OPTIONS));
   assert.deepEqual(
     [...kinds].sort(),
-    ["compatibility", "deferred", "not-applicable", "parity"],
+    ["compatibility", "not-applicable", "parity", "retired"],
     "the kinds present in the table changed — update this list and say why " +
       "here and in test/tan.inertKind.test.js rather than widening it blindly",
   );
   assert.equal(
     Object.keys(INERT_OPTIONS).length,
-    51,
-    "the recording carries 51 inert options at tan 0.6.0 (15 before #602's " +
+    43,
+    "the recording carries 43 inert options at tan 0.7.0-rc1 (51 at 0.6.0, 15 before #602's " +
       "fetch.mjs fix taught the fetcher to read a command's own description, " +
       "not just its options table); every one of them must be classified",
   );
@@ -567,13 +592,13 @@ test("the classification is not vacuous: all four kinds are present", () => {
   );
 });
 
-test("the three flags the Build Plan panel sends are deferred, not merely inert", () => {
+test("the three flags the Build Plan panel would send are retired, not merely inert", () => {
   // DEFERRED_BUILD_OPTIONS is the panel's list; INERT_OPTIONS is the binary's.
-  // This is where the two must agree, and where a `--plan` reclassified as
-  // `compatibility` (never arriving) would have to change #541's plan rather
-  // than pass quietly.
+  // This is where the two must agree. Through 0.6.0 all three were
+  // `deferred`; from 0.7.0-rc1 the recording calls them `retired`, so the
+  // panel must neither spawn them nor promise they are coming.
   for (const flag of DEFERRED_BUILD_OPTIONS) {
-    assert.equal(inertKindOf("build", flag), "deferred", flag);
-    assert.equal(isBuildOptionDeferred(flag), true, flag);
+    assert.equal(inertKindOf("build", flag), "retired", flag);
+    assert.equal(isBuildOptionDeferred(flag), false, flag);
   }
 });

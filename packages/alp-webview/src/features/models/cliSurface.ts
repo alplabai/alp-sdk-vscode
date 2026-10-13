@@ -4,13 +4,16 @@
 //
 // The panel is a thin `runAlpCommand(["model", ...])` shell over NINE
 // subcommands — list, doctor, check, zoo, add, prep, run, ab, build.
-// RE-MEASURED against the pinned CLI (`SUPPORTED_CLI_VERSION = "0.6.0"`, GA —
-// this used to read `0.6.0-rc1`, and the whole surface was re-run rather than
-// relabelled, per #609): the GA tag still implements exactly one of the nine,
-// `build`.
 //
-// The other eight do NOT refuse identically, and an earlier revision of this
-// header said they did. Measured per subcommand, GA:
+// AT THE 0.7.0-rc1 PIN ALL NINE EXIST (tan-cli#674), so the pinned binary never
+// sends `model.unknown-subcommand` for any of them, and `unsupportedModel-
+// Subcommand` answers with the extension-owned `models.panel-not-wired`
+// instead. This classifier stays because an older tan reached through
+// `alpSdk.cliPath` or PATH still refuses exactly as tabled below.
+//
+// Through tan 0.6.0 GA (measured, per #609) the pin implemented one of the
+// nine, `build`, and the other eight did NOT refuse identically. Measured per
+// subcommand, 0.6.0 GA:
 //
 //   tan model list                    exit 1  model.unknown-subcommand
 //   tan model doctor                  exit 1  model.unknown-subcommand
@@ -79,6 +82,22 @@ export interface CliIssue {
 /** tan's code for "that subcommand does not exist in this build". */
 export const UNKNOWN_SUBCOMMAND_CODE = "model.unknown-subcommand";
 
+/**
+ * The EXTENSION-owned code (`MODEL_SUBCOMMAND_UNWIRED_CODE` in
+ * `src/alpCli/pinnedSurface.ts`, not a tan code) for "this tan can, this panel
+ * does not call it yet" (#524). At the 0.7.0-rc1 pin every subcommand exists,
+ * so this is the code the panel actually receives; it is the same capability
+ * gap to the customer as tan's own refusal, so it is classified identically
+ * (info notice, action buttons disabled) rather than as a red alarm. Held as a
+ * literal because the webview package cannot import extension code; a test
+ * pins the two spellings together.
+ */
+export const PANEL_NOT_WIRED_CODE = "models.panel-not-wired";
+
+function isUnsupportedCode(code: string): boolean {
+  return code === UNKNOWN_SUBCOMMAND_CODE || code === PANEL_NOT_WIRED_CODE;
+}
+
 function isIssue(value: unknown): value is CliIssue {
   return (
     typeof value === "object" &&
@@ -88,7 +107,8 @@ function isIssue(value: unknown): value is CliIssue {
 }
 
 /**
- * The first unknown-subcommand refusal in `issues`, or `null` when there is
+ * The first unknown-subcommand refusal (tan's, or the extension's
+ * `models.panel-not-wired`) in `issues`, or `null` when there is
  * none. Presence of one is what turns the panel from "something failed" into
  * "this CLI does not do this yet" — a different message and a different tone.
  *
@@ -116,7 +136,7 @@ function isIssue(value: unknown): value is CliIssue {
 export function findUnsupportedSubcommand(issues: unknown): CliIssue | null {
   if (!Array.isArray(issues)) return null;
   for (const issue of issues) {
-    if (isIssue(issue) && issue.code === UNKNOWN_SUBCOMMAND_CODE) return issue;
+    if (isIssue(issue) && isUnsupportedCode(issue.code)) return issue;
   }
   return null;
 }
@@ -133,6 +153,6 @@ export function findUnsupportedSubcommand(issues: unknown): CliIssue | null {
 export function withoutUnsupportedSubcommand(issues: unknown): CliIssue[] {
   if (!Array.isArray(issues)) return [];
   return issues.filter(
-    (issue) => !(isIssue(issue) && issue.code === UNKNOWN_SUBCOMMAND_CODE),
+    (issue) => !(isIssue(issue) && isUnsupportedCode(issue.code)),
   ) as CliIssue[];
 }

@@ -263,7 +263,9 @@ export async function installShellCompletion(
 
   // Every issue reaches the channel on every outcome, ok or not — this
   // repo's own rule (see `loader.ts`'s `logIssues`). `planCliOutcome` below
-  // only ever puts `issues[0]` on the toast.
+  // only ever puts ONE issue on the toast: the headline from
+  // `@alp-sdk/core/cli/headlineIssue` — the first `severity: "error"` issue,
+  // else `issues[0]`.
   for (const issue of outcome.envelope?.issues ?? []) {
     log(`[completion] ${issue.severity}: ${issue.message}`);
   }
