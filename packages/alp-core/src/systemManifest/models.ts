@@ -140,7 +140,7 @@ export interface SystemManifest {
   storage?: unknown[];
   /** The SoM's own region table (#484 phase 2) — present only from an
    *  alp-sdk that carries alp-sdk#1365's `memory[]` pane (landed in
-   *  alp-sdk#2030; vendored schema since v0.17.0) and only
+   *  alp-sdk#2030; vendored schema since v0.17.0-rc2) and only
    *  when it resolves at least one region for this SoM. `unknown[]` at
    *  this boundary for the same reason `storage` is: every field is
    *  narrowed from scratch in `memoryView.ts`, never cast. */
