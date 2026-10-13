@@ -1,0 +1,67 @@
+{
+  "command": "flash",
+  "ok": false,
+  "exitCode": 1,
+  "project": {
+    "root": "/home/dev/proj",
+    "boardYaml": null
+  },
+  "sdk": {
+    "root": "/home/dev/alp-sdk",
+    "sourceTier": "sdkRootFlag"
+  },
+  "data": {
+    "schemaVersion": "1",
+    "buildRoot": "/home/dev/proj/./build",
+    "entries": [
+      {
+        "kind": "slice",
+        "id": "m55_he",
+        "method": "alif_mram_jlink",
+        "status": "failed",
+        "rc": 1,
+        "message": "alif_mram_jlink[m55_he]: this write REPLACES the ENTIRE ATOC, and Flow D has no SE-UART channel to enumerate what is resident first -- so any boot entry already in MRAM that this ATOC does not name (an A32 boot chain, an HP app, a diagnostic image) is silently DELISTED, and the SES still prints \"[SES] ATOC ok\" afterwards. Refusing until that is acknowledged: pass --atoc-unqueryable on the command line, or set flash_args.atoc_unqueryable: true in the manifest. --confirm does NOT acknowledge this -- it only means \"yes, write\" (alp-sdk#2025, tan-cli#1252). This ATOC names: DEVICE, m55_he, m55_hp. The resident table is UNKNOWN (Flow D cannot enumerate it): every entry not named above will be delisted. Read it first over the SE-UART (`maintenance -opt gettoc`) and list it in flash_args.resident_atoc_entries to have tan name them.",
+        "methodDeclared": "zephyr_west_flash",
+        "probe": {
+          "source": "unpinned",
+          "serial": null,
+          "usbPath": null,
+          "visibleProbes": null,
+          "sysfsRoot": "/sys/bus/usb/devices",
+          "isolation": "verified-single-emulator"
+        },
+        "jlink": {
+          "binary": "/usr/local/bin/JLinkExe",
+          "binarySource": "PATH"
+        }
+      },
+      {
+        "kind": "slice",
+        "id": "m55_hp",
+        "method": "alif_mram_jlink",
+        "status": "failed",
+        "rc": 1,
+        "message": "m55_hp: written in the combined ATOC led by m55_he (failed): alif_mram_jlink[m55_he]: this write REPLACES the ENTIRE ATOC, and Flow D has no SE-UART channel to enumerate what is resident first -- so any boot entry already in MRAM that this ATOC does not name (an A32 boot chain, an HP app, a diagnostic image) is silently DELISTED, and the SES still prints \"[SES] ATOC ok\" afterwards. Refusing until that is acknowledged: pass --atoc-unqueryable on the command line, or set flash_args.atoc_unqueryable: true in the manifest. --confirm does NOT acknowledge this -- it only means \"yes, write\" (alp-sdk#2025, tan-cli#1252). This ATOC names: DEVICE, m55_he, m55_hp. The resident table is UNKNOWN (Flow D cannot enumerate it): every entry not named above will be delisted. Read it first over the SE-UART (`maintenance -opt gettoc`) and list it in flash_args.resident_atoc_entries to have tan name them."
+      },
+      {
+        "kind": "helper",
+        "id": "cc3501e_otp",
+        "status": "skipped",
+        "rc": -1,
+        "message": "flash: helper 'cc3501e_otp' is programmed by Alp Lab in production and is customer-flashable only to recover a bricked device, with Alp Lab-supplied binaries; skipping. Field updates arrive over update_channel: alp_ota_spi_otp. To recover a bricked device deliberately, re-run with `--helper cc3501e_otp --recover`."
+      }
+    ]
+  },
+  "issues": [
+    {
+      "code": "flash.probe-unverified",
+      "severity": "warning",
+      "message": "m55_he: this host cannot enumerate USB devices, so the J-Link selection was not cross-checked against sysfs; only the spawn-time ShowEmuList verification stands between this run and a wrong probe."
+    },
+    {
+      "code": "flash.atoc-replacement-unacknowledged",
+      "severity": "error",
+      "message": "alif_mram_jlink[m55_he]: this write REPLACES the ENTIRE ATOC, and Flow D has no SE-UART channel to enumerate what is resident first -- so any boot entry already in MRAM that this ATOC does not name (an A32 boot chain, an HP app, a diagnostic image) is silently DELISTED, and the SES still prints \"[SES] ATOC ok\" afterwards. Refusing until that is acknowledged: pass --atoc-unqueryable on the command line, or set flash_args.atoc_unqueryable: true in the manifest. --confirm does NOT acknowledge this -- it only means \"yes, write\" (alp-sdk#2025, tan-cli#1252). This ATOC names: DEVICE, m55_he, m55_hp. The resident table is UNKNOWN (Flow D cannot enumerate it): every entry not named above will be delisted. Read it first over the SE-UART (`maintenance -opt gettoc`) and list it in flash_args.resident_atoc_entries to have tan name them."
+    }
+  ]
+}
