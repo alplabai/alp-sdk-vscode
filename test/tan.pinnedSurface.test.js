@@ -101,8 +101,8 @@ test("MODEL_SUBCOMMANDS is exactly what the pinned tan implements", () => {
 test("every verb the panel drives is implemented, and a made-up one is not", () => {
   // The control under the assertion above: an empty snapshot and an empty
   // constant compare equal, and every derived alarm would then fire on a CLI
-  // that implements everything. From 0.7.0-rc1 the pin implements all nine
-  // (tan-cli#674); through 0.6.0 it was `build` alone.
+  // that implements everything. The 0.7.0 pin implements all nine
+  // (tan-cli#674, since 0.7.0-rc1); through 0.6.0 it was `build` alone.
   for (const verb of [
     "build",
     "list",
@@ -562,7 +562,7 @@ test("the classification is not vacuous: all four kinds are present", () => {
   // `deferred` (the recording's `ref` is null on every one, so none names an
   // upstream issue to wait for).
   //
-  // 51 -> 43 is the 0.7.0-rc1 re-pin: `build`'s twelve `deferred` flags became
+  // 51 -> 43 is the 0.7.0-rc1 re-pin (carried unchanged into 0.7.0): `build`'s twelve `deferred` flags became
   // four `retired` ones (`--pristine` went live, and the seven global
   // ergonomics flags left `build` altogether), so `deferred` has no instance.
   const kinds = new Set(Object.values(INERT_OPTIONS));
@@ -575,7 +575,7 @@ test("the classification is not vacuous: all four kinds are present", () => {
   assert.equal(
     Object.keys(INERT_OPTIONS).length,
     43,
-    "the recording carries 43 inert options at tan 0.7.0-rc1 (51 at 0.6.0, 15 before #602's " +
+    "the recording carries 43 inert options at tan 0.7.0 (51 at 0.6.0, 15 before #602's " +
       "fetch.mjs fix taught the fetcher to read a command's own description, " +
       "not just its options table); every one of them must be classified",
   );
@@ -595,7 +595,7 @@ test("the classification is not vacuous: all four kinds are present", () => {
 test("the three flags the Build Plan panel would send are retired, not merely inert", () => {
   // DEFERRED_BUILD_OPTIONS is the panel's list; INERT_OPTIONS is the binary's.
   // This is where the two must agree. Through 0.6.0 all three were
-  // `deferred`; from 0.7.0-rc1 the recording calls them `retired`, so the
+  // `deferred`; from 0.7.0-rc1 on the recording calls them `retired`, so the
   // panel must neither spawn them nor promise they are coming.
   for (const flag of DEFERRED_BUILD_OPTIONS) {
     assert.equal(inertKindOf("build", flag), "retired", flag);

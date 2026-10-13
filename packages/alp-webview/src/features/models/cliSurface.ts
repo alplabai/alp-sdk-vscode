@@ -5,7 +5,7 @@
 // The panel is a thin `runAlpCommand(["model", ...])` shell over NINE
 // subcommands — list, doctor, check, zoo, add, prep, run, ab, build.
 //
-// AT THE 0.7.0-rc1 PIN ALL NINE EXIST (tan-cli#674), so the pinned binary never
+// AT THE 0.7.0 PIN ALL NINE EXIST (tan-cli#674), so the pinned binary never
 // sends `model.unknown-subcommand` for any of them, and `unsupportedModel-
 // Subcommand` answers with the extension-owned `models.panel-not-wired`
 // instead. This classifier stays because an older tan reached through
@@ -85,7 +85,7 @@ export const UNKNOWN_SUBCOMMAND_CODE = "model.unknown-subcommand";
 /**
  * The EXTENSION-owned code (`MODEL_SUBCOMMAND_UNWIRED_CODE` in
  * `src/alpCli/pinnedSurface.ts`, not a tan code) for "this tan can, this panel
- * does not call it yet" (#524). At the 0.7.0-rc1 pin every subcommand exists,
+ * does not call it yet" (#524). At the 0.7.0 pin every subcommand exists,
  * so this is the code the panel actually receives; it is the same capability
  * gap to the customer as tan's own refusal, so it is classified identically
  * (info notice, action buttons disabled) rather than as a red alarm. Held as a

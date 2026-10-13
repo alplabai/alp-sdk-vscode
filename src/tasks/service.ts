@@ -87,13 +87,13 @@ export function taskLabel(spec: TaskSpec): string {
  * `test/golden/tan-surface/surface.json` is the one place that answers "what
  * does the pinned tan accept", it is regenerated when the pin moves, and
  * `test/tan.surfaceContract.test.js` checks every argv this tree sends
- * against it. (At 0.7.0-rc1 it lists nineteen spellings for `build`, four of
+ * against it. (At 0.7.0 it lists nineteen spellings for `build`, four of
  * them retired and inert — `--plan`, `--manifest`, `--manifest-from`,
  * `--no-auto-bootstrap`, tan-cli#427. Read the file, not this count.)
  *
  * What survives as a CLAIM, because it is what these three labels rest on:
  * there is no per-target build selector. `--target` is no longer an option of
- * `build` itself — at 0.7.0-rc1 it exists only as a ROOT-level global — and
+ * `build` itself — at 0.7.0 it exists only as a ROOT-level global — and
  * `--core ID` IS a `build` option. Neither distinguishes the three labels:
  * `--core ID` only scopes `-D` to that core's Zephyr slice(s) (repeatable,
  * default every Zephyr slice); it does not narrow what builds. Do not reach

@@ -155,7 +155,7 @@ extension maps six `platform/arch` keys and `linux/arm` is not one of them, so
 download-on-demand refuses with:
 
 ```text
-No prebuilt tan CLI for linux/arm — tan v0.7.0-rc1 publishes binaries for other platforms only, so this is a limit of that release rather than a broken install. Point alpSdk.cliPath at a tan you build locally or install with pip.
+No prebuilt tan CLI for linux/arm — tan v0.7.0 publishes binaries for other platforms only, so this is a limit of that release rather than a broken install. Point alpSdk.cliPath at a tan you build locally or install with pip.
 ```
 
 **Building `tan` from source does not rescue this host.** The Zephyr SDK
@@ -235,7 +235,7 @@ surface is hidden. Restoring it is #524.
 The design is unchanged: the panel is a thin GUI over the `tan model …` command
 family — it shells `tan` and renders the JSON envelope, it does not re-implement
 any model logic. The family is no longer what is missing: the pinned tan
-0.7.0-rc1 implements all nine subcommands the panel drives — `build`, `list`,
+0.7.0 implements all nine subcommands the panel drives — `build`, `list`,
 `doctor`, `check`, `zoo`, `add`, `prep`, `run` and `ab` (tan-cli#674). The
 panel calls `build`, `zoo` and `add` (#699); for the rest it reports that the
 capability arrived and the panel is not wired to it yet. Rewiring them, and restoring the

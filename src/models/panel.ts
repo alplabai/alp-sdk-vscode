@@ -6,7 +6,7 @@
 // shaping + progress plumbing.
 //
 // THREE of the nine subcommands this panel presents are spawned for real:
-// `build`, `zoo` and `add`. The pinned tan (0.7.0-rc1) implements all nine
+// `build`, `zoo` and `add`. The pinned tan (0.7.0) implements all nine
 // (tan-cli#674), and `zoo`/`add` came back with the pin that carries
 // tan-cli#1338 (#699), reading the camelCase envelope that release emits
 // (`entries[].validatedSoms`/`runsHere`, `data.added`).
