@@ -158,6 +158,24 @@ export function classifyFlashOutcome(env: FlashEnvelope | null): FlashOutcome {
   };
 }
 
+/**
+ * The envelope as log lines, one per entry then one per issue, so the output
+ * channel shows what `tan flash` said even though the run was read as JSON
+ * rather than streamed as text. tan's words are printed verbatim.
+ */
+export function formatFlashEnvelopeLog(env: FlashEnvelope): string {
+  const lines = env.entries.map(
+    (e) =>
+      `[${e.status}] ${e.kind} ${e.id}` +
+      (e.method !== null ? ` (${e.method})` : "") +
+      `: ${e.message}`,
+  );
+  for (const issue of env.issues) {
+    lines.push(`${issue.severity} ${issue.code}: ${issue.message}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
 export interface FlashOutcomeText {
   severity: "info" | "warning" | "error";
   /** Customer-facing; carries no absolute path, so the presenter keeps it. */

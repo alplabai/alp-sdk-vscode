@@ -36,7 +36,7 @@ test("streams through the login shell so the child keeps the user's PATH", () =>
   assert.match(ADAPTER, /"-lc"/);
   // The command string comes from the pure service, not a second hand-rolled
   // quoter in the adapter.
-  assert.match(ADAPTER, /posixLoginShellCommand\(command, args, cwd\)/);
+  assert.match(ADAPTER, /posixLoginShellCommand\(command, args, cwd, unset\)/);
   assert.match(streamed, /shellRun\s*\?\s*cp\.spawn\(shellRun\.file/);
 });
 

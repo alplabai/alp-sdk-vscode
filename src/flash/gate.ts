@@ -44,63 +44,108 @@
 //      the file. There is nothing to consent to, and a bare `tan flash` sent
 //      anyway would be a blind write.
 //   7. Otherwise: the manifest is parsed, `planFlashConsent` says what is in
-//      scope and what the scope skips, and a BLOCKING modal asks. Its accept
+//      scope and what the scope skips, tan is asked for a `--dry-run` preview
+//      of the same argv (below), and a BLOCKING modal asks. Its accept
 //      re-reads the manifest and proves it BYTE-IDENTICAL to the one the
-//      dialog described; only then is the argv released to the spawn.
+//      dialog described. A Flow D flash then asks a SECOND modal, and the
+//      manifest is proved unchanged again after it; only then is the argv
+//      released to the spawn.
 //
-// ── WHY THIS GATE DOES NOT ADD `--confirm` ────────────────────────────────
+// ── WHAT THE GATE DOES ABOUT `--confirm` (tan 0.7.0) ──────────────────────
 //
-// Because the write it is protecting against does not need `--confirm` to
-// happen. The first draft of this gate armed the flag on accept, reasoning
-// from tan's own `--help`: "every slice is previewed, nothing is written, and
-// the run exits non-zero". That help text is unqualified and wrong for half
-// the backends, which is `tan-cli#796` — closed COMPLETED, docs-only.
+// Whether `--confirm` writes anything depends on the backend tan RESOLVES, and
+// on AEN that is not the one the manifest names. Every planner-emitted Zephyr
+// slice carries `flash_args.jlink_flash_device`, which `select_flash_method`
+// (tan `python/tan/core/flash_plan.py`) routes to Flow D (`alif_mram_jlink`)
+// whatever `flash_method: zephyr_west_flash` says. Flow D computes
+// `planning_only = dry_run or not confirm`, so the old gate — a modal that
+// then released the argv UNCHANGED — made the AEN "Write to Device" button
+// preview and write nothing.
 //
-// Measured in tan v0.6.0 (GA), unchanged from the pinned rc1:
+//   backend tan resolves     bare `tan flash`   with `--confirm`
+//   zephyr_west_flash        writes             no change
+//   baremetal_cmake_flash    writes             no change
+//   yocto_wic*               preview            a real bmaptool/dd to a HOST
+//                                               block device
+//   xspi_flashwriter         preview            hard refusal ("HW-gated")
+//   alif_mram_jlink          preview            writes, but REFUSED with
+//                                               `flash.atoc-replacement-
+//                                               unacknowledged` unless
+//                                               `--atoc-unqueryable` too
 //
-//   flash_plan.py:1232   planning_only: bool = False        (dataclass default)
-//   flash_plan.py:2206   plan_yocto_wic          sets it
-//   flash_plan.py:2334   plan_xspi_flashwriter   sets it
-//   flash_plan.py:2848   plan_alif_mram_jlink    sets it
+// So the gate asks tan. After the checks above it runs the same argv with
+// `--dry-run --format json` and reads each entry's RESOLVED backend off the
+// envelope (`@alp-sdk/core/flash/arming`) — it does NOT re-implement
+// `select_flash_method`. Then:
 //
-// `plan_swd_probe` (:1502), `plan_zephyr_west_flash` (:2081) and
-// `plan_baremetal_cmake_flash` (:2110) never set it, and `flash_cmd.py:2892`
-// skips the spawn only on `plan.planning_only or ctx.dry_run`. tan's own
-// comment at `flash_cmd.py:2951` states the consequence outright: "a real run
-// always reaches this line unconfirmed". So on a Zephyr slice the board is
-// programmed by a bare `tan flash`, with no `--confirm` anywhere.
+//   - `--confirm` is added only when every entry that has a confirm gate
+//     resolves to Flow D. A yocto or xspi entry is never armed; beside a Flow D
+//     entry it refuses the whole run, with nothing written.
+//   - A Flow D write replaces the WHOLE ATOC boot table and delists every
+//     resident entry the new one does not name, and nothing can enumerate
+//     what is resident. That is a second consent, on its own modal, shown after
+//     the first accept and never implied by it; tan's own replacement text is
+//     printed verbatim. `--atoc-unqueryable` is added only after it.
+//   - A per-slice (`--core`) Flow D flash is refused when the preview shows a
+//     sibling it would delist; the whole-board Flash is the way to flash it.
+//   - The run that follows is `--format json`, because the verdict has to come
+//     from the envelope: at 0.7.0 "every entry planned" exits 1 and a mixed run
+//     exits 0, so the exit code cannot say whether anything was written.
 //
-// That inverts what the flag is for here. Adding it cannot close the
-// unconfirmed-write hole — those three backends do not read it — and adding it
-// WOULD turn the other three from a preview into a real write, which is a
-// change no gate in this repo can verify: nothing here builds a project, let
-// alone programs silicon. Arming is therefore split off and bench-gated
-// (#540); this gate ships the half that can only ever PREVENT a write.
+// `ALP_FLASH_FORCE=1` and `flash_args.confirm`/`flash_args.atoc_unqueryable`
+// are the other ways to arm tan's gate. NONE is used: the first would put the
+// consent in an environment variable that outlives the click, the others in a
+// generated file the next `tan build` rewrites. The runner also strips
+// `ALP_FLASH_FORCE` from a flash dispatch's environment, so a profile that
+// exports it cannot arm tan behind a modal that was never shown.
 //
-// `armFlashArgv` stays in core, tested and unused by this file, because that
-// is the half the bench pass turns on.
+// SETOOLS: a confirmed Flow D write signs with an install the OPERATOR named
+// (`--setools-dir`, then `SETOOLS_DIR`); one named only by the manifest is
+// refused (`flash.setools-untrusted-source`). The gate passes `SETOOLS_DIR`
+// from the extension host's environment as `--setools-dir` and otherwise lets
+// tan's own refusal reach the customer, as the preview that precedes the modal
+// fails the same way.
 //
-// `ALP_FLASH_FORCE=1` and `flash_args.confirm: true` are the two other ways to
-// arm tan's gate. NEITHER is used, here or anywhere: the first would put the
-// consent in an environment variable that outlives the click, and the second
-// would write it into a generated file the next `tan build` rewrites.
+// ── DO-NOT-MERGE-WITHOUT-A-BENCH ──────────────────────────────────────────
+//
+// Nothing in this repo programs silicon, and the arming above turns a button
+// that has only ever previewed into one that rewrites an Alif boot table. The
+// unit tests prove the rule against real tan 0.7.0 captures and the argv the
+// gate emits; they cannot prove a write lands. Merge only after the AEN E8
+// bench checklist in the PR has been run on hardware.
 
 import { createHash } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 
 import {
+  acknowledgeAtocReplacement,
+  armFlashArgv,
   FLASH_COMMAND,
   isFlashArgv,
+  jsonFlashArgv,
+  previewFlashArgv,
   readFlashArgv,
+  withoutCore,
+  withSetoolsDir,
 } from "@alp-sdk/core/flash/argv";
+import { decideFlashArming } from "@alp-sdk/core/flash/arming";
 import { planFlashConsent } from "@alp-sdk/core/flash/consent";
 import {
+  atocReplacementMessage,
+  describeAtocReplacement,
   describeFlashConsent,
+  describeFlashPreview,
   flashConsentMessage,
 } from "@alp-sdk/core/flash/describe";
+import {
+  classifyBackend,
+  parseFlashEnvelope,
+  type FlashEnvelope,
+} from "@alp-sdk/core/flash/envelope";
 import { parseSystemManifest } from "@alp-sdk/core/systemManifest/service";
 
+import type { NotifyAction } from "../notify/models";
 import { planConfirm, planFailure, planSuccess } from "../notify/service";
 import { notify, notifyAsync } from "../notify/vscodeAdapter";
 import { log } from "../util";
@@ -118,7 +163,7 @@ const RUN_FLASH_FLAG = "--flash";
 /**
  * Where `tan flash` reads its manifest from.
  *
- * MEASURED, on the pinned 0.6.0 binary, `tan flash --help` verbatim:
+ * MEASURED, on the 0.7.0 binary (unchanged from 0.6.0), `tan flash --help`:
  *
  *   APP_PATH      <str>  Application source directory (default: the current
  *                        directory). `build_root` defaults to <APP_PATH>/build.
@@ -152,13 +197,18 @@ export function flashManifestPath(
 }
 
 /** Refuse, without ever using the word "failed": nothing ran. */
-function refuse(cause: string, detail?: string): null {
+function refuse(
+  cause: string,
+  detail?: string,
+  actions?: NotifyAction[],
+): null {
   notifyAsync(
     planFailure({
       severity: "warning",
       operation: "Alp Flash",
       cause,
       detail,
+      actions,
     }),
   );
   return null;
@@ -172,9 +222,56 @@ function digestOf(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
+/** What the gate needs from the runner that it cannot do itself. */
+export interface FlashGateDeps {
+  /**
+   * Run `tan <args>` (the caller prepends `--sdk-root` and resolves the
+   * binary) in `cwd` and return its stdout, or null when tan could not be
+   * run at all. The exit status is deliberately not returned: a `--dry-run`
+   * preview that found a problem exits non-zero and still prints the envelope
+   * the gate needs to read.
+   */
+  runTan(args: readonly string[], cwd: string): Promise<string | null>;
+}
+
+/** A dispatch the gate let through. */
+export interface FlashApproval {
+  /** The argv to spawn. */
+  argv: string[];
+  /**
+   * The run's stdout is a `tan flash --format json` envelope and the verdict
+   * is to be read from it (`@alp-sdk/core/flash/outcome`), not from the exit
+   * status. False for every argv that is not a gated flash.
+   */
+  readEnvelope: boolean;
+}
+
+const passThrough = (args: readonly string[]): FlashApproval => ({
+  argv: [...args],
+  readEnvelope: false,
+});
+
+/** `SETOOLS_DIR` from the extension host's environment, or null. */
+function setoolsDirFromEnv(): string | null {
+  const value = process.env.SETOOLS_DIR?.trim();
+  return value ? value : null;
+}
+
+/** Ask tan to preview `args` and read what it says. Null when it cannot. */
+async function previewOf(
+  deps: FlashGateDeps,
+  args: readonly string[],
+  cwd: string,
+): Promise<FlashEnvelope | null> {
+  const stdout = await deps.runTan(previewFlashArgv(args), cwd);
+  if (stdout === null) return null;
+  return parseFlashEnvelope(stdout);
+}
+
 /**
- * Gate a dispatch. Returns the argv to spawn — `--confirm` added when, and
- * only when, a human accepted the modal — or `null` when nothing may be
+ * Gate a dispatch. Returns what to spawn — `--confirm` (and, after its own
+ * modal, `--atoc-unqueryable`) added when, and only when, tan's preview says
+ * the flag applies and a human accepted — or `null` when nothing may be
  * spawned at all.
  *
  * A non-flash argv is returned unchanged after one left-to-right scan of the
@@ -184,7 +281,8 @@ function digestOf(text: string): string {
 export async function gateFlashDispatch(
   args: readonly string[],
   cwd: string | undefined,
-): Promise<string[] | null> {
+  deps?: FlashGateDeps,
+): Promise<FlashApproval | null> {
   if (!isFlashArgv(args)) {
     // The command reader could not resolve this argv to `flash`, yet the word
     // is in it. The one way that happens is a root-position flag whose arity
@@ -209,7 +307,11 @@ export async function gateFlashDispatch(
     // extractor on `site.command === "flash"`, so a future `run --flash` site
     // would stay green while writing a board unasked. Refused rather than
     // gated: this repo has no manifest-shaped consent for a run that also
-    // builds, and refusing costs a command nobody has written yet.
+    // builds, and refusing costs a command nobody has written yet. It could
+    // not be gated honestly even with one: `tan run` rebuilds the project
+    // before it flashes, so the manifest a modal described is not the one the
+    // write would use, and the preview that arming depends on would describe a
+    // build that has not happened yet.
     if (args.includes(RUN_FLASH_FLAG)) {
       return refuse(
         "Alp does not flash from `tan run`. `--flash` programs the board as a " +
@@ -218,7 +320,7 @@ export async function gateFlashDispatch(
         args.join(" "),
       );
     }
-    return [...args];
+    return passThrough(args);
   }
 
   const argv = readFlashArgv(args);
@@ -227,7 +329,18 @@ export async function gateFlashDispatch(
   // and arming it would turn a preview into a write.
   if (argv.isDryRun) {
     log("[flash] --dry-run: previewing only, the confirm gate is not armed");
-    return [...args];
+    return passThrough(args);
+  }
+
+  // Alp adds these two itself, each after the modal that earns it. A call site
+  // that wrote either has consented on the customer's behalf.
+  if (argv.isArmed || argv.hasAtocUnqueryable) {
+    return refuse(
+      "Alp did not run this flash: it already carries --confirm or " +
+        "--atoc-unqueryable. Alp adds those itself, after asking, so nothing " +
+        "was written.",
+      args.join(" "),
+    );
   }
 
   if (argv.isRecovery) {
@@ -322,6 +435,60 @@ export async function gateFlashDispatch(
   }
 
   const digest = digestOf(text);
+
+  // Everything below needs tan's own account of what this argv would do, and
+  // the runner that can supply it. A caller that offers none cannot arm and
+  // cannot be shown a truthful modal either.
+  if (!deps) {
+    return refuse(
+      "Alp cannot preview this flash, so nothing was written. Flash again " +
+        "from the Alp panel.",
+    );
+  }
+
+  // The SETOOLS install tan will be pointed at. An operator-named source is
+  // the only kind tan executes for a write; the extension host's
+  // `SETOOLS_DIR` is one, so it is forwarded as the flag, which also outranks
+  // whatever the login shell's profile exports.
+  const setools = argv.setoolsDir ?? setoolsDirFromEnv();
+  const baseArgs =
+    setools !== null && argv.setoolsDir === null
+      ? withSetoolsDir(args, setools)
+      : [...args];
+
+  const preview = await previewOf(deps, baseArgs, cwd);
+  if (preview === null) {
+    return refuse(
+      "tan returned no preview for this flash, so Alp cannot say what it " +
+        "would write and nothing was written.",
+      args.join(" "),
+    );
+  }
+
+  // `--core` leaves the other slices out of the ATOC a Flow D write signs, and
+  // tan reports that only in prose. Ask for the whole board too, so the gate
+  // can compare structured entry lists rather than parse a sentence.
+  const isScoped = argv.coreId !== null;
+  const needsWholeBoard =
+    isScoped &&
+    preview.entries.some((e) => classifyBackend(e.method) === "flow-d");
+  const wholeBoard = needsWholeBoard
+    ? await previewOf(deps, withoutCore(baseArgs), cwd)
+    : null;
+
+  const decision = decideFlashArming(preview, {
+    scoped: isScoped,
+    wholeBoard,
+  });
+  if (decision.kind === "refuse") {
+    log(`[flash] refused (${decision.reason}): ${decision.detail ?? ""}`);
+    return refuse(
+      decision.message,
+      decision.detail,
+      decision.detail === undefined ? undefined : [{ id: "showOutput" }],
+    );
+  }
+
   // ONE action, so "Write to Device" is the first button and therefore the
   // Enter-key default of the modal — a deliberate decision, not an inherited
   // one. VS Code's modal API gives no way to focus Cancel: `MessageItem`'s
@@ -339,20 +506,15 @@ export async function gateFlashDispatch(
   const picked = await notify(
     planConfirm({
       message: flashConsentMessage(plan),
-      modalDetail: describeFlashConsent(plan, {
-        projectDir: cwd,
-        manifestPath,
-      }),
+      modalDetail: describeFlashConsent(
+        plan,
+        { projectDir: cwd, manifestPath },
+        describeFlashPreview(preview, decision),
+      ),
       confirm: { id: "flashDevice" },
     }),
   );
-  if (picked !== "flashDevice") {
-    log("[flash] consent declined — nothing spawned, nothing written");
-    notifyAsync(
-      planSuccess("Alp Flash cancelled — nothing was written to the device."),
-    );
-    return null;
-  }
+  if (picked !== "flashDevice") return cancelled("consent declined");
 
   // Consent is a SNAPSHOT, and the modal can sit open for as long as the
   // customer leaves it open. tan re-reads this file at spawn, and the run-name
@@ -363,31 +525,71 @@ export async function gateFlashDispatch(
   // goes on; anything else (including the file having vanished) is refused
   // with an instruction to re-open the dialog, never silently re-planned
   // against the new contents.
-  let after: string;
-  try {
-    after = fs.readFileSync(manifestPath, "utf8");
-  } catch (error) {
-    return refuse(
-      `This project's ${MANIFEST_FILE} disappeared while the confirmation ` +
-        "was open, so nothing was written. Build the project again, then " +
-        "flash.",
-      `${manifestPath}: ${error instanceof Error ? error.message : String(error)}`,
+  if (!manifestUnchanged(manifestPath, digest)) return null;
+
+  let argvOut: string[] = [...args];
+  if (decision.kind === "arm-flow-d") {
+    // The SECOND consent, on its own modal and never implied by the first.
+    // The first said "write these slices"; this one says "and the boot table
+    // those slices live in is replaced, so anything resident that the new
+    // table does not name is delisted" — a different act, with a different
+    // button, and one tan itself refuses without a separate acknowledgement.
+    // There is no "don't ask again": the resident table differs per board and
+    // per day.
+    const replace = await notify(
+      planConfirm({
+        message: atocReplacementMessage(plan.sku),
+        modalDetail: describeAtocReplacement(decision),
+        confirm: { id: "replaceBootTable" },
+      }),
     );
-  }
-  if (digestOf(after) !== digest) {
-    return refuse(
-      `This project's ${MANIFEST_FILE} changed while the confirmation was ` +
-        "open, so nothing was written — what you approved is not what would " +
-        "have been programmed. Run the flash again to see the current list.",
-      manifestPath,
-    );
+    if (replace !== "replaceBootTable") {
+      return cancelled("boot-table replacement declined");
+    }
+    // Proved again: the second modal can sit open as long as the first.
+    if (!manifestUnchanged(manifestPath, digest)) return null;
+
+    argvOut = acknowledgeAtocReplacement(armFlashArgv(baseArgs));
   }
 
   log(
-    `[flash] consent granted for ${plan.targets.length} target(s) in ${manifestPath}`,
+    `[flash] consent granted for ${plan.targets.length} target(s) in ${manifestPath}` +
+      (decision.kind === "arm-flow-d" ? " (Flow D armed)" : " (not armed)"),
   );
-  // Returned UNCHANGED. See the header: `--confirm` is not what makes the
-  // write happen on three of the six backends, and adding it here would make
-  // the other three write for the first time — a bench-gated change (#540).
-  return [...args];
+  return { argv: jsonFlashArgv(argvOut), readEnvelope: true };
+
+  /** Decline: say so, spawn nothing. "Cancelled", never a failure. */
+  function cancelled(why: string): null {
+    log(`[flash] ${why} — nothing spawned, nothing written`);
+    notifyAsync(
+      planSuccess("Alp Flash cancelled — nothing was written to the device."),
+    );
+    return null;
+  }
+
+  /** The manifest the modal described is still the manifest on disk. */
+  function manifestUnchanged(file: string, expected: string): boolean {
+    let after: string;
+    try {
+      after = fs.readFileSync(file, "utf8");
+    } catch (error) {
+      refuse(
+        `This project's ${MANIFEST_FILE} disappeared while the confirmation ` +
+          "was open, so nothing was written. Build the project again, then " +
+          "flash.",
+        `${file}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return false;
+    }
+    if (digestOf(after) !== expected) {
+      refuse(
+        `This project's ${MANIFEST_FILE} changed while the confirmation was ` +
+          "open, so nothing was written — what you approved is not what would " +
+          "have been programmed. Run the flash again to see the current list.",
+        file,
+      );
+      return false;
+    }
+    return true;
+  }
 }

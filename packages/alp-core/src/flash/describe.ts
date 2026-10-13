@@ -12,7 +12,9 @@
 // irreversible write, and a rounded or abbreviated identifier is how the wrong
 // module gets flashed.
 
+import type { FlashArmingDecision } from "./arming";
 import type { FlashConsentPlan, FlashEntry } from "./consent";
+import { classifyBackend, type FlashEnvelope } from "./envelope";
 
 /** Where the run will happen, for the lines the manifest cannot supply. */
 export interface FlashConsentContext {
@@ -96,6 +98,7 @@ export function flashConsentMessage(plan: FlashConsentPlan): string {
 export function describeFlashConsent(
   plan: FlashConsentPlan,
   context: FlashConsentContext,
+  preview?: string,
 ): string {
   const sections: string[] = [
     [
@@ -128,6 +131,8 @@ export function describeFlashConsent(
     );
   }
 
+  if (preview !== undefined) sections.push(preview);
+
   sections.push(
     "Flashing OVERWRITES the target's non-volatile memory. It cannot be " +
       "undone, and programming the wrong slice or the wrong board can leave " +
@@ -135,4 +140,74 @@ export function describeFlashConsent(
   );
 
   return sections.join("\n\n");
+}
+
+type ProceedingDecision = Exclude<FlashArmingDecision, { kind: "refuse" }>;
+
+function setoolsLine(
+  decision: Extract<FlashArmingDecision, { kind: "arm-flow-d" }>,
+): string {
+  return (
+    `SETOOLS that signs the boot table: ${decision.setoolsDir ?? NOT_STATED}` +
+    (decision.setoolsSource !== null ? ` (via ${decision.setoolsSource})` : "")
+  );
+}
+
+/**
+ * What tan's OWN preview says each entry resolves to, and whether this run
+ * writes it — the half of the first modal the manifest cannot supply. The
+ * manifest says `zephyr_west_flash` for an AEN slice that tan then writes
+ * through J-Link; the reader is owed the second name.
+ */
+export function describeFlashPreview(
+  preview: FlashEnvelope,
+  decision: ProceedingDecision,
+): string {
+  const lines = ["What tan will do (from its own preview of this run):"];
+  for (const entry of preview.entries) {
+    if (entry.status === "skipped") continue;
+    const declared =
+      entry.methodDeclared !== null && entry.methodDeclared !== entry.method
+        ? ` (the manifest declares ${entry.methodDeclared})`
+        : "";
+    const backend = classifyBackend(entry.method);
+    const isWritten =
+      backend === "writes" ||
+      (backend === "flow-d" && decision.kind === "arm-flow-d");
+    lines.push(
+      `  ${entry.kind} ${entry.id} — tan resolves ${entry.method ?? NOT_STATED}` +
+        `${declared}: ${isWritten ? "written" : "previewed only, NOT written"}`,
+    );
+  }
+  if (decision.kind === "arm-flow-d") {
+    lines.push(
+      "Alp arms tan's confirm gate for this one run only; nothing is stored " +
+        "in the manifest or the environment.",
+      setoolsLine(decision),
+      "You will be asked a second time before the boot table is replaced.",
+    );
+  }
+  return lines.join("\n");
+}
+
+/** The second modal's message. */
+export function atocReplacementMessage(sku: string): string {
+  return `Alp: replace the boot table on ${sku.length > 0 ? sku : "this device"}?`;
+}
+
+/**
+ * The second modal's detail: tan's replacement warning, verbatim, then which
+ * SETOOLS signs. Nothing is added to tan's sentence — it already names the
+ * entries the ATOC carries, says the resident table is unknown, and says the
+ * SES will still print `[SES] ATOC ok`.
+ */
+export function describeAtocReplacement(
+  decision: Extract<FlashArmingDecision, { kind: "arm-flow-d" }>,
+): string {
+  return [
+    decision.replacementNote,
+    setoolsLine(decision),
+    "Continuing replaces the boot table on the device. Nothing is written " +
+      "unless you continue.",
+  ].join("\n\n");
 }

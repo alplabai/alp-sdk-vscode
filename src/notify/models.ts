@@ -72,6 +72,11 @@ export type ActionId =
   // pick must come back so `gateFlashDispatch` can gate the spawn on it — an
   // action the presenter ran itself would leave the gate with nothing to read.
   | "flashDevice"
+  // The SECOND consent of a Flow D flash (#540): replacing the whole ATOC boot
+  // table, which delists every resident entry the new ATOC does not name.
+  // Caller-handled for the same reason as `flashDevice`, and a separate id so
+  // the first modal's pick can never be read as this one.
+  | "replaceBootTable"
   // The same act reached through a debug session (#586). A cortex-debug
   // `launch` programs the target before it runs, so the pick has to come back
   // to the gate that decides whether the session starts at all.

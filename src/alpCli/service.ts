@@ -1072,8 +1072,23 @@ export function posixLoginShellCommand(
   command: string,
   args: string[],
   cwd?: string,
+  unset: readonly string[] = [],
 ): string {
-  const line = `exec ${[command, ...args].map(posixShellQuote).join(" ")}`;
+  // `unset` runs AFTER the profile (this whole string is the `-c` of a login
+  // shell, so the profile is sourced first) and BEFORE the `exec`. That order
+  // is the point: a profile line `export ALP_FLASH_FORCE=1` arms tan's confirm
+  // gate, and the only place to undo it is after the profile has run. Names are
+  // validated rather than quoted, because `unset` takes identifiers, not words.
+  const unsets = unset.map((name) => {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+      throw new Error(`not an environment variable name: ${name}`);
+    }
+    return `unset ${name}`;
+  });
+  const line = [
+    ...unsets,
+    `exec ${[command, ...args].map(posixShellQuote).join(" ")}`,
+  ].join(" && ");
   return cwd ? `cd ${posixShellQuote(cwd)} && ${line}` : line;
 }
 

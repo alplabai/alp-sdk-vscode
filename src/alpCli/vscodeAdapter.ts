@@ -15,6 +15,8 @@ import { promisify } from "util";
 import * as vscode from "vscode";
 
 import { isFlashArgv } from "@alp-sdk/core/flash/argv";
+import { parseFlashEnvelope } from "@alp-sdk/core/flash/envelope";
+import { formatFlashEnvelopeLog } from "@alp-sdk/core/flash/outcome";
 
 import {
   ResolveDeps,
@@ -70,6 +72,7 @@ import {
   unverifiedCacheCause,
 } from "./service";
 import { gateFlashDispatch } from "../flash/gate";
+import { flashOutcomeText, planFlashOutcome } from "../flash/outcome";
 import { ActionId, NotificationPlan, NotifyAction } from "../notify/models";
 import {
   isCancellation,
@@ -910,6 +913,22 @@ export function proxyEnvAdditions(): Record<string, string> {
  *  survive) plus the proxy gap-fillers. */
 function spawnEnv(): NodeJS.ProcessEnv {
   return { ...process.env, ...proxyEnvAdditions() };
+}
+
+/** The environment variables a `tan flash` must NOT inherit. `ALP_FLASH_FORCE=1`
+ *  arms tan's confirm gate from the environment, so a copy exported by the
+ *  extension host's own environment would write a board behind a modal that
+ *  was never shown (#540). `ALP_FLASH_REQUIRE_DPIDR` is a safety switch that
+ *  only ever refuses more, and is left alone. */
+const FLASH_SCRUBBED_ENV: readonly string[] = ["ALP_FLASH_FORCE"];
+
+/** `spawnEnv()` for a flash dispatch: the same environment minus
+ *  `FLASH_SCRUBBED_ENV`. On POSIX the login shell re-reads the user's profile,
+ *  so the shell command string unsets them again after it (`loginShellInvocation`). */
+function flashSpawnEnv(): NodeJS.ProcessEnv {
+  const env = spawnEnv();
+  for (const name of FLASH_SCRUBBED_ENV) delete env[name];
+  return env;
 }
 
 /**
@@ -2529,10 +2548,11 @@ export async function runAlpInTerminal(
     }
     return;
   }
-  // The GATED argv, not the raw one: an approved flash is armed with tan's
-  // `--confirm` by the gate, and spawning `args` here would drop it and
-  // preview instead of write.
-  const finalArgs = withSdkRoot(gated);
+  // The GATED argv, not the raw one. This channel hands the gate no preview
+  // runner, so a flash is refused there (it cannot say what it would write) and
+  // only a non-flash argv reaches this line — but the gate's output is still
+  // what is spawned, so the day that changes nothing here can drop its answer.
+  const finalArgs = withSdkRoot(gated.argv);
   log(
     `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")}  (terminal: ${options.name})`,
   );
@@ -2583,14 +2603,85 @@ function loginShellInvocation(
   command: string,
   args: string[],
   cwd?: string,
+  unset: readonly string[] = [],
 ): { file: string; argv: string[] } | null {
   if (process.platform === "win32") return null;
   const shell = process.env.SHELL?.trim() || "/bin/sh";
   return {
     file: shell,
-    argv: ["-lc", posixLoginShellCommand(command, args, cwd)],
+    argv: ["-lc", posixLoginShellCommand(command, args, cwd, unset)],
   };
 }
+
+/**
+ * Run `tan <args>` to completion and hand back its stdout, for the flash gate's
+ * `--dry-run --format json` preview. Resolves the binary the way every other
+ * interactive run does, goes through the same login shell, and scrubs
+ * `ALP_FLASH_FORCE` like the real flash does. Null when tan could not be run;
+ * the exit status is dropped on purpose, because a preview that found a problem
+ * exits non-zero and still prints the envelope the gate reads.
+ */
+async function runTanForFlashPreview(
+  context: vscode.ExtensionContext,
+  args: readonly string[],
+  cwd: string,
+): Promise<string | null> {
+  let binary: ResolvedBinary;
+  try {
+    binary = await resolveAlpBinaryForContext(context, { interactive: true });
+  } catch (error) {
+    log(
+      `[cli] [fail] CLI unavailable (flash preview): ${error instanceof Error ? error.message : String(error)}`,
+    );
+    void surfaceResolutionError(error, "Alp Flash");
+    return null;
+  }
+  const finalArgs = withSdkRoot([...args]);
+  log(
+    `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")}  (flash preview)`,
+  );
+  const shellRun = loginShellInvocation(
+    binary.command,
+    finalArgs,
+    cwd,
+    FLASH_SCRUBBED_ENV,
+  );
+  return new Promise<string | null>((resolve) => {
+    let stdout = "";
+    let settled = false;
+    const finish = (value: string | null): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const child = shellRun
+      ? cp.spawn(shellRun.file, shellRun.argv, { cwd, env: flashSpawnEnv() })
+      : cp.spawn(binary.command, finalArgs, { cwd, env: flashSpawnEnv() });
+    // A preview signs an ATOC in a scratch copy of SETOOLS, which is the slow
+    // part; a minute would cut it off on a cold disk.
+    const timer = setTimeout(() => {
+      log("[cli] flash preview timed out", "warn");
+      child.kill();
+      finish(null);
+    }, FLASH_PREVIEW_TIMEOUT_MS);
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (text: string) => {
+      stdout += text;
+    });
+    child.stderr?.on("data", (text: string) =>
+      log(`[flash preview] ${text.trimEnd()}`),
+    );
+    child.on("error", (error) => {
+      log(`[cli] flash preview could not start: ${error.message}`, "warn");
+      finish(null);
+    });
+    child.on("close", () => finish(stdout));
+  });
+}
+
+const FLASH_PREVIEW_TIMEOUT_MS = 180_000;
 
 /**
  * Run a `tan` command with its output streamed live into the "Alp SDK" output
@@ -2664,9 +2755,11 @@ export async function runAlpStreamed(
     // omit the same flag. Every other argv is returned unchanged, so this
     // covers a dispatch site that does not exist yet.
     //
-    // It does NOT arm `--confirm`; see `src/flash/gate.ts`'s header. Three of
-    // tan's six flash backends program the board on a bare `tan flash`, so the
-    // dialog — not the flag — is what stands between a click and a write.
+    // It decides `--confirm` itself, from tan's own `--dry-run` preview of the
+    // argv; see `src/flash/gate.ts`'s header. Backends that write on a bare
+    // `tan flash` are left unarmed, Flow D (every AEN Zephyr slice) is armed
+    // only after a second modal, and a yocto/xspi entry is never armed. The
+    // preview is why the gate is handed a runner for it here.
     //
     // It finds the command the way `scripts/tan-surface/extract.mjs` does —
     // skipping root-position flags with their values — so a future
@@ -2679,7 +2772,10 @@ export async function runAlpStreamed(
     // second dialog into a second programmer on the same board. `isRunActive`
     // already documents that state as "or its start is still pending
     // confirmation", and the `finally` below releases it on every answer.
-    const gated = await gateFlashDispatch(args, options.cwd);
+    const gated = await gateFlashDispatch(args, options.cwd, {
+      runTan: (previewArgs, previewCwd) =>
+        runTanForFlashPreview(context, previewArgs, previewCwd),
+    });
     // Refused or cancelled: the gate has already said so on its own terms —
     // "cancelled", never a failure — and NOTHING is spawned here.
     if (gated === null) return;
@@ -2690,8 +2786,12 @@ export async function runAlpStreamed(
     // would answer "not a write" on the backends that write unasked.
     // `streamRun` needs this for the two places a write and a build must not
     // behave alike: the Cancel button, and a death by signal.
-    const isFlash = isFlashArgv(gated);
-    await streamRun(context, gated, { ...options, isFlash });
+    const isFlash = isFlashArgv(gated.argv);
+    await streamRun(context, gated.argv, {
+      ...options,
+      isFlash,
+      readEnvelope: gated.readEnvelope,
+    });
   } finally {
     releaseStreamedRun(options.name);
   }
@@ -2706,14 +2806,10 @@ export async function runAlpStreamed(
  * `runAlpStreamed`'s own header says the reservation refuses a same-named
  * re-run and NEVER terminates one, "killing a flash mid-write can leave a
  * board unbootable". The progress notification's Cancel button is the one
- * exception, and it is aimed at a live write TODAY — this is not a hazard the
- * gate introduces. An earlier draft of this paragraph said the opposite:
- * "on `dev` it was harmless: without `--confirm` tan previewed and wrote
- * nothing". Measured against tan v0.6.0, that is false for three of the six
- * backends — `plan_zephyr_west_flash`, `plan_baremetal_cmake_flash` and
- * `plan_swd_probe` never set `planning_only`, so a bare `tan flash` on a
- * Zephyr slice is a real write and Cancel already sends SIGTERM, then SIGKILL
- * ten seconds behind it, into it.
+ * exception, and it is aimed at a live write — `plan_zephyr_west_flash`,
+ * `plan_baremetal_cmake_flash` and `plan_swd_probe` write on a bare `tan flash`
+ * (tan 0.7.0), and the gate now arms Flow D too, so Cancel sends SIGTERM, then
+ * SIGKILL ten seconds behind it, into a write on every AEN flash.
  *
  * Making the progress non-cancellable would trade one hazard for another. The
  * kill is load-bearing: the run name is released only when this promise
@@ -2780,6 +2876,25 @@ function warnInterruptedFlash(name: string, signal: NodeJS.Signals): void {
   );
 }
 
+/**
+ * Put a finished flash's envelope in the output channel and raise its verdict.
+ *
+ * The run was read as JSON rather than streamed, so the channel would otherwise
+ * show nothing of what tan said; the entries and issues are printed verbatim,
+ * and stdout that is not an envelope is printed raw rather than dropped.
+ */
+function reportFlashEnvelope(name: string, stdout: string): void {
+  const envelope = parseFlashEnvelope(stdout);
+  appendOutput(
+    envelope === null
+      ? stdout.length > 0
+        ? `${stdout}\n`
+        : "(tan printed no result)\n"
+      : formatFlashEnvelopeLog(envelope),
+  );
+  notifyAsync(planFlashOutcome(name, flashOutcomeText(stdout)));
+}
+
 /** The body of `runAlpStreamed`, split out so its every exit path — including
  *  a failed binary resolution — releases the reservation via one `finally`.
  *
@@ -2790,7 +2905,16 @@ function warnInterruptedFlash(name: string, signal: NodeJS.Signals): void {
 async function streamRun(
   context: vscode.ExtensionContext,
   args: string[],
-  options: { name: string; cwd?: string; isFlash?: boolean },
+  options: {
+    name: string;
+    cwd?: string;
+    isFlash?: boolean;
+    /**
+     * stdout is a `tan flash --format json` envelope: hold it back instead of
+     * streaming it, and raise the verdict from it when the run closes (#540).
+     */
+    readEnvelope?: boolean;
+  },
 ): Promise<void> {
   let binary: ResolvedBinary;
   try {
@@ -2832,7 +2956,21 @@ async function streamRun(
   showOutput();
   appendOutput(`\n$ ${options.name}\n`);
 
-  const shellRun = loginShellInvocation(binary.command, finalArgs, options.cwd);
+  // A flash never inherits `ALP_FLASH_FORCE`: on POSIX the login shell sources
+  // the user's profile first, so it is unset inside the command string, after
+  // that; the direct spawn (Windows) deletes it from the env it passes.
+  const shellRun = loginShellInvocation(
+    binary.command,
+    finalArgs,
+    options.cwd,
+    options.isFlash ? FLASH_SCRUBBED_ENV : [],
+  );
+  const childEnv = options.isFlash ? flashSpawnEnv() : spawnEnv();
+  // The envelope is read at `close`, once stdout has fully drained; `exit` can
+  // precede the last chunk.
+  let envelopeStdout = "";
+  let wasKilled = false;
+  let didNotStart = false;
   await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
@@ -2849,17 +2987,20 @@ async function streamRun(
         const child = shellRun
           ? cp.spawn(shellRun.file, shellRun.argv, {
               cwd: options.cwd,
-              env: spawnEnv(),
+              env: childEnv,
             })
           : cp.spawn(binary.command, finalArgs, {
               cwd: options.cwd,
-              env: spawnEnv(),
+              env: childEnv,
             });
         // Decode as UTF-8 on the stream, not per chunk: a multi-byte character
         // split across a chunk boundary is mangled by a per-chunk toString().
         child.stdout?.setEncoding("utf8");
         child.stderr?.setEncoding("utf8");
-        child.stdout?.on("data", (text: string) => appendOutput(text));
+        child.stdout?.on("data", (text: string) => {
+          if (options.readEnvelope) envelopeStdout += text;
+          else appendOutput(text);
+        });
         child.stderr?.on("data", (text: string) => appendOutput(text));
 
         // `settled` guards the racing ends: `error` can fire before the exit
@@ -2919,6 +3060,7 @@ async function streamRun(
           });
         });
         child.on("error", (err) => {
+          didNotStart = true;
           notifyAsync(
             planFailure({
               operation: options.name,
@@ -2950,20 +3092,17 @@ async function streamRun(
           // the gap — `util.ts`'s `finish` fires unconditionally — so this is
           // symmetry, not a new convention.
           if (signal) {
+            wasKilled = true;
             log(`[channel] "${options.name}" stopped (signal=${signal})`);
             // …but for a FLASH, silence is the wrong answer: this is the
             // outcome most likely to have left a half-programmed board, and it
             // was the ONLY outcome that said nothing at all.
             //
             // Keyed on the run being a FLASH, not on the confirm gate being
-            // armed. Measured in tan v0.6.0: `plan_zephyr_west_flash`,
-            // `plan_baremetal_cmake_flash` and `plan_swd_probe` return a bare
-            // `FlashPlan` and inherit `planning_only: bool = False`
-            // (`flash_plan.py:1232`), and `flash_cmd.py:2892` only skips the
-            // spawn on `plan.planning_only or ctx.dry_run` — so those three
-            // program the board on a bare `tan flash`, with no `--confirm`
-            // anywhere. An armed-only warning would stay silent on exactly the
-            // backends that write without being asked.
+            // armed: at tan 0.7.0 `zephyr_west_flash`, `baremetal_cmake_flash`
+            // and `swd_probe` program the board on a bare `tan flash`, with
+            // no `--confirm` anywhere. An armed-only warning would stay silent
+            // on exactly the backends that write without being asked.
             if (options.isFlash) warnInterruptedFlash(options.name, signal);
           }
           // NO exit code on a signal death. Node sets exactly one of the two,
@@ -2980,16 +3119,28 @@ async function streamRun(
           // `["--project", <example>, "build"]` when the active project is not
           // the target — so a subscriber reading `build/system-manifest.yaml`
           // reads the one THIS run wrote rather than whatever sits at the root.
+          // A run whose verdict is read from its envelope reports NO exit code
+          // here (the subscriber treats `undefined` as "no verdict to raise"),
+          // because the exit status is exactly what cannot be trusted: tan
+          // 0.7.0 exits 1 for a run that only previewed and 0 for a mixed run
+          // that previewed part of it. The verdict is raised at `close`.
           signalStreamedFinished(
             options.name,
-            signal ? undefined : (code ?? undefined),
+            signal || options.readEnvelope ? undefined : (code ?? undefined),
             options.cwd,
           );
           finish();
         });
         // Backstop for the one case `exit` cannot cover: a spawn that fails
-        // without ever producing a process still emits `close`.
-        child.on("close", () => finish());
+        // without ever producing a process still emits `close`. For an
+        // envelope run `close` is also where the verdict lands, since only
+        // `close` guarantees stdout has been read to the end.
+        child.on("close", () => {
+          if (options.readEnvelope && !wasKilled && !didNotStart) {
+            reportFlashEnvelope(options.name, envelopeStdout);
+          }
+          finish();
+        });
       }),
   );
 }

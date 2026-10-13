@@ -10,8 +10,14 @@
 // PLANNER (`../notify/service`) is left real, so the dialog these tests read
 // is the dialog `planConfirm` actually produces.
 //
-// The one assertion that matters most is negative: on cancel, `gateFlashDispatch`
-// returns null and NOTHING is spawned. Everything else on this screen is text.
+// The gate asks tan for a `--dry-run --format json` preview through an injected
+// `runTan`. Here that runner answers with REAL tan 0.7.0 captures
+// (test/fixtures/tan-flash/PROVENANCE.md), chosen by what the gate asked for,
+// and records every argv it was handed.
+//
+// The assertion that matters most is negative: on a refusal or a cancel,
+// `gateFlashDispatch` returns null and NOTHING is spawned. Everything else on
+// this screen is text.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -25,6 +31,16 @@ const FIXTURE = fs.readFileSync(
   path.join(__dirname, "fixtures", "system-manifest.aen801.yaml"),
   "utf-8",
 );
+const capture = (name) =>
+  fs.readFileSync(
+    path.join(
+      __dirname,
+      "fixtures",
+      "tan-flash",
+      `tan-flash.v0.7.0.${name}.json`,
+    ),
+    "utf8",
+  );
 
 /** A throwaway project directory holding `build/system-manifest.yaml`. */
 function projectWithManifest(text = FIXTURE) {
@@ -35,11 +51,12 @@ function projectWithManifest(text = FIXTURE) {
 }
 
 /**
- * Load the gate with a scripted answer to the confirm modal.
+ * Load the gate with a scripted answer to the confirm modals.
  *
  * `answer` is what the presenter returns from `notify()` — the ActionId the
- * user picked, or `undefined` for a dismissed dialog. Every plan handed to
- * either presenter entry point is captured.
+ * user picked, or `undefined` for a dismissed dialog. A string answers BOTH
+ * modals with the id the plan asks for; a function sees the plan. Every plan
+ * handed to either presenter entry point is captured.
  */
 function loadGate(answer) {
   const plans = [];
@@ -74,7 +91,36 @@ function loadGate(answer) {
   return { mod, plans, logs };
 }
 
-const confirmPlan = (plans) => plans.find((p) => p.channel === "modal");
+/** Accept whatever each modal offers: "flashDevice", then "replaceBootTable". */
+const acceptAll = (plan) =>
+  plan.channel === "modal" ? plan.actions[0].id : undefined;
+
+/**
+ * A `runTan` that answers with captures. `pick(args)` returns the capture name
+ * for the argv the gate handed it, or null for "tan could not be run".
+ */
+function fakeTan(pick) {
+  const calls = [];
+  return {
+    calls,
+    deps: {
+      runTan: async (args) => {
+        calls.push([...args]);
+        const name = pick(args);
+        return name === null ? null : capture(name);
+      },
+    },
+  };
+}
+
+/** The AEN project: every slice is Flow D after tan's own routing. */
+const flowD = () =>
+  fakeTan((args) =>
+    args.includes("--core") ? "dry-run.flow-d.core-left-out" : "dry-run.flow-d",
+  );
+
+const confirmPlans = (plans) => plans.filter((p) => p.channel === "modal");
+const lastMessage = (plans) => plans.at(-1).message;
 
 // ---------------------------------------------------------------------------
 // What the user sees BEFORE anything is written
@@ -83,9 +129,9 @@ const confirmPlan = (plans) => plans.find((p) => p.channel === "modal");
 test("a flash asks first, on a blocking modal that carries the whole target list", async () => {
   const dir = projectWithManifest();
   const { mod, plans } = loadGate("flashDevice");
-  await mod.gateFlashDispatch(["flash"], dir);
+  await mod.gateFlashDispatch(["flash"], dir, flowD().deps);
 
-  const plan = confirmPlan(plans);
+  const plan = confirmPlans(plans)[0];
   assert.ok(plan, "no modal was raised — the write would be unconsented");
   assert.equal(plan.channel, "modal");
   assert.equal(plan.severity, "warning");
@@ -108,33 +154,275 @@ test("a flash asks first, on a blocking modal that carries the whole target list
   assert.match(plan.modalDetail, /cannot be undone/);
 });
 
+test("the first modal names the backend tan RESOLVED, not only the one the manifest declares", async () => {
+  const dir = projectWithManifest();
+  const { mod, plans } = loadGate("flashDevice");
+  await mod.gateFlashDispatch(["flash"], dir, flowD().deps);
+  const detail = confirmPlans(plans)[0].modalDetail;
+  assert.match(
+    detail,
+    /m55_he — tan resolves alif_mram_jlink \(the manifest declares zephyr_west_flash\): written/,
+  );
+  assert.match(detail, /SETOOLS that signs the boot table:/);
+  assert.match(detail, /second time/);
+});
+
 // ---------------------------------------------------------------------------
 // The argv — the actual defect in #540
 // ---------------------------------------------------------------------------
 
-test("an accepted whole-project flash spawns the argv UNCHANGED", async () => {
-  // NOT `["flash", "--confirm"]`. The gate deliberately does not arm — see
-  // `src/flash/gate.ts`'s header: `plan_zephyr_west_flash`,
-  // `plan_baremetal_cmake_flash` and `plan_swd_probe` write on a bare
-  // `tan flash` (tan-cli#796), so the flag cannot close the unconfirmed-write
-  // hole, and adding it WOULD turn the other three backends from a preview
-  // into a real write — a change nothing in this repo can verify. This
-  // assertion is what Part B has to change on purpose.
+test("an accepted AEN flash is armed: --confirm AND --atoc-unqueryable, read back as JSON", async () => {
+  // The defect: this used to go out as a bare `["flash"]`, which on AEN is
+  // Flow D with `planning_only = not confirm` — a button that wrote nothing.
   const dir = projectWithManifest();
-  const { mod } = loadGate("flashDevice");
-  assert.deepEqual(await mod.gateFlashDispatch(["flash"], dir), ["flash"]);
+  const { mod } = loadGate(acceptAll);
+  const out = await mod.gateFlashDispatch(["flash"], dir, flowD().deps);
+  assert.deepEqual(out, {
+    argv: ["flash", "--format", "json", "--atoc-unqueryable", "--confirm"],
+    readEnvelope: true,
+  });
 });
 
-test("an accepted per-slice flash spawns `flash --confirm --core <id>`", async () => {
+test("the boot-table replacement is a SECOND, separate modal; declining it spawns nothing", async () => {
   const dir = projectWithManifest();
-  const { mod, plans } = loadGate("flashDevice");
-  assert.deepEqual(
-    await mod.gateFlashDispatch(["flash", "--core", "m55_he"], dir),
-    ["flash", "--core", "m55_he"],
+  const { mod, plans } = loadGate((plan) =>
+    plan.channel !== "modal"
+      ? undefined
+      : plan.actions[0].id === "flashDevice"
+        ? "flashDevice"
+        : undefined,
   );
-  // …and the dialog said the rest of the board is NOT being written, which is
-  // the half-programmed-board hazard `--core` creates.
-  assert.match(confirmPlan(plans).modalDetail, /Skipped, NOT written \(3\):/);
+  assert.equal(
+    await mod.gateFlashDispatch(["flash"], dir, flowD().deps),
+    null,
+    "the first accept must not imply the second",
+  );
+  const modals = confirmPlans(plans);
+  assert.equal(modals.length, 2);
+  const [first, second] = modals;
+  assert.deepEqual(first.actions, [{ id: "flashDevice" }]);
+  assert.deepEqual(second.actions, [{ id: "replaceBootTable" }]);
+  assert.equal(second.channel, "modal");
+  assert.equal(second.detail, undefined);
+  assert.equal(second.message, "Alp: replace the boot table on E1M-AEN801?");
+  // tan's own replacement text, verbatim.
+  assert.match(
+    second.modalDetail,
+    /NOTE: a real write REPLACES the ENTIRE ATOC/,
+  );
+  assert.match(second.modalDetail, /This ATOC names: DEVICE, m55_he, m55_hp\./);
+  assert.match(second.modalDetail, /\[SES\] ATOC ok/);
+  assert.match(
+    second.modalDetail,
+    /every entry not named above will be delisted/,
+  );
+  assert.match(
+    second.modalDetail,
+    /SETOOLS that signs the boot table: \/home\/dev\/setools/,
+  );
+  assert.match(lastMessage(plans), /cancelled/);
+  assert.match(lastMessage(plans), /nothing was written/i);
+});
+
+test("declining the FIRST modal never raises the second", async () => {
+  const dir = projectWithManifest();
+  const { mod, plans } = loadGate(undefined);
+  assert.equal(await mod.gateFlashDispatch(["flash"], dir, flowD().deps), null);
+  assert.equal(confirmPlans(plans).length, 1);
+});
+
+test("there is no 'don't ask again': the second modal offers one action and Cancel", async () => {
+  const dir = projectWithManifest();
+  const { mod, plans } = loadGate(acceptAll);
+  await mod.gateFlashDispatch(["flash"], dir, flowD().deps);
+  for (const modal of confirmPlans(plans)) {
+    assert.equal(modal.actions.length, 1);
+    assert.doesNotMatch(JSON.stringify(modal), /again|always|remember/i);
+  }
+});
+
+test("a scope that tan writes unasked is NOT armed, and still asks once", async () => {
+  const dir = projectWithManifest();
+  const { mod, plans } = loadGate(acceptAll);
+  const out = await mod.gateFlashDispatch(
+    ["flash"],
+    dir,
+    fakeTan(() => "dry-run.zephyr-west-flash").deps,
+  );
+  assert.deepEqual(out, {
+    argv: ["flash", "--format", "json"],
+    readEnvelope: true,
+  });
+  assert.equal(confirmPlans(plans).length, 1);
+  assert.equal(out.argv.includes("--confirm"), false);
+  assert.equal(out.argv.includes("--atoc-unqueryable"), false);
+});
+
+test("Flow D beside yocto REFUSES: nothing is asked and nothing is armed", async () => {
+  const dir = projectWithManifest();
+  const { mod, plans } = loadGate(acceptAll);
+  const out = await mod.gateFlashDispatch(
+    ["flash"],
+    dir,
+    fakeTan(() => "dry-run.mixed-yocto-flow-d").deps,
+  );
+  assert.equal(out, null);
+  assert.equal(confirmPlans(plans).length, 0);
+  assert.match(lastMessage(plans), /nothing was written/);
+  assert.match(lastMessage(plans), /a32_cluster/);
+  assert.equal(plans.at(-1).severity, "warning");
+});
+
+test("a yocto-only or xspi scope is refused, never armed", async () => {
+  const dir = projectWithManifest();
+  const { mod, plans } = loadGate(acceptAll);
+  assert.equal(
+    await mod.gateFlashDispatch(
+      ["flash"],
+      dir,
+      fakeTan(() => "dry-run.xspi-flashwriter").deps,
+    ),
+    null,
+  );
+  assert.equal(confirmPlans(plans).length, 0);
+  assert.match(lastMessage(plans), /only be previewed/);
+});
+
+test("an accepted per-slice flash is refused when it would delist a Flow D sibling", async () => {
+  const dir = projectWithManifest();
+  const { mod, plans } = loadGate(acceptAll);
+  const tan = flowD();
+  assert.equal(
+    await mod.gateFlashDispatch(["flash", "--core", "m55_hp"], dir, tan.deps),
+    null,
+  );
+  assert.match(lastMessage(plans), /m55_he/);
+  assert.match(lastMessage(plans), /whole-board Flash/i);
+  assert.equal(confirmPlans(plans).length, 0);
+  // It asked tan twice: the scoped preview, then the whole board.
+  assert.equal(tan.calls.length, 2);
+  assert.ok(tan.calls[0].includes("--core"));
+  assert.equal(tan.calls[1].includes("--core"), false);
+  for (const call of tan.calls) {
+    assert.ok(
+      call.includes("--dry-run") && call.includes("json"),
+      call.join(" "),
+    );
+    assert.equal(call.includes("--confirm"), false);
+  }
+});
+
+test("the preview is asked for with --dry-run --format json and never --confirm", async () => {
+  const dir = projectWithManifest();
+  const { mod } = loadGate(acceptAll);
+  const tan = flowD();
+  await mod.gateFlashDispatch(
+    ["--sdk-root", "/opt/sdk", "flash"],
+    dir,
+    tan.deps,
+  );
+  assert.deepEqual(tan.calls[0], [
+    "--sdk-root",
+    "/opt/sdk",
+    "flash",
+    "--dry-run",
+    "--format",
+    "json",
+  ]);
+});
+
+test("SETOOLS_DIR from the host environment is forwarded as --setools-dir, to the preview and the write", async () => {
+  const dir = projectWithManifest();
+  const { mod } = loadGate(acceptAll);
+  const tan = flowD();
+  const saved = process.env.SETOOLS_DIR;
+  process.env.SETOOLS_DIR = "/opt/alif/setools";
+  try {
+    const out = await mod.gateFlashDispatch(["flash"], dir, tan.deps);
+    assert.deepEqual(tan.calls[0].slice(0, 3), [
+      "flash",
+      "--dry-run",
+      "--format",
+    ]);
+    assert.ok(
+      tan.calls[0].join(" ").includes("--setools-dir /opt/alif/setools"),
+    );
+    assert.ok(out.argv.join(" ").includes("--setools-dir /opt/alif/setools"));
+  } finally {
+    if (saved === undefined) delete process.env.SETOOLS_DIR;
+    else process.env.SETOOLS_DIR = saved;
+  }
+});
+
+test("no SETOOLS anywhere: tan's preview refuses, and the customer is told how to name one", async () => {
+  const dir = projectWithManifest();
+  const { mod, plans } = loadGate(acceptAll);
+  const saved = process.env.SETOOLS_DIR;
+  delete process.env.SETOOLS_DIR;
+  try {
+    assert.equal(
+      await mod.gateFlashDispatch(
+        ["flash"],
+        dir,
+        fakeTan(() => "dry-run.flow-d.no-setools").deps,
+      ),
+      null,
+    );
+  } finally {
+    if (saved !== undefined) process.env.SETOOLS_DIR = saved;
+  }
+  assert.equal(confirmPlans(plans).length, 0);
+  const refusal = plans.at(-1);
+  assert.match(refusal.message, /nothing was written/);
+  assert.match(refusal.detail, /SETOOLS_DIR=<path>/);
+  assert.deepEqual(refusal.actions, [{ id: "showOutput" }]);
+});
+
+test("a SETOOLS only the manifest names is refused up front", async () => {
+  const dir = projectWithManifest();
+  const { mod, plans } = loadGate(acceptAll);
+  assert.equal(
+    await mod.gateFlashDispatch(
+      ["flash"],
+      dir,
+      fakeTan(() => "dry-run.flow-d.manifest-only-setools").deps,
+    ),
+    null,
+  );
+  assert.match(lastMessage(plans), /SETOOLS_DIR/);
+  assert.equal(confirmPlans(plans).length, 0);
+});
+
+test("no preview runner, or a preview tan could not produce: refused, not flashed blind", async () => {
+  const dir = projectWithManifest();
+  for (const deps of [undefined, fakeTan(() => null).deps]) {
+    const { mod, plans } = loadGate(acceptAll);
+    assert.equal(await mod.gateFlashDispatch(["flash"], dir, deps), null);
+    assert.equal(confirmPlans(plans).length, 0);
+    assert.match(lastMessage(plans), /nothing was written/);
+  }
+  const { mod, plans } = loadGate(acceptAll);
+  assert.equal(
+    await mod.gateFlashDispatch(["flash"], dir, {
+      runTan: async () => "not json",
+    }),
+    null,
+  );
+  assert.match(lastMessage(plans), /no preview/);
+});
+
+test("a call site that already wrote --confirm or --atoc-unqueryable is refused", async () => {
+  const dir = projectWithManifest();
+  for (const flag of ["--confirm", "--atoc-unqueryable"]) {
+    const { mod, plans } = loadGate(acceptAll);
+    const tan = flowD();
+    assert.equal(
+      await mod.gateFlashDispatch(["flash", flag], dir, tan.deps),
+      null,
+    );
+    assert.match(lastMessage(plans), /Alp adds those itself/);
+    assert.equal(tan.calls.length, 0, "nothing may be previewed or spawned");
+  }
 });
 
 test("an accepted flash with an APP_PATH keeps the positional", async () => {
@@ -145,9 +433,14 @@ test("an accepted flash with an APP_PATH keeps the positional", async () => {
     path.join(dir, app, "build", "system-manifest.yaml"),
     FIXTURE,
   );
-  const { mod } = loadGate("flashDevice");
-  assert.deepEqual(await mod.gateFlashDispatch(["flash", app], dir), [
+  const { mod } = loadGate(acceptAll);
+  const out = await mod.gateFlashDispatch(["flash", app], dir, flowD().deps);
+  assert.deepEqual(out.argv, [
     "flash",
+    "--format",
+    "json",
+    "--atoc-unqueryable",
+    "--confirm",
     app,
   ]);
 });
@@ -163,8 +456,8 @@ test("the manifest is read from <APP_PATH>/build, not from the cwd", async () =>
     FIXTURE.replace("E1M-AEN801", "E1M-AEN701"),
   );
   const { mod, plans } = loadGate("flashDevice");
-  await mod.gateFlashDispatch(["flash", "app"], dir);
-  assert.match(confirmPlan(plans).message, /E1M-AEN701/);
+  await mod.gateFlashDispatch(["flash", "app"], dir, flowD().deps);
+  assert.match(confirmPlans(plans)[0].message, /E1M-AEN701/);
   assert.equal(
     mod.flashManifestPath(["flash", "app"], dir),
     path.join(dir, "app", "build", "system-manifest.yaml"),
@@ -178,7 +471,10 @@ test("the manifest is read from <APP_PATH>/build, not from the cwd", async () =>
 test("a non-flash argv is returned untouched and raises no dialog", async () => {
   const { mod, plans } = loadGate("flashDevice");
   for (const args of [["build"], ["image", "app"], ["clean"], ["renode"]]) {
-    assert.deepEqual(await mod.gateFlashDispatch(args, "/tmp/whatever"), args);
+    assert.deepEqual(await mod.gateFlashDispatch(args, "/tmp/whatever"), {
+      argv: args,
+      readEnvelope: false,
+    });
   }
   assert.deepEqual(plans, [], "a build must not ask about writing a device");
 });
@@ -192,7 +488,7 @@ test("a cancelled flash spawns nothing and never says failed", async () => {
   for (const answer of [undefined, "showOutput"]) {
     const { mod, plans } = loadGate(answer);
     assert.equal(
-      await mod.gateFlashDispatch(["flash"], dir),
+      await mod.gateFlashDispatch(["flash"], dir, flowD().deps),
       null,
       "a declined dialog must return null so the caller spawns nothing",
     );
@@ -299,16 +595,28 @@ test("--project is refused, not quietly discarded", async () => {
 // FINDING 1: the command is not always argv[0]. `withSdkRoot` prepends
 // `["--sdk-root", <path>, …]` to every streamed spawn, and `alpBuild` already
 // builds `["--project", <dir>, "build"]` forty lines above `alpFlash`. A gate
-// that reads argv[0] lets that shape through unarmed — and unarmed is only
-// harmless until `ALP_FLASH_FORCE=1` is in the inherited environment.
+// that reads argv[0] lets that shape through unconsented.
 test("a flash behind root-position flags is gated like any other", async () => {
   const dir = projectWithManifest();
-  const { mod, plans } = loadGate("flashDevice");
-  assert.deepEqual(
-    await mod.gateFlashDispatch(["--sdk-root", "/opt/sdk", "flash"], dir),
+  const { mod, plans } = loadGate(acceptAll);
+  const out = await mod.gateFlashDispatch(
     ["--sdk-root", "/opt/sdk", "flash"],
+    dir,
+    flowD().deps,
   );
-  assert.ok(confirmPlan(plans), "no dialog was raised for a prefixed flash");
+  assert.deepEqual(out.argv, [
+    "--sdk-root",
+    "/opt/sdk",
+    "flash",
+    "--format",
+    "json",
+    "--atoc-unqueryable",
+    "--confirm",
+  ]);
+  assert.ok(
+    confirmPlans(plans).length > 0,
+    "no dialog was raised for a prefixed flash",
+  );
 });
 
 // FINDING 7: tan parses before it acts. Both of these exit 2 without touching
@@ -359,7 +667,7 @@ test("an argv that mentions flash but does not resolve to it is refused", async 
 // re-reads the file at spawn, and the run-name reservation only blocks a
 // second dispatch under the same name — an external `tan build` or a second
 // window can rewrite `build/` in between.
-test("a manifest rewritten while the dialog is open is refused, not armed", async () => {
+test("a manifest rewritten while the FIRST dialog is open is refused, not armed", async () => {
   const dir = projectWithManifest();
   const manifest = path.join(dir, "build", "system-manifest.yaml");
   const { mod, plans } = loadGate(() => {
@@ -368,13 +676,32 @@ test("a manifest rewritten while the dialog is open is refused, not armed", asyn
     return "flashDevice";
   });
   assert.equal(
-    await mod.gateFlashDispatch(["flash"], dir),
+    await mod.gateFlashDispatch(["flash"], dir, flowD().deps),
     null,
     "an accepted dialog over stale contents must not arm the write",
   );
-  assert.match(plans.at(-1).message, /changed while the confirmation was open/);
-  assert.match(plans.at(-1).message, /nothing was written/);
-  assert.doesNotMatch(plans.at(-1).message, /fail/i);
+  assert.match(lastMessage(plans), /changed while the confirmation was open/);
+  assert.match(lastMessage(plans), /nothing was written/);
+  assert.doesNotMatch(lastMessage(plans), /fail/i);
+  assert.equal(confirmPlans(plans).length, 1, "the second modal must not open");
+});
+
+test("a manifest rewritten while the SECOND dialog is open is refused too", async () => {
+  const dir = projectWithManifest();
+  const manifest = path.join(dir, "build", "system-manifest.yaml");
+  const { mod, plans } = loadGate((plan) => {
+    if (plan.channel !== "modal") return undefined;
+    if (plan.actions[0].id === "replaceBootTable") {
+      fs.writeFileSync(manifest, FIXTURE.replace("E1M-AEN801", "E1M-AEN701"));
+    }
+    return plan.actions[0].id;
+  });
+  assert.equal(
+    await mod.gateFlashDispatch(["flash"], dir, flowD().deps),
+    null,
+    "the final accept must re-verify the manifest",
+  );
+  assert.match(lastMessage(plans), /changed while the confirmation was open/);
 });
 
 test("a manifest DELETED while the dialog is open is refused too", async () => {
@@ -384,73 +711,61 @@ test("a manifest DELETED while the dialog is open is refused too", async () => {
     fs.rmSync(manifest);
     return "flashDevice";
   });
-  assert.equal(await mod.gateFlashDispatch(["flash"], dir), null);
-  assert.match(plans.at(-1).message, /disappeared while the confirmation/);
+  assert.equal(await mod.gateFlashDispatch(["flash"], dir, flowD().deps), null);
+  assert.match(lastMessage(plans), /disappeared while the confirmation/);
 });
 
 test("an unchanged manifest still passes — the re-check is not a blanket refusal", async () => {
   const dir = projectWithManifest();
   const manifest = path.join(dir, "build", "system-manifest.yaml");
-  const { mod } = loadGate(() => {
+  const { mod } = loadGate((plan) => {
     // Byte-identical rewrite: same content, new mtime. The check is on the
     // BYTES, so this is not a change and must not refuse.
     fs.writeFileSync(manifest, FIXTURE);
-    return "flashDevice";
+    return plan.actions[0].id;
   });
-  assert.deepEqual(await mod.gateFlashDispatch(["flash"], dir), ["flash"]);
+  const out = await mod.gateFlashDispatch(["flash"], dir, flowD().deps);
+  assert.equal(out.readEnvelope, true);
 });
 
-test("the gate NEVER adds --confirm, on any accepted path", async () => {
-  // The whole of Part A in one assertion. `--confirm` arms the three backends
-  // that honour it (`plan_yocto_wic`, `plan_xspi_flashwriter`,
-  // `plan_alif_mram_jlink`), turning a preview into a real write; that is
-  // bench-gated (#540) and must not arrive by accident. Every accepted shape
-  // is checked, because arming one path and not another is how the two call
-  // sites came to disagree in the first place.
+test("--confirm is added only after BOTH modals, and only for the Flow D class", async () => {
   const dir = projectWithManifest();
-  for (const argv of [
-    ["flash"],
-    ["flash", "--core", "m55_he"],
-    ["--sdk-root", "/opt/sdk", "flash"],
-  ]) {
-    const { mod } = loadGate("flashDevice");
-    const out = await mod.gateFlashDispatch(argv, dir);
-    assert.ok(out, `${argv.join(" ")} was refused, so this proves nothing`);
-    assert.equal(
-      out.includes("--confirm"),
-      false,
-      `the gate armed ${argv.join(" ")} — that is a real write on ` +
-        "yocto_wic / xspi_flashwriter / alif_mram_jlink and cannot ship " +
-        "without a bench flash",
-    );
-    assert.deepEqual(out, argv, "the argv must go out exactly as it came in");
-  }
+  const seen = [];
+  const { mod } = loadGate((plan) => {
+    seen.push(plan.actions[0].id);
+    return plan.actions[0].id;
+  });
+  const out = await mod.gateFlashDispatch(["flash"], dir, flowD().deps);
+  assert.deepEqual(seen, ["flashDevice", "replaceBootTable"]);
+  assert.ok(out.argv.includes("--confirm"));
 });
 
 test("--dry-run writes nothing, so it is neither gated nor armed", async () => {
   const dir = projectWithManifest();
   const { mod, plans } = loadGate("flashDevice");
-  assert.deepEqual(await mod.gateFlashDispatch(["flash", "--dry-run"], dir), [
-    "flash",
-    "--dry-run",
-  ]);
+  assert.deepEqual(await mod.gateFlashDispatch(["flash", "--dry-run"], dir), {
+    argv: ["flash", "--dry-run"],
+    readEnvelope: false,
+  });
   assert.deepEqual(plans, []);
 });
 
-// ALP_FLASH_FORCE=1 and `flash_args.confirm: true` are tan's two other ways to
-// arm the gate. Both move the consent somewhere it outlives the click — an
-// environment variable, or a file the next `tan build` rewrites.
-test("the gate never reaches for ALP_FLASH_FORCE or flash_args.confirm", () => {
+// `ALP_FLASH_FORCE=1`, `flash_args.confirm: true` and
+// `flash_args.atoc_unqueryable: true` are the other ways to arm tan. All move
+// the consent somewhere it outlives the click — an environment variable, or a
+// file the next `tan build` rewrites.
+test("the gate never reaches for ALP_FLASH_FORCE, flash_args.confirm or flash_args.atoc_unqueryable", () => {
   const source = fs.readFileSync(
     path.join(root, "src", "flash", "gate.ts"),
     "utf8",
   );
-  // Comment bodies are stripped: this file DOCUMENTS both, on purpose.
+  // Comment bodies are stripped: this file DOCUMENTS all of them, on purpose.
   const code = source
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/(^|\n)\s*\/\/[^\n]*/g, "$1");
   assert.doesNotMatch(code, /ALP_FLASH_FORCE/);
   assert.doesNotMatch(code, /flash_args/);
+  assert.doesNotMatch(code, /atoc_unqueryable/);
   assert.doesNotMatch(code, /"--recover"|'--recover'/);
 });
 
@@ -464,10 +779,8 @@ test("`tan run --flash` is refused: a device write that is not the flash command
   // is not. Its help on the pinned CLI: "Program the board after building
   // (hardware targets only)."
   //
-  // No call site builds it today, and `test/flash.dispatch.test.js` filters
-  // the extractor on `site.command === "flash"` — so a future `run --flash`
-  // site would stay green while programming a board unasked. That is the gap
-  // this closes.
+  // Refused rather than gated: `tan run` REBUILDS before it flashes, so the
+  // manifest a modal described is not the one the write would use.
   const dir = projectWithManifest();
   const { mod, plans } = loadGate("flashDevice");
   return mod.gateFlashDispatch(["run", "--flash"], dir).then((out) => {
@@ -488,7 +801,7 @@ test("a bare `tan run` is untouched — it never flashes", () => {
   const dir = projectWithManifest();
   const { mod, plans } = loadGate("flashDevice");
   return mod.gateFlashDispatch(["run"], dir).then((out) => {
-    assert.deepEqual(out, ["run"]);
+    assert.deepEqual(out, { argv: ["run"], readEnvelope: false });
     assert.deepEqual(plans, [], "no dialog for a command that does not write");
   });
 });

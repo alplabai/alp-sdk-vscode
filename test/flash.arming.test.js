@@ -156,7 +156,9 @@ test("a preview tan itself could not complete refuses with tan's own words", () 
   );
   assert.equal(decision.kind, "refuse");
   assert.equal(decision.reason, "preview-failed");
-  assert.match(decision.message, /SETOOLS_DIR=<path>/);
+  assert.match(decision.message, /nothing was written/);
+  // tan's own words, which name the way out, ride along for the log.
+  assert.match(decision.detail, /SETOOLS_DIR=<path>/);
 });
 
 test("a SETOOLS only the manifest names is refused: tan would not run it for the write", () => {

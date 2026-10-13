@@ -290,6 +290,33 @@ const GATED_CODES = {
   "scaffold.invalid-name": "reserved",
   "scaffold.name-required": "reserved",
   "scaffold.invalid-template": "reserved",
+  // `packages/alp-core/src/flash/outcome.ts`: how a finished `tan flash` is
+  // classified (#540) — refused before writing, previewed only, or a write
+  // whose reset J-Link could not confirm. Every one is `reserved` with consumer
+  // `none` in tan v0.7.0's envelope-contract.json, and there is no `flash`
+  // envelope in the vendored corpus either, so nothing upstream promises the
+  // spelling OR the shape. Freezing both is an UPSTREAM ASK (alplabai/tan-cli);
+  // until it lands this row is what turns a rename into a red here instead of
+  // a toast that quietly says the wrong thing about a device.
+  // The shape is pinned by real captures: test/fixtures/tan-flash/.
+  "flash.atoc-replacement-unacknowledged": "reserved",
+  "flash.setools-untrusted-source": "reserved",
+  "flash.atoc-guard-refused": "reserved",
+  "flash.atoc-guard-unavailable": "reserved",
+  "flash.probe-ambiguous": "reserved",
+  "flash.probe-isolation-required": "reserved",
+  "flash.probe-not-found": "reserved",
+  "flash.probe-selector-conflict": "reserved",
+  "flash.probe-selector-unsupported": "reserved",
+  "flash.probe-verify-failed": "reserved",
+  "flash.mram-image-not-mram-linked": "reserved",
+  "flash.device-config-missing": "reserved",
+  "flash.device-config-mismatch": "reserved",
+  "flash.write-sector-overlap": "reserved",
+  "flash.slice-not-built": "reserved",
+  "flash.confirm-required": "reserved",
+  "flash.nothing-flashed": "reserved",
+  "flash.jlink-reset-unconfirmed": "reserved",
 
   "models.panel-not-wired": null,
 };

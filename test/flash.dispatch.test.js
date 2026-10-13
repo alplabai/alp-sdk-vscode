@@ -60,7 +60,7 @@ test("runAlpStreamed gates every dispatch through gateFlashDispatch", () => {
   );
   assert.match(
     ENTRY,
-    /const gated = await gateFlashDispatch\(args, options\.cwd\);/,
+    /const gated = await gateFlashDispatch\(args, options\.cwd, \{/,
     "runAlpStreamed must run the consent gate itself — a gate the call sites " +
       "opt into is a gate a new call site forgets, which IS defect #540",
   );
@@ -73,13 +73,15 @@ test("a refused or cancelled gate spawns nothing at all", () => {
     "a null answer means refused or cancelled and MUST short-circuit — " +
       "falling through would spawn the unarmed flash the gate just declined",
   );
-  // The spawn takes the GATE's argv, never the caller's. Today the two are
-  // equal for an accepted flash (the gate does not arm — `flash.gate.test.js`
-  // pins that), but passing `args` here would make the accept path stop
-  // depending on the gate's answer at all, which is the seam Part B arms.
+  // The spawn takes the GATE's argv, never the caller's. The gate is what adds
+  // `--confirm`, `--atoc-unqueryable` and `--format json`; passing `args` here
+  // would make the accept path stop depending on the gate's answer at all.
+  assert.match(ENTRY, /await streamRun\(context, gated\.argv, \{/);
   assert.match(
     ENTRY,
-    /await streamRun\(context, gated, \{ \.\.\.options, isFlash \}\);/,
+    /readEnvelope: gated\.readEnvelope/,
+    "the runner must read the verdict from the envelope exactly when the " +
+      "gate asked for one",
   );
   assert.doesNotMatch(ENTRY, /await streamRun\(context, args\b/);
 });
@@ -91,7 +93,7 @@ test("a refused or cancelled gate spawns nothing at all", () => {
 test("the runner knows whether the argv it is about to spawn is armed", () => {
   assert.match(
     ENTRY,
-    /const isFlash = isFlashArgv\(gated\);/,
+    /const isFlash = isFlashArgv\(gated\.argv\);/,
     "runAlpStreamed must classify the OUTGOING argv — reading `args` instead " +
       "would always be false, since the call sites never write --confirm",
   );
@@ -310,8 +312,12 @@ test("no call site hardcodes --confirm; only the gate arms it", () => {
   );
 });
 
-test("ALP_FLASH_FORCE appears nowhere in the extension", () => {
+test("ALP_FLASH_FORCE is only ever REMOVED from a flash's environment", () => {
   const offenders = [];
+  // The one file allowed to name it: the runner, which lists it in
+  // `FLASH_SCRUBBED_ENV` so a profile `export ALP_FLASH_FORCE=1` cannot arm tan
+  // behind a modal that was never shown.
+  const RUNNER = path.join("src", "alpCli", "vscodeAdapter.ts");
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
@@ -327,8 +333,12 @@ test("ALP_FLASH_FORCE appears nowhere in the extension", () => {
         .readFileSync(full, "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, "")
         .replace(/(^|\n)\s*\/\/[^\n]*/g, "$1");
-      if (code.includes("ALP_FLASH_FORCE")) {
-        offenders.push(path.relative(ROOT, full));
+      if (!code.includes("ALP_FLASH_FORCE")) continue;
+      const relative = path.relative(ROOT, full);
+      // Anywhere but the runner is an offender; in the runner, so is anything
+      // that SETS it (`ALP_FLASH_FORCE = …`, `: "1"`, `=1`).
+      if (relative !== RUNNER || /ALP_FLASH_FORCE["']?\s*[:=]/.test(code)) {
+        offenders.push(relative);
       }
     }
   };
@@ -338,7 +348,28 @@ test("ALP_FLASH_FORCE appears nowhere in the extension", () => {
     [],
     "`ALP_FLASH_FORCE=1` arms tan's write gate from the ENVIRONMENT, where " +
       "the consent outlives the click that gave it. The dialog is the only " +
-      "thing allowed to arm a flash.",
+      "thing allowed to arm a flash; the runner may only strip it.",
+  );
+});
+
+test("a flash's environment is scrubbed on both spawn paths", () => {
+  // POSIX: unset AFTER the login shell has sourced the profile (it is in the
+  // `-c` string, ahead of `exec`). Windows / direct: deleted from the env
+  // object. A scrub on only one path leaves the other armable by a profile or
+  // by the extension host's own environment.
+  assert.match(
+    STREAM,
+    /options\.isFlash \? FLASH_SCRUBBED_ENV : \[\]/,
+    "the login-shell command must unset the variable after the profile runs",
+  );
+  assert.match(
+    STREAM,
+    /const childEnv = options\.isFlash \? flashSpawnEnv\(\) : spawnEnv\(\);/,
+    "the spawn env of a flash must be the scrubbed one",
+  );
+  assert.match(
+    ADAPTER,
+    /for \(const name of FLASH_SCRUBBED_ENV\) delete env\[name\];/,
   );
 });
 
@@ -423,7 +454,7 @@ test("the terminal channel spawns what the gate returned, not the raw argv", () 
   // or, worse, spawn an argv the gate rewrote for a different reason.
   assert.match(
     TERMINAL,
-    /withSdkRoot\(gated\)/,
+    /withSdkRoot\(gated\.argv\)/,
     "the gated argv is the one that must reach the terminal",
   );
 });

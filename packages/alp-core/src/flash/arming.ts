@@ -64,8 +64,16 @@ export type FlashArmingDecision =
       setoolsDir: string | null;
       setoolsSource: string | null;
     }
-  /** Spawn nothing. `message` is customer-facing and says nothing was written. */
-  | { kind: "refuse"; reason: FlashRefusalReason; message: string };
+  /**
+   * Spawn nothing. `message` is customer-facing, carries no absolute path, and
+   * says nothing was written; `detail` is tan's own words, for the log.
+   */
+  | {
+      kind: "refuse";
+      reason: FlashRefusalReason;
+      message: string;
+      detail?: string;
+    };
 
 /** What the caller knows that the preview alone does not. */
 export interface FlashArmingContext {
@@ -121,11 +129,14 @@ export function decideFlashArming(
   context: FlashArmingContext,
 ): FlashArmingDecision {
   if (!preview.ok) {
-    return refuse(
-      "preview-failed",
-      "tan could not preview this flash, so nothing was written. " +
-        firstErrorMessage(preview),
-    );
+    return {
+      kind: "refuse",
+      reason: "preview-failed",
+      message:
+        "tan could not preview this flash, so nothing was written. Its " +
+        "reason is in the Alp SDK log.",
+      detail: firstErrorMessage(preview),
+    };
   }
 
   const inScope = preview.entries.filter((e) => e.status !== "skipped");

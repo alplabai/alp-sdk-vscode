@@ -180,6 +180,8 @@ const ACTIONS: Record<
   // button that was already clicked, and this dialog is the last point at
   // which an irreversible write to real silicon can still be stopped.
   flashDevice: { title: "Write to Device" },
+  // Names what the click does to the device; "Continue" would hide it.
+  replaceBootTable: { title: "Replace boot table" },
   // Same consequence, reached through Debug (#586). "Debug" alone would read
   // as the button already clicked and hide the write entirely; the title has
   // to carry the programming step, which is what the customer cannot undo.
