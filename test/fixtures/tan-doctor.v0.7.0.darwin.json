@@ -8,13 +8,13 @@
   },
   "sdk": {
     "root": "/home/dev/alp-sdk",
-    "sourceTier": "projectPin"
+    "sourceTier": "globalDefault"
   },
   "data": {
-    "generatedAt": "2026-10-12T15:41:16Z",
+    "generatedAt": "2026-10-13T17:18:36Z",
     "summary": {
-      "pass": 18,
-      "warn": 4,
+      "pass": 19,
+      "warn": 3,
       "fail": 0
     },
     "checks": [
@@ -22,7 +22,7 @@
         "name": "sdk",
         "status": "pass",
         "scope": "project",
-        "detail": "alp-sdk at /home/dev/alp-sdk (projectPin)"
+        "detail": "alp-sdk at /home/dev/alp-sdk (globalDefault)"
       },
       {
         "name": "boardYaml",
@@ -62,10 +62,9 @@
       },
       {
         "name": "workspacePatches",
-        "status": "warn",
+        "status": "pass",
         "scope": "project",
-        "detail": "alp-sdk's zephyr/patches.yml is not applied in /home/dev/.alp/sdk: mcuboot/0001-flash_map_extended-alif-mram-base.patch (ABSENT). Fix: run `tan bootstrap`.",
-        "fix": "tan bootstrap"
+        "detail": "zephyr/patches.yml verified applied in /home/dev/.alp/sdk"
       },
       {
         "name": "zephyrBase",
@@ -126,7 +125,7 @@
         "name": "toolchain",
         "status": "pass",
         "scope": "project",
-        "detail": "arm-zephyr-eabi 1.0.1 detected at /home/dev/zephyr-sdk-1.0.1 -- not tan's own store, but its `sdk_version` matches this checkout's pin, so this host already has what `tan bootstrap` would otherwise download again."
+        "detail": "arm-zephyr-eabi 1.0.1 detected at /home/dev/zephyr-sdk-1.0.1 -- not tan's own store, but its `sdk_version` matches this checkout's pin, so this host already has what `tan bootstrap` would otherwise download again. That match is the `sdk_version` text file only: this install was never compared with the pin (its archive may have been fetched unchecked); files on disk are not re-hashed; a stamp marked pinChecked means the toolchain archive was hashed against alp-sdk's pin at download (the minimal SDK bundle only via the release sha256.sum, which west checks), and an unmarked stamp predates that check, so its archives were never compared with the pin."
       },
       {
         "name": "devicetreeLint",
@@ -152,11 +151,10 @@
         "name": "sdkProvenance",
         "status": "pass",
         "scope": "project",
-        "detail": "alp-sdk 0.16.0 @ e1dddd37"
+        "detail": "alp-sdk 0.17.0 @ 84132b9"
       }
     ],
     "nextSteps": [
-      "tan bootstrap",
       "Known, Zephyr-scoped skew (alp-sdk#1078) -- raising `prerequisites.pythonMinVersion` to 3.12 was tried and reverted, because that key also gates Yocto-only and metadata-only projects, which do not need it. Building for Zephyr on a host below 3.12 needs a newer interpreter -- see the `hostPython` check above.",
       "Download the Alif Security Toolkit (`app-release-exec-linux-SE_FW_x.y.z`) from the Alif developer portal -- it is license-gated and alp-sdk does not redistribute it -- then `export SETOOLS_DIR=<...>/app-release-exec-linux`. Flow A (`west flash`) additionally needs `export SE_UART=/dev/ttyUSB0` (your SE-UART device); Flow D does not. See docs/aen-bench-bringup.md. Doctor reads $SETOOLS_DIR and the built manifest's flash_args.setools_dir; a --setools-dir flag given to `tan flash` is not visible to it.",
       "Upgrade the SEGGER J-Link pack to V9.46+."
@@ -164,11 +162,6 @@
     "missingPrerequisites": null
   },
   "issues": [
-    {
-      "code": "doctor.workspace-patches",
-      "severity": "warning",
-      "message": "alp-sdk's zephyr/patches.yml is not applied in /home/dev/.alp/sdk: mcuboot/0001-flash_map_extended-alif-mram-base.patch (ABSENT). Fix: run `tan bootstrap`."
-    },
     {
       "code": "doctor.python-floor",
       "severity": "warning",
