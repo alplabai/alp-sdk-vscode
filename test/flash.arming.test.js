@@ -95,7 +95,7 @@ test("a scope of only zephyr_west_flash is never armed", () => {
     load("dry-run.zephyr-west-flash"),
     UNSCOPED,
   );
-  assert.deepEqual(decision, { kind: "unarmed" });
+  assert.deepEqual(decision, { kind: "unarmed", previewOnly: [] });
 });
 
 test("a yocto slice beside a Flow D slice REFUSES: arming one would be a host dd, not arming it a half-write", () => {
@@ -136,7 +136,7 @@ test("yocto beside a backend that writes unasked proceeds UNARMED", () => {
     parseFlashEnvelope(JSON.stringify(env)),
     UNSCOPED,
   );
-  assert.deepEqual(decision, { kind: "unarmed" });
+  assert.deepEqual(decision, { kind: "unarmed", previewOnly: ["a32_cluster"] });
 });
 
 test("Flow D beside a backend that writes unasked still arms (the flag changes nothing for it)", () => {

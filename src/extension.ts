@@ -319,10 +319,12 @@ export function activate(context: vscode.ExtensionContext): void {
         // Nothing here can tell those apart — the exit status is one number —
         // so this sentence says what is known and stops at it.
         //
-        // A gated `tan flash` no longer arrives here with an exit code at all:
-        // the runner reads its `--format json` envelope and raises the verdict
-        // itself (`src/flash/outcome.ts`). This branch remains for a flash that
-        // reaches the finish event some other way.
+        // An ARMED Flow D flash, and an unarmed one that leaves a yocto/xspi
+        // entry unwritten, do not arrive here with an exit code: the runner
+        // reads their `--format json` envelope and raises the verdict itself
+        // (`src/flash/outcome.ts`). A flash that only runs backends that write
+        // unasked (west, cmake) keeps the text-mode run and lands here, as does
+        // any flash that reaches the finish event some other way.
         notifyAsync(
           planFailure({
             operation: name,

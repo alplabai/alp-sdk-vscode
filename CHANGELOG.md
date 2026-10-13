@@ -23,8 +23,9 @@
     text stream is replaced by tan's entries and issues, printed to the Alp SDK
     log when the run ends; other flashes keep streaming as before.
   - A flash is refused when the manifest already carries `flash_args.confirm`
-    or `flash_args.atoc_unqueryable`, or when the argv adds `--raw`, `--ram`,
-    `--replace-atoc`, `--no-reset` and the like.
+    or `flash_args.atoc_unqueryable`, or when the argv has any option outside a
+    short allow-list (`--raw`, `--ram`, `--replace-atoc`, `--no-reset`, an
+    abbreviation, `--core --confirm`, a `--` before the command, …).
   - `ALP_FLASH_FORCE` is removed from a flash's environment after the login
     shell's profile has run (`env -u`), so a profile `export` cannot arm tan.
 

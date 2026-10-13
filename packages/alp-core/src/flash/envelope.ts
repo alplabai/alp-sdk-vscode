@@ -33,9 +33,12 @@ export const FLOW_D_METHOD = "alif_mram_jlink";
  * - `never-arm`   `yocto_wic*` (a real `bmaptool`/`dd` to a HOST block device
  *                 under `--confirm`) and `xspi_flashwriter` (a HARD refusal
  *                 under `--confirm`). The extension never arms either.
- * - `writes`      everything else (`zephyr_west_flash`, `baremetal_cmake_flash`,
- *                 `swd_probe`, …): writes on a bare `tan flash`, and
- *                 `--confirm` changes nothing.
+ * - `writes`      exactly `zephyr_west_flash` and `baremetal_cmake_flash`:
+ *                 they write on a bare `tan flash`, and `--confirm` changes
+ *                 nothing.
+ * - `unknown`     anything else (a renamed or new method, `swd_probe`, a
+ *                 missing one). Not assumed to behave like `writes`; the
+ *                 gate refuses it.
  */
 export type FlashBackendClass = "flow-d" | "never-arm" | "writes" | "unknown";
 

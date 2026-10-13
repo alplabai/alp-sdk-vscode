@@ -554,13 +554,7 @@ test("a scope that matches nothing is refused instead of consented to", async ()
 test("--recover is refused outright, never armed", async () => {
   const dir = projectWithManifest();
   const { mod, plans } = loadGate("flashDevice");
-  assert.equal(
-    await mod.gateFlashDispatch(
-      ["flash", "--recover", "--helper", "cc3501e_otp"],
-      dir,
-    ),
-    null,
-  );
+  assert.equal(await mod.gateFlashDispatch(["flash", "--recover"], dir), null);
   assert.match(plans.at(-1).message, /does not run recovery flashes/);
   assert.equal(plans.filter((p) => p.channel === "modal").length, 0);
 });
@@ -859,6 +853,87 @@ test("the manifest is re-hashed as soon as the preview returns, before any modal
   assert.equal(out, null);
   assert.match(lastMessage(plans), /changed while the confirmation was open/);
   assert.equal(confirmPlans(plans).length, 0, "no modal over a stale preview");
+});
+
+test("an unarmed scope holding a yocto entry is read as JSON, so the toast names what was NOT written", async () => {
+  const env = JSON.parse(capture("dry-run.mixed-yocto-flow-d"));
+  env.data.entries = [
+    ...env.data.entries.filter((e) => e.method !== "alif_mram_jlink"),
+    JSON.parse(capture("dry-run.zephyr-west-flash")).data.entries[0],
+  ];
+  const dir = projectWithManifest();
+  const { mod } = loadGate(acceptAll);
+  const out = await mod.gateFlashDispatch(["flash"], dir, {
+    runTan: async () => JSON.stringify(env),
+  });
+  assert.deepEqual(out, {
+    argv: ["flash", "--format", "json"],
+    readEnvelope: true,
+  });
+});
+
+test("options outside the allow-list are refused before anything is previewed", async () => {
+  const dir = projectWithManifest();
+  for (const args of [
+    ["flash", "--board-yaml", "x.yaml"],
+    ["flash", "--skip-missing-tools"],
+    ["flash", "--frobnicate"],
+    ["flash", "--core", "--confirm"],
+    ["flash", "--sdk-root", "--confirm"],
+    ["flash", "--dry-run", "--frobnicate"],
+    ["--", "flash", "--confirm"],
+    ["--", "flash"],
+  ]) {
+    const { mod, plans } = loadGate(acceptAll);
+    const tan = flowD();
+    assert.equal(
+      await mod.gateFlashDispatch(args, dir, tan.deps),
+      null,
+      args.join(" "),
+    );
+    assert.match(lastMessage(plans), /nothing was written/i, args.join(" "));
+    assert.equal(tan.calls.length, 0, args.join(" "));
+    assert.equal(confirmPlans(plans).length, 0, args.join(" "));
+  }
+});
+
+test("`-- --confirm` is an APP_PATH, not a flag: no such build directory, so refused", async () => {
+  const dir = projectWithManifest();
+  const { mod, plans } = loadGate(acceptAll);
+  const tan = flowD();
+  assert.equal(
+    await mod.gateFlashDispatch(["flash", "--", "--confirm"], dir, tan.deps),
+    null,
+  );
+  assert.match(lastMessage(plans), /system-manifest\.yaml/);
+  assert.equal(tan.calls.length, 0);
+});
+
+test("`--core=m55_he` and a trailing --sdk-root are read as Click reads them and proceed", async () => {
+  const dir = projectWithManifest();
+  for (const args of [
+    ["flash", "--core=m55_he"],
+    ["flash", "--sdk-root", "/opt/sdk"],
+  ]) {
+    const { mod, plans } = loadGate("flashDevice");
+    await mod.gateFlashDispatch(args, dir, flowD().deps);
+    assert.ok(confirmPlans(plans).length > 0, `${args.join(" ")} was refused`);
+  }
+});
+
+test("cancelling the preview is 'cancelled, nothing was written' — not a missing preview", async () => {
+  const dir = projectWithManifest();
+  const { mod, plans } = loadGate(acceptAll);
+  assert.equal(
+    await mod.gateFlashDispatch(["flash"], dir, {
+      runTan: async () => ({ cancelled: true }),
+    }),
+    null,
+  );
+  assert.match(lastMessage(plans), /cancelled/);
+  assert.match(lastMessage(plans), /nothing was written/i);
+  assert.equal(plans.at(-1).severity, "info");
+  assert.doesNotMatch(lastMessage(plans), /no preview/);
 });
 
 test("a bare `tan run` is untouched — it never flashes", () => {

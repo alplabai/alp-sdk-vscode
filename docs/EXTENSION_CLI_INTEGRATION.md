@@ -939,8 +939,12 @@ manifest names: every planner-emitted Zephyr slice carries
 1. The existing pre-checks (`--recover`, `--project`, malformed argv, no
    readable `build/system-manifest.yaml`) refuse as before. So do a call site
    that already wrote `--confirm` or `--atoc-unqueryable` (the gate adds those
-   itself), flags the consent screen cannot describe (`--raw`, `--ram`,
-   `--replace-atoc`, `--no-reset`, …), and a manifest that already carries
+   itself), any option outside a short allow-list (`FLASH_ALLOWED_OPTIONS`:
+   `--core`, `--setools-dir`, `--probe-serial`, `--probe-usb-path`, `--jlink`,
+   `--dry-run`, `--format`, `--sdk-root`) read the way tan's Click parser reads it
+   — no abbreviation, a value-taking option swallows the next token even if it
+   starts with `--` (and such a value is refused), `--` ends options, and a `--`
+   before the command is refused — and a manifest that already carries
    `flash_args.confirm` or `flash_args.atoc_unqueryable` — tan arms on either,
    and a dry-run cannot reveal it.
 2. The gate runs the same argv with `--dry-run --format json` (no UI stream) and
@@ -983,7 +987,7 @@ case-insensitively on Windows, for direct spawns.
 `ALP_FLASH_REQUIRE_DPIDR` is left alone.
 
 **The verdict comes from the envelope — for an armed Flow D run.** Only a run
-the gate armed is executed with `--format json`; every other gated flash (the
+the gate armed (or an unarmed one that leaves a yocto/xspi entry unwritten beside one that writes, so the toast can name it) is executed with `--format json`; every other gated flash (the
 backends that write unasked, or a yocto scope left unarmed) keeps the text-mode
 streamed run and the exit-code path, so west's and cmake's own output still
 reaches the log live. For the armed run, stdout is held back, tan's entries and

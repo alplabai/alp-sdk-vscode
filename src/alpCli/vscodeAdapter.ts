@@ -2664,7 +2664,7 @@ async function runTanForFlashPreview(
   getTan: () => Promise<PinnedTan>,
   args: readonly string[],
   cwd: string,
-): Promise<string | null> {
+): Promise<string | null | { cancelled: true }> {
   let tan: PinnedTan;
   try {
     tan = await getTan();
@@ -2693,10 +2693,10 @@ async function runTanForFlashPreview(
       cancellable: true,
     },
     (_progress, token) =>
-      new Promise<string | null>((resolve) => {
+      new Promise<string | null | { cancelled: true }>((resolve) => {
         let stdout = "";
         let settled = false;
-        const finish = (value: string | null): void => {
+        const finish = (value: string | null | { cancelled: true }): void => {
           if (settled) return;
           settled = true;
           clearTimeout(timer);
@@ -2721,7 +2721,7 @@ async function runTanForFlashPreview(
         // A preview writes nothing, so cancelling it needs no confirm.
         token.onCancellationRequested(() => {
           child.kill();
-          finish(null);
+          finish({ cancelled: true });
         });
         child.stdout?.setEncoding("utf8");
         child.stderr?.setEncoding("utf8");

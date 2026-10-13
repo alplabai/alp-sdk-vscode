@@ -55,7 +55,16 @@ export type FlashRefusalReason =
 
 export type FlashArmingDecision =
   /** Spawn the argv as the call site wrote it. */
-  | { kind: "unarmed" }
+  | {
+      kind: "unarmed";
+      /**
+       * In-scope entries tan only PREVIEWS without `--confirm` (yocto, xspi)
+       * that this run leaves unwritten. Non-empty means the run is read from
+       * its envelope, so the toast can name them instead of reporting a clean
+       * finish over a half-flashed board.
+       */
+      previewOnly: readonly string[];
+    }
   /** Add `--confirm`, and make the customer acknowledge the ATOC replacement. */
   | {
       kind: "arm-flow-d";
@@ -184,7 +193,7 @@ export function decideFlashArming(
           "nothing was written.",
       );
     }
-    return { kind: "unarmed" };
+    return { kind: "unarmed", previewOnly: neverArm.map((e) => e.id) };
   }
 
   // ── Flow D in scope, and nothing that forbids arming it ─────────────────

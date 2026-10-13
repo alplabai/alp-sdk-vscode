@@ -96,9 +96,13 @@
 //   - A manifest that already carries `flash_args.confirm` or
 //     `flash_args.atoc_unqueryable` is refused: tan arms on `--confirm` OR that
 //     key, and a dry-run cannot reveal it.
-//   - Allow-list, not deny-list: a backend that is not one of the verified
-//     classes refuses, and flags the consent screen cannot describe (`--raw`,
-//     `--ram`, `--replace-atoc`, `--no-reset`, …) are refused like `--recover`.
+//   - Allow-lists, not deny-lists: a backend that is not one of the two
+//     verified `writes` backends (or Flow D / yocto / xspi) refuses, and so
+//     does any `tan flash` option outside `FLASH_ALLOWED_OPTIONS` — read the way
+//     Click reads it, so `--core --confirm` is `--core` with a suspect value,
+//     not an armed flash.
+//   - An unarmed scope that leaves a yocto/xspi entry unwritten beside one that
+//     writes is also read from its envelope, so the toast names that entry.
 //
 // `ALP_FLASH_FORCE=1` and `flash_args.confirm`/`flash_args.atoc_unqueryable`
 // are the other ways to arm tan's gate. NONE is used: the first would put the
@@ -197,6 +201,7 @@ export function flashManifestPath(
   cwd: string,
 ): string {
   const argv = readFlashArgv(args);
+
   if (argv.buildRoot !== null) {
     return path.resolve(cwd, argv.buildRoot, MANIFEST_FILE);
   }
@@ -239,7 +244,10 @@ export interface FlashGateDeps {
    * preview that found a problem exits non-zero and still prints the envelope
    * the gate needs to read.
    */
-  runTan(args: readonly string[], cwd: string): Promise<string | null>;
+  runTan(
+    args: readonly string[],
+    cwd: string,
+  ): Promise<string | null | { cancelled: true }>;
 }
 
 /** A dispatch the gate let through. */
@@ -265,14 +273,16 @@ function setoolsDirFromEnv(): string | null {
   return value ? value : null;
 }
 
-/** Ask tan to preview `args` and read what it says. Null when it cannot. */
+/** Ask tan to preview `args` and read what it says. Null when it cannot;
+ *  `"cancelled"` when the customer cancelled the preview. */
 async function previewOf(
   deps: FlashGateDeps,
   args: readonly string[],
   cwd: string,
-): Promise<FlashEnvelope | null> {
+): Promise<FlashEnvelope | null | "cancelled"> {
   const stdout = await deps.runTan(previewFlashArgv(args), cwd);
   if (stdout === null) return null;
+  if (typeof stdout === "object") return "cancelled";
   return parseFlashEnvelope(stdout);
 }
 
@@ -333,6 +343,39 @@ export async function gateFlashDispatch(
 
   const argv = readFlashArgv(args);
 
+  // An allow-list of options, checked BEFORE anything else — the `--dry-run`
+  // pass-through included. Raw and RAM writes, ATOC replacement, reset
+  // suppression, an unknown or abbreviated flag: the consent screen and the
+  // preview describe a plain flash, and a flag this build has not modelled can
+  // desynchronise its reading of the argv from tan's (Click has no
+  // abbreviation, lets a value-taking option swallow the next token even if it
+  // starts with `--`, and hoists globals written after the subcommand).
+  if (argv.hasRootEndOfOptions) {
+    return refuse(
+      "Alp did not run this flash: it has `--` before the command, and tan " +
+        "starts reading the subcommand's options afresh after it. Nothing was " +
+        "written.",
+      args.join(" "),
+    );
+  }
+  if (argv.unmodelledFlags.length > 0) {
+    return refuse(
+      `Alp does not run a flash with ${argv.unmodelledFlags.join(", ")}: what ` +
+        "that does is not something the confirmation can describe, so " +
+        "nothing was written.",
+      args.join(" "),
+    );
+  }
+  if (argv.suspectValues.length > 0) {
+    return refuse(
+      `Alp did not run this flash: the value given to ${argv.suspectValues.join(", ")} ` +
+        "starts with a dash, so tan would read it as that option's value " +
+        "rather than as a flag — and nothing here can be sure that is what " +
+        "was meant. Nothing was written.",
+      args.join(" "),
+    );
+  }
+
   // Writes nothing by tan's own contract, so there is nothing to consent to —
   // and arming it would turn a preview into a write.
   if (argv.isDryRun) {
@@ -357,18 +400,6 @@ export async function gateFlashDispatch(
         "helper MCU that Alp Lab programs in production, for a bricked " +
         "device only and with Alp Lab-supplied binaries — ask Alp Lab " +
         "support rather than running it from the IDE.",
-    );
-  }
-
-  // Raw and RAM writes, ATOC replacement, reset suppression, read-back: the
-  // consent screen and the preview describe a plain flash, so a run that adds
-  // any of these would write something neither showed.
-  if (argv.unmodelledFlags.length > 0) {
-    return refuse(
-      `Alp does not run a flash with ${argv.unmodelledFlags.join(", ")}: what ` +
-        "that writes is not something the confirmation can describe, so " +
-        "nothing was written.",
-      args.join(" "),
     );
   }
 
@@ -499,6 +530,7 @@ export async function gateFlashDispatch(
       : [...args];
 
   const preview = await previewOf(deps, baseArgs, cwd);
+  if (preview === "cancelled") return cancelled("preview cancelled");
   if (preview === null) {
     return refuse(
       "tan returned no preview for this flash, so Alp cannot say what it " +
@@ -514,9 +546,11 @@ export async function gateFlashDispatch(
   const needsWholeBoard =
     isScoped &&
     preview.entries.some((e) => classifyBackend(e.method) === "flow-d");
-  const wholeBoard = needsWholeBoard
+  const wholePreview = needsWholeBoard
     ? await previewOf(deps, withoutCore(baseArgs), cwd)
     : null;
+  if (wholePreview === "cancelled") return cancelled("preview cancelled");
+  const wholeBoard = wholePreview;
 
   // The previews take a while (they sign an ATOC); the manifest they described
   // has to be the one still on disk before anything is shown about it.
@@ -608,6 +642,13 @@ export async function gateFlashDispatch(
   // the log live and the exit-code path is unchanged.
   if (decision.kind === "arm-flow-d") {
     return { argv: jsonFlashArgv(argvOut), readEnvelope: true };
+  }
+  // Unarmed, but with entries tan only previews (yocto, xspi) beside ones it
+  // writes: the exit status is 0 and a text-mode "finished" toast would say the
+  // board was flashed. Read the envelope so the toast names what was not
+  // written. Purely-writing scopes keep the text stream.
+  if (decision.previewOnly.length > 0) {
+    return { argv: jsonFlashArgv(args), readEnvelope: true };
   }
   return passThrough(args);
 
