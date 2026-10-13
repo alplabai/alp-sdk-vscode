@@ -369,8 +369,27 @@ test("a flash's environment is scrubbed on both spawn paths", () => {
   );
   assert.match(
     ADAPTER,
-    /for \(const name of FLASH_SCRUBBED_ENV\) delete env\[name\];/,
+    /for \(const name of FLASH_SCRUBBED_ENV\) \{\s*delete env\[name\];/,
   );
+  // Windows names are case-insensitive: `Alp_Flash_Force=1` must go too.
+  assert.match(ADAPTER, /key\.toUpperCase\(\) === name/);
+});
+
+test("the preview and the write run the SAME tan binary and --sdk-root", () => {
+  assert.match(ENTRY, /const getTan = pinTan\(context\);/);
+  assert.match(ENTRY, /runTanForFlashPreview\(getTan,/);
+  assert.match(ENTRY, /pinned: isFlash \? getTan : undefined/);
+  assert.match(STREAM, /await options\.pinned\(\)/);
+  assert.match(STREAM, /withPinnedSdkRoot\(sdkPrefix, args\)/);
+});
+
+test("the preview runs under a progress notification", () => {
+  const body = ADAPTER.slice(
+    ADAPTER.indexOf("async function runTanForFlashPreview("),
+    ADAPTER.indexOf("const FLASH_PREVIEW_TIMEOUT_MS"),
+  );
+  assert.match(body, /vscode\.window\.withProgress\(/);
+  assert.match(body, /ProgressLocation\.Notification/);
 });
 
 // ---------------------------------------------------------------------------

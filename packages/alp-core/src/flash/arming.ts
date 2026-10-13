@@ -46,6 +46,8 @@ export type FlashRefusalReason =
   | "preview-failed"
   | "nothing-in-scope"
   | "mixed-backends"
+  | "unknown-backend"
+  | "multiple-atocs"
   | "preview-only-backend"
   | "setools-not-operator-named"
   | "replacement-text-missing"
@@ -149,6 +151,15 @@ export function decideFlashArming(
 
   const byClass = (cls: FlashBackendClass): FlashEnvelopeEntry[] =>
     inScope.filter((e) => classifyBackend(e.method) === cls);
+  const unknown = byClass("unknown");
+  if (unknown.length > 0) {
+    return refuse(
+      "unknown-backend",
+      `Alp does not know what tan would do for ${ids(unknown)} ` +
+        `(${[...new Set(unknown.map((e) => e.method ?? "no method"))].join(", ")}), ` +
+        "so it cannot say whether arming is safe — nothing was written.",
+    );
+  }
   const flowD = byClass("flow-d");
   const neverArm = byClass("never-arm");
   const writesUnasked = byClass("writes");
@@ -177,7 +188,20 @@ export function decideFlashArming(
   }
 
   // ── Flow D in scope, and nothing that forbids arming it ─────────────────
-  const lead = flowD.find((e) => flowDReplacementNote(e.message) !== null);
+  // One ATOC, one modal. A slice that carries its own `atoc`/`atoc_map` is
+  // written separately (it is not folded into the combined ATOC), so two entries
+  // with an ATOC block are two replacements, and the second would delist what
+  // the first just wrote. A co-slice has no ATOC block of its own.
+  const withAtoc = flowD.filter((e) => e.atocNames !== null);
+  if (withAtoc.length > 1) {
+    return refuse(
+      "multiple-atocs",
+      `This flash would write more than one boot table (${ids(withAtoc)}), ` +
+        "and each replaces the other's entries. Alp asks about one — " +
+        "nothing was written.",
+    );
+  }
+  const lead = withAtoc.find((e) => flowDReplacementNote(e.message) !== null);
   if (flowD.some((e) => e.setools?.signSkipped === true)) {
     return refuse(
       "setools-not-operator-named",

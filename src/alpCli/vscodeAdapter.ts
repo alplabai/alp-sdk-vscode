@@ -927,7 +927,16 @@ const FLASH_SCRUBBED_ENV: readonly string[] = ["ALP_FLASH_FORCE"];
  *  so the shell command string unsets them again after it (`loginShellInvocation`). */
 function flashSpawnEnv(): NodeJS.ProcessEnv {
   const env = spawnEnv();
-  for (const name of FLASH_SCRUBBED_ENV) delete env[name];
+  for (const name of FLASH_SCRUBBED_ENV) {
+    delete env[name];
+    // Windows environment names are case-insensitive, and Node keeps whatever
+    // spelling the parent had: `Alp_Flash_Force=1` still reaches tan.
+    if (process.platform === "win32") {
+      for (const key of Object.keys(env)) {
+        if (key.toUpperCase() === name) delete env[key];
+      }
+    }
+  }
   return env;
 }
 
@@ -2613,22 +2622,52 @@ function loginShellInvocation(
   };
 }
 
+/** The tan binary and `--sdk-root` one flash dispatch uses, resolved ONCE. The
+ *  preview the customer is shown and the write they accept must run the same
+ *  binary against the same SDK: resolving twice lets a setting change, a
+ *  concurrent download or a PATH edit between the two put a different tan
+ *  behind the same consent. */
+interface PinnedTan {
+  binary: ResolvedBinary;
+  sdkPrefix: string[];
+}
+
+/** A lazy, memoised resolution: nothing is resolved (or downloaded) for a flash
+ *  the gate refuses before it needs tan. */
+function pinTan(context: vscode.ExtensionContext): () => Promise<PinnedTan> {
+  let pinned: Promise<PinnedTan> | undefined;
+  return () =>
+    (pinned ??= (async () => ({
+      binary: await resolveAlpBinaryForContext(context, { interactive: true }),
+      sdkPrefix: withSdkRoot([]),
+    }))());
+}
+
+/** `withSdkRoot` against a prefix captured earlier. */
+function withPinnedSdkRoot(
+  prefix: readonly string[],
+  args: string[],
+): string[] {
+  return args.includes("--sdk-root") ? args : [...prefix, ...args];
+}
+
 /**
  * Run `tan <args>` to completion and hand back its stdout, for the flash gate's
- * `--dry-run --format json` preview. Resolves the binary the way every other
- * interactive run does, goes through the same login shell, and scrubs
+ * `--dry-run --format json` preview, under a progress notification (a preview
+ * signs an ATOC and can take minutes on a cold disk; cancelling kills it).
+ * Uses the pinned binary, goes through the same login shell, and scrubs
  * `ALP_FLASH_FORCE` like the real flash does. Null when tan could not be run;
  * the exit status is dropped on purpose, because a preview that found a problem
  * exits non-zero and still prints the envelope the gate reads.
  */
 async function runTanForFlashPreview(
-  context: vscode.ExtensionContext,
+  getTan: () => Promise<PinnedTan>,
   args: readonly string[],
   cwd: string,
 ): Promise<string | null> {
-  let binary: ResolvedBinary;
+  let tan: PinnedTan;
   try {
-    binary = await resolveAlpBinaryForContext(context, { interactive: true });
+    tan = await getTan();
   } catch (error) {
     log(
       `[cli] [fail] CLI unavailable (flash preview): ${error instanceof Error ? error.message : String(error)}`,
@@ -2636,7 +2675,8 @@ async function runTanForFlashPreview(
     void surfaceResolutionError(error, "Alp Flash");
     return null;
   }
-  const finalArgs = withSdkRoot([...args]);
+  const { binary } = tan;
+  const finalArgs = withPinnedSdkRoot(tan.sdkPrefix, [...args]);
   log(
     `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")}  (flash preview)`,
   );
@@ -2646,39 +2686,58 @@ async function runTanForFlashPreview(
     cwd,
     FLASH_SCRUBBED_ENV,
   );
-  return new Promise<string | null>((resolve) => {
-    let stdout = "";
-    let settled = false;
-    const finish = (value: string | null): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(value);
-    };
-    const child = shellRun
-      ? cp.spawn(shellRun.file, shellRun.argv, { cwd, env: flashSpawnEnv() })
-      : cp.spawn(binary.command, finalArgs, { cwd, env: flashSpawnEnv() });
-    // A preview signs an ATOC in a scratch copy of SETOOLS, which is the slow
-    // part; a minute would cut it off on a cold disk.
-    const timer = setTimeout(() => {
-      log("[cli] flash preview timed out", "warn");
-      child.kill();
-      finish(null);
-    }, FLASH_PREVIEW_TIMEOUT_MS);
-    child.stdout?.setEncoding("utf8");
-    child.stderr?.setEncoding("utf8");
-    child.stdout?.on("data", (text: string) => {
-      stdout += text;
-    });
-    child.stderr?.on("data", (text: string) =>
-      log(`[flash preview] ${text.trimEnd()}`),
-    );
-    child.on("error", (error) => {
-      log(`[cli] flash preview could not start: ${error.message}`, "warn");
-      finish(null);
-    });
-    child.on("close", () => finish(stdout));
-  });
+  return vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "Alp Flash: previewing what would be written…",
+      cancellable: true,
+    },
+    (_progress, token) =>
+      new Promise<string | null>((resolve) => {
+        let stdout = "";
+        let settled = false;
+        const finish = (value: string | null): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(value);
+        };
+        const child = shellRun
+          ? cp.spawn(shellRun.file, shellRun.argv, {
+              cwd,
+              env: flashSpawnEnv(),
+            })
+          : cp.spawn(binary.command, finalArgs, {
+              cwd,
+              env: flashSpawnEnv(),
+            });
+        // A preview signs an ATOC in a scratch copy of SETOOLS, which is the
+        // slow part; a minute would cut it off on a cold disk.
+        const timer = setTimeout(() => {
+          log("[cli] flash preview timed out", "warn");
+          child.kill();
+          finish(null);
+        }, FLASH_PREVIEW_TIMEOUT_MS);
+        // A preview writes nothing, so cancelling it needs no confirm.
+        token.onCancellationRequested(() => {
+          child.kill();
+          finish(null);
+        });
+        child.stdout?.setEncoding("utf8");
+        child.stderr?.setEncoding("utf8");
+        child.stdout?.on("data", (text: string) => {
+          stdout += text;
+        });
+        child.stderr?.on("data", (text: string) =>
+          log(`[flash preview] ${text.trimEnd()}`),
+        );
+        child.on("error", (error) => {
+          log(`[cli] flash preview could not start: ${error.message}`, "warn");
+          finish(null);
+        });
+        child.on("close", () => finish(stdout));
+      }),
+  );
 }
 
 const FLASH_PREVIEW_TIMEOUT_MS = 180_000;
@@ -2772,9 +2831,10 @@ export async function runAlpStreamed(
     // second dialog into a second programmer on the same board. `isRunActive`
     // already documents that state as "or its start is still pending
     // confirmation", and the `finally` below releases it on every answer.
+    const getTan = pinTan(context);
     const gated = await gateFlashDispatch(args, options.cwd, {
       runTan: (previewArgs, previewCwd) =>
-        runTanForFlashPreview(context, previewArgs, previewCwd),
+        runTanForFlashPreview(getTan, previewArgs, previewCwd),
     });
     // Refused or cancelled: the gate has already said so on its own terms —
     // "cancelled", never a failure — and NOTHING is spawned here.
@@ -2791,6 +2851,8 @@ export async function runAlpStreamed(
       ...options,
       isFlash,
       readEnvelope: gated.readEnvelope,
+      // The write runs the binary and SDK root the preview ran.
+      pinned: isFlash ? getTan : undefined,
     });
   } finally {
     releaseStreamedRun(options.name);
@@ -2914,14 +2976,23 @@ async function streamRun(
      * streaming it, and raise the verdict from it when the run closes (#540).
      */
     readEnvelope?: boolean;
+    /** Resolve the binary and SDK root a flash's preview already used. */
+    pinned?: () => Promise<PinnedTan>;
   },
 ): Promise<void> {
   let binary: ResolvedBinary;
+  let sdkPrefix: string[] | undefined;
   try {
     // Every caller of `runAlpStreamed` (west.ts's build/image/flash/clean/
     // renode commands, the Build Plan panel's buttons) is a command the user
     // just triggered — see `resolveAlpBinaryForContext`'s doc for the split.
-    binary = await resolveAlpBinaryForContext(context, { interactive: true });
+    if (options.pinned) {
+      const tan = await options.pinned();
+      binary = tan.binary;
+      sdkPrefix = tan.sdkPrefix;
+    } else {
+      binary = await resolveAlpBinaryForContext(context, { interactive: true });
+    }
   } catch (error) {
     log(
       `[cli] [fail] CLI unavailable (streamed): ${error instanceof Error ? error.message : String(error)}`,
@@ -2948,7 +3019,9 @@ async function streamRun(
   // build's one prompt source (auto-bootstrap) is deferred as well
   // (`--no-auto-bootstrap  Deferred, not implemented in this build`).
   // `runAlpInTerminal` still owns anything that genuinely needs a TTY.
-  const finalArgs = withSdkRoot(args);
+  const finalArgs = sdkPrefix
+    ? withPinnedSdkRoot(sdkPrefix, args)
+    : withSdkRoot(args);
   log(
     `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")}  (channel: ${options.name})`,
   );

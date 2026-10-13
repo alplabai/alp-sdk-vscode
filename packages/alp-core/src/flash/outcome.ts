@@ -75,7 +75,7 @@ export type FlashOutcome =
       detail: string;
     }
   /** No envelope: the state of the device cannot be stated. */
-  | { kind: "unknown" };
+  | { kind: "unknown"; detail?: string };
 
 const ids = (entries: readonly FlashEnvelopeEntry[]): string[] =>
   entries.map((e) => e.id);
@@ -99,19 +99,24 @@ export function classifyFlashOutcome(env: FlashEnvelope | null): FlashOutcome {
   const failed = entries.filter((e) => e.status === "failed");
 
   if (failed.length > 0) {
-    const refusalCodes = env.issues
-      .map((i) => i.code)
-      .filter((code) => FLASH_REFUSAL_CODES.has(code));
-    // A failed entry that opened a write session may have changed the device.
-    // So may a failed entry of a backend this module cannot see inside, unless
-    // tan named a pre-write refusal — a conservative default, because the
-    // alternative is telling a customer a half-written board is untouched.
-    const startedWriting = failed.some(
-      (e) =>
-        e.hasWriteTranscript ||
-        (e.method !== FLOW_D_METHOD && refusalCodes.length === 0),
-    );
-    if (ok.length > 0 || startedWriting) {
+    // Attribute a refusal to the entry it belongs to. tan raises each refusal
+    // as an issue whose message IS the entry's message (a co-slice quotes its
+    // lead's), so a code elsewhere in the run says nothing about THIS entry:
+    // a Flow D probe refusal beside a cmake flash that died mid-program is a
+    // partial write, not a refusal.
+    const isTied = (e: FlashEnvelopeEntry): boolean =>
+      env.issues.some(
+        (i) =>
+          FLASH_REFUSAL_CODES.has(i.code) &&
+          i.message !== "" &&
+          e.message.includes(i.message),
+      );
+    // Provably before the first byte: no write session opened, and either tan
+    // tied a refusal to this entry or it is Flow D (whose only write session is
+    // the one that leaves a transcript). Anything else MAY have written.
+    const isPreWrite = (e: FlashEnvelopeEntry): boolean =>
+      !e.hasWriteTranscript && (isTied(e) || e.method === FLOW_D_METHOD);
+    if (ok.length > 0 || !failed.every(isPreWrite)) {
       return {
         kind: "failed-during-write",
         written: ids(ok),
@@ -121,7 +126,9 @@ export function classifyFlashOutcome(env: FlashEnvelope | null): FlashOutcome {
     }
     return {
       kind: "refused",
-      codes: refusalCodes,
+      codes: env.issues
+        .map((i) => i.code)
+        .filter((code) => FLASH_REFUSAL_CODES.has(code)),
       detail: failed.map((e) => `${e.id}: ${e.message}`).join("\n"),
     };
   }
@@ -136,6 +143,12 @@ export function classifyFlashOutcome(env: FlashEnvelope | null): FlashOutcome {
       previewedOnly: ids(planned),
       detail: issueMessages(env, FLASH_PREVIEW_ONLY_CODES),
     };
+  }
+
+  // A run tan itself calls not-ok cannot be a clean write, whatever its
+  // entries say: report the state as unknown rather than green.
+  if (ok.length > 0 && !env.ok) {
+    return { kind: "unknown", detail: issueMessages(env) };
   }
 
   if (ok.length > 0) {
@@ -238,8 +251,9 @@ export function describeFlashOutcome(outcome: FlashOutcome): FlashOutcomeText {
       return {
         severity: "warning",
         message:
-          "Alp Flash did not complete, and tan returned no result Alp can read. That does not say " +
-          "whether any slice was written — read the log before re-flashing.",
+          "Alp Flash did not complete cleanly, and tan's result is not one Alp can read as a verdict. " +
+          "That does not say whether any slice was written — read the log before re-flashing.",
+        detail: outcome.detail,
       };
   }
 }

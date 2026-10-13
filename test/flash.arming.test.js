@@ -58,7 +58,7 @@ test("backends are classified by the method tan resolved", () => {
   assert.equal(classifyBackend("xspi_flashwriter"), "never-arm");
   assert.equal(classifyBackend("zephyr_west_flash"), "writes");
   assert.equal(classifyBackend("baremetal_cmake_flash"), "writes");
-  assert.equal(classifyBackend(null), "writes");
+  assert.equal(classifyBackend(null), "unknown");
 });
 
 test("an all-Flow-D AEN scope arms, and the manifest's own flash_method is not what decided it", () => {

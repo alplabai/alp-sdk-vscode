@@ -88,9 +88,17 @@
 //     printed verbatim. `--atoc-unqueryable` is added only after it.
 //   - A per-slice (`--core`) Flow D flash is refused when the preview shows a
 //     sibling it would delist; the whole-board Flash is the way to flash it.
-//   - The run that follows is `--format json`, because the verdict has to come
+//   - An ARMED Flow D run is `--format json`, because its verdict has to come
 //     from the envelope: at 0.7.0 "every entry planned" exits 1 and a mixed run
-//     exits 0, so the exit code cannot say whether anything was written.
+//     exits 0, so the exit code cannot say whether anything was written. Every
+//     other scope keeps the text-mode streamed run and the exit-code path, so
+//     west's and cmake's own output still reaches the log.
+//   - A manifest that already carries `flash_args.confirm` or
+//     `flash_args.atoc_unqueryable` is refused: tan arms on `--confirm` OR that
+//     key, and a dry-run cannot reveal it.
+//   - Allow-list, not deny-list: a backend that is not one of the verified
+//     classes refuses, and flags the consent screen cannot describe (`--raw`,
+//     `--ram`, `--replace-atoc`, `--no-reset`, …) are refused like `--recover`.
 //
 // `ALP_FLASH_FORCE=1` and `flash_args.confirm`/`flash_args.atoc_unqueryable`
 // are the other ways to arm tan's gate. NONE is used: the first would put the
@@ -352,6 +360,18 @@ export async function gateFlashDispatch(
     );
   }
 
+  // Raw and RAM writes, ATOC replacement, reset suppression, read-back: the
+  // consent screen and the preview describe a plain flash, so a run that adds
+  // any of these would write something neither showed.
+  if (argv.unmodelledFlags.length > 0) {
+    return refuse(
+      `Alp does not run a flash with ${argv.unmodelledFlags.join(", ")}: what ` +
+        "that writes is not something the confirmation can describe, so " +
+        "nothing was written.",
+      args.join(" "),
+    );
+  }
+
   if (argv.hasProjectFlag) {
     return refuse(
       "Alp does not run a flash with --project, so nothing was written. Alp " +
@@ -434,6 +454,28 @@ export async function gateFlashDispatch(
     );
   }
 
+  // tan arms a backend when `--confirm` OR the manifest's own
+  // `flash_args.confirm` says so, and a `--dry-run` preview cannot reveal which
+  // (it never writes either way). A manifest that already holds the key would
+  // arm a yocto `dd` or a Flow D write behind a modal that says "NOT written",
+  // so it is refused by name instead.
+  for (const target of plan.targets) {
+    const args2 = target.flashArgs;
+    if (typeof args2 !== "object" || args2 === null) continue;
+    for (const key of ["confirm", "atoc_unqueryable"]) {
+      const value = args2[key];
+      if (value !== undefined && value !== false && value !== "false") {
+        return refuse(
+          `${target.id} already carries flash_args.${key} in ${MANIFEST_FILE}, ` +
+            "which arms tan's write gate without asking — so nothing was " +
+            "written. Remove the key (the next build rewrites it) and flash " +
+            "again.",
+          manifestPath,
+        );
+      }
+    }
+  }
+
   const digest = digestOf(text);
 
   // Everything below needs tan's own account of what this argv would do, and
@@ -475,6 +517,10 @@ export async function gateFlashDispatch(
   const wholeBoard = needsWholeBoard
     ? await previewOf(deps, withoutCore(baseArgs), cwd)
     : null;
+
+  // The previews take a while (they sign an ATOC); the manifest they described
+  // has to be the one still on disk before anything is shown about it.
+  if (!manifestUnchanged(manifestPath, digest)) return null;
 
   const decision = decideFlashArming(preview, {
     scoped: isScoped,
@@ -556,7 +602,14 @@ export async function gateFlashDispatch(
     `[flash] consent granted for ${plan.targets.length} target(s) in ${manifestPath}` +
       (decision.kind === "arm-flow-d" ? " (Flow D armed)" : " (not armed)"),
   );
-  return { argv: jsonFlashArgv(argvOut), readEnvelope: true };
+  // Only an ARMED Flow D run is read back as JSON: its verdict (refused vs
+  // partly written) cannot come from an exit status. Every other scope keeps
+  // the text-mode streamed run, so west's and cmake's own output still reaches
+  // the log live and the exit-code path is unchanged.
+  if (decision.kind === "arm-flow-d") {
+    return { argv: jsonFlashArgv(argvOut), readEnvelope: true };
+  }
+  return passThrough(args);
 
   /** Decline: say so, spawn nothing. "Cancelled", never a failure. */
   function cancelled(why: string): null {

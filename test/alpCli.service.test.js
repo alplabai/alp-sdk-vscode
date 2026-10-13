@@ -911,19 +911,19 @@ test("posixLoginShellCommand cd's into cwd and execs the binary", () => {
   );
 });
 
-test("posixLoginShellCommand unsets named variables AFTER the profile and BEFORE the exec", () => {
+test("posixLoginShellCommand scrubs named variables via `env -u`, inside the login shell's -c", () => {
   // The whole string is the login shell's `-c`, so the profile has already run
-  // by the time `unset` does. That ordering is what removes a profile's
+  // by the time `env -u` does. That ordering is what removes a profile's
   // `export ALP_FLASH_FORCE=1` (#540); an env-object delete alone cannot.
   assert.equal(
     posixLoginShellCommand("/opt/tan", ["flash"], "/w", ["ALP_FLASH_FORCE"]),
-    "cd '/w' && unset ALP_FLASH_FORCE && exec '/opt/tan' 'flash'",
+    "cd '/w' && exec env -u ALP_FLASH_FORCE '/opt/tan' 'flash'",
   );
   assert.equal(
     posixLoginShellCommand("/opt/tan", ["flash"], undefined, ["A_B", "C"]),
-    "unset A_B && unset C && exec '/opt/tan' 'flash'",
+    "exec env -u A_B -u C '/opt/tan' 'flash'",
   );
-  // `unset` takes identifiers, so a name is validated, not quoted.
+  // `-u` takes identifiers, so a name is validated, not quoted.
   assert.throws(
     () => posixLoginShellCommand("/opt/tan", [], undefined, ["X; rm -rf ~"]),
     /not an environment variable name/,

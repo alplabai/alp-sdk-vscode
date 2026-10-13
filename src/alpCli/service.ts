@@ -1074,21 +1074,22 @@ export function posixLoginShellCommand(
   cwd?: string,
   unset: readonly string[] = [],
 ): string {
-  // `unset` runs AFTER the profile (this whole string is the `-c` of a login
-  // shell, so the profile is sourced first) and BEFORE the `exec`. That order
-  // is the point: a profile line `export ALP_FLASH_FORCE=1` arms tan's confirm
-  // gate, and the only place to undo it is after the profile has run. Names are
-  // validated rather than quoted, because `unset` takes identifiers, not words.
-  const unsets = unset.map((name) => {
+  // The scrub is `exec env -u NAME <command>`, run inside the login shell's
+  // `-c` string and therefore AFTER the profile has been sourced — which is the
+  // point: a profile line `export ALP_FLASH_FORCE=1` arms tan's confirm gate,
+  // and the only place to undo it is after the profile has run. `env -u` is
+  // used instead of a shell `unset` because it works the same in bash, zsh, sh
+  // and fish (fish has no `unset`; tcsh keeps the variable), and `-u` exists in
+  // both GNU coreutils and the BSD/macOS `env`. Names are validated rather than
+  // quoted, because `-u` takes identifiers, not words.
+  const unsets = unset.flatMap((name) => {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
       throw new Error(`not an environment variable name: ${name}`);
     }
-    return `unset ${name}`;
+    return ["-u", name];
   });
-  const line = [
-    ...unsets,
-    `exec ${[command, ...args].map(posixShellQuote).join(" ")}`,
-  ].join(" && ");
+  const exec = unsets.length > 0 ? ["env", ...unsets] : [];
+  const line = `exec ${[...exec, ...[command, ...args].map(posixShellQuote)].join(" ")}`;
   return cwd ? `cd ${posixShellQuote(cwd)} && ${line}` : line;
 }
 

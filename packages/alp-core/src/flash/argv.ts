@@ -127,6 +127,20 @@ export const ROOT_VALUE_TAKING_FLAGS: ReadonlySet<string> = new Set([
   "--target",
 ]);
 
+/** `tan flash` options whose effect the consent screen does not describe. */
+export const UNMODELLED_FLASH_FLAGS: ReadonlySet<string> = new Set([
+  "--raw",
+  "--ram",
+  "--ram-console",
+  "--replace-atoc",
+  "--no-reset",
+  "--watch",
+  "--wait",
+  "--readback",
+  "--assume-he",
+  "--no-device-config",
+]);
+
 /** The flag that arms tan's confirm gate. One spelling, named once. */
 export const FLASH_CONFIRM_FLAG = "--confirm";
 
@@ -155,6 +169,12 @@ export interface FlashArgv {
   hasAtocUnqueryable: boolean;
   /** `--setools-dir`'s value, or null. */
   setoolsDir: string | null;
+  /**
+   * Flash options the gate neither models nor previews faithfully (raw and RAM
+   * writes, ATOC replacement, reset suppression, read-back, …). Refused like
+   * `--recover`: the consent screen and the preview describe a plain flash.
+   */
+  unmodelledFlags: readonly string[];
   /**
    * `--project` was written, in EITHER position. Refused rather than read:
    * this repo cannot say whether tan anchors the flash on it or on APP_PATH,
@@ -247,6 +267,7 @@ export function readFlashArgv(args: readonly string[]): FlashArgv {
   let isRecovery = false;
   let hasAtocUnqueryable = false;
   let setoolsDir: string | null = null;
+  const unmodelledFlags: string[] = [];
   let hasProjectFlag = false;
   const danglingFlags: string[] = [];
   const positionals: string[] = [];
@@ -283,6 +304,7 @@ export function readFlashArgv(args: readonly string[]): FlashArgv {
       else if (name === "--recover") isRecovery = true;
       else if (name === "--atoc-unqueryable") hasAtocUnqueryable = true;
       else if (name === "--setools-dir") setoolsDir = value ?? null;
+      else if (UNMODELLED_FLASH_FLAGS.has(name)) unmodelledFlags.push(name);
       continue;
     }
     positionals.push(token);
@@ -299,6 +321,7 @@ export function readFlashArgv(args: readonly string[]): FlashArgv {
     isRecovery,
     hasAtocUnqueryable,
     setoolsDir,
+    unmodelledFlags,
     hasProjectFlag,
     danglingFlags,
     extraPositionals: positionals.slice(1),

@@ -37,13 +37,22 @@ export const FLOW_D_METHOD = "alif_mram_jlink";
  *                 `swd_probe`, …): writes on a bare `tan flash`, and
  *                 `--confirm` changes nothing.
  */
-export type FlashBackendClass = "flow-d" | "never-arm" | "writes";
+export type FlashBackendClass = "flow-d" | "never-arm" | "writes" | "unknown";
+
+/** The backends VERIFIED to write on a bare `tan flash` and ignore
+ *  `--confirm` at tan 0.7.0. An allow-list on purpose: a renamed, new or
+ *  missing method must not be assumed to behave like these. */
+const WRITES_UNASKED: ReadonlySet<string> = new Set([
+  "zephyr_west_flash",
+  "baremetal_cmake_flash",
+]);
 
 export function classifyBackend(method: string | null): FlashBackendClass {
   if (method === FLOW_D_METHOD) return "flow-d";
   if (method !== null && method.startsWith("yocto_wic")) return "never-arm";
   if (method === "xspi_flashwriter") return "never-arm";
-  return "writes";
+  if (method !== null && WRITES_UNASKED.has(method)) return "writes";
+  return "unknown";
 }
 
 /** One `data.entries[]` row, normalised. */

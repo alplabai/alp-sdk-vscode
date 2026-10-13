@@ -249,10 +249,9 @@ test("a scope that tan writes unasked is NOT armed, and still asks once", async 
     dir,
     fakeTan(() => "dry-run.zephyr-west-flash").deps,
   );
-  assert.deepEqual(out, {
-    argv: ["flash", "--format", "json"],
-    readEnvelope: true,
-  });
+  // Text mode: nothing is armed, so there is no envelope verdict to wait for
+  // and the tool's live output (west, cmake) keeps streaming to the log.
+  assert.deepEqual(out, { argv: ["flash"], readEnvelope: false });
   assert.equal(confirmPlans(plans).length, 1);
   assert.equal(out.argv.includes("--confirm"), false);
   assert.equal(out.argv.includes("--atoc-unqueryable"), false);
@@ -764,8 +763,10 @@ test("the gate never reaches for ALP_FLASH_FORCE, flash_args.confirm or flash_ar
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/(^|\n)\s*\/\/[^\n]*/g, "$1");
   assert.doesNotMatch(code, /ALP_FLASH_FORCE/);
-  assert.doesNotMatch(code, /flash_args/);
-  assert.doesNotMatch(code, /atoc_unqueryable/);
+  // The gate READS those keys (to refuse a manifest that already arms tan) but
+  // never writes them: no assignment to a `flash_args` member anywhere.
+  assert.doesNotMatch(code, /flash_args[.\w[\]"']*\s*=[^=]/);
+  assert.doesNotMatch(code, /(?:confirm|atoc_unqueryable)\s*:\s*true/);
   assert.doesNotMatch(code, /"--recover"|'--recover'/);
 });
 
@@ -793,6 +794,71 @@ test("`tan run --flash` is refused: a device write that is not the flash command
         "run that also builds",
     );
   });
+});
+
+test("a manifest that already carries flash_args.confirm or atoc_unqueryable is refused, naming the slice and key", async () => {
+  // tan's gate is `--confirm OR flash_args.confirm`, and a dry-run cannot
+  // reveal it: it would arm a host dd/bmaptool behind a modal that says
+  // "NOT written".
+  for (const key of ["confirm", "atoc_unqueryable"]) {
+    const dir = projectWithManifest(
+      FIXTURE.replace(
+        "    slot0_load_address: '0x802b0000'",
+        `    slot0_load_address: '0x802b0000'\n    ${key}: true`,
+      ),
+    );
+    const { mod, plans } = loadGate(acceptAll);
+    const tan = flowD();
+    assert.equal(await mod.gateFlashDispatch(["flash"], dir, tan.deps), null);
+    assert.match(lastMessage(plans), /m55_hp/);
+    assert.ok(lastMessage(plans).includes(`flash_args.${key}`));
+    assert.match(lastMessage(plans), /nothing was written/);
+    assert.equal(tan.calls.length, 0, "refused before anything is spawned");
+  }
+});
+
+test("a manifest key out of scope does not block a per-core flash", async () => {
+  const dir = projectWithManifest(
+    FIXTURE.replace(
+      "    slot0_load_address: '0x802b0000'",
+      "    slot0_load_address: '0x802b0000'\n    confirm: true",
+    ),
+  );
+  const { mod, plans } = loadGate(acceptAll);
+  await mod.gateFlashDispatch(["flash", "--core", "m55_he"], dir, flowD().deps);
+  assert.doesNotMatch(lastMessage(plans) ?? "", /flash_args\.confirm/);
+});
+
+test("flags Alp does not model are refused like --recover", async () => {
+  const dir = projectWithManifest();
+  for (const args of [
+    ["flash", "--ram"],
+    ["flash", "--raw", "a.bin@0x0"],
+    ["flash", "--replace-atoc"],
+    ["flash", "--no-reset"],
+  ]) {
+    const { mod, plans } = loadGate(acceptAll);
+    const tan = flowD();
+    assert.equal(await mod.gateFlashDispatch(args, dir, tan.deps), null);
+    assert.match(lastMessage(plans), /nothing was written/);
+    assert.equal(confirmPlans(plans).length, 0);
+    assert.equal(tan.calls.length, 0);
+  }
+});
+
+test("the manifest is re-hashed as soon as the preview returns, before any modal", async () => {
+  const dir = projectWithManifest();
+  const manifest = path.join(dir, "build", "system-manifest.yaml");
+  const { mod, plans } = loadGate(acceptAll);
+  const out = await mod.gateFlashDispatch(["flash"], dir, {
+    runTan: async () => {
+      fs.writeFileSync(manifest, FIXTURE.replace("E1M-AEN801", "E1M-AEN701"));
+      return capture("dry-run.flow-d");
+    },
+  });
+  assert.equal(out, null);
+  assert.match(lastMessage(plans), /changed while the confirmation was open/);
+  assert.equal(confirmPlans(plans).length, 0, "no modal over a stale preview");
 });
 
 test("a bare `tan run` is untouched — it never flashes", () => {
