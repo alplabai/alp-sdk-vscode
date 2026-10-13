@@ -22,6 +22,11 @@ import type {
   DoctorEnvelopeData,
   MissingPrerequisite,
 } from "../cli/doctorEnvelope";
+import {
+  type PrerequisiteProvenance,
+  normaliseProvenance,
+  tierRestrictiveness,
+} from "./provenance";
 import { type DependencyState, dependencyState } from "./state";
 
 // ── The envelope slice this planner reads (see docs/CLI.md) ──────────────────
@@ -31,7 +36,12 @@ import { type DependencyState, dependencyState } from "./state";
 // (deps) slice. Re-exported here so every existing import of this module
 // keeps working unchanged.
 
-export type { DoctorCheckEnvelope, DoctorEnvelopeData, MissingPrerequisite };
+export type {
+  DoctorCheckEnvelope,
+  DoctorEnvelopeData,
+  MissingPrerequisite,
+  PrerequisiteProvenance,
+};
 
 /**
  * A row's status, VERBATIM from tan. Deliberately `string`, not a union: the
@@ -109,6 +119,14 @@ export type DependencyActionEffect = "install" | "open-docs" | "bootstrap";
 export interface DependencyCommandStep {
   tool: string;
   command: string;
+  /**
+   * The SAME entry's artifact provenance (tan-cli#1066, #467), normalised by
+   * `normaliseProvenance` where the step is built. Carried on the step so the
+   * consent screen reads it off what will run — no second join by tool name
+   * anywhere downstream, which could pair a licence with the wrong command.
+   * All-`null` from a tan older than 0.7.0-rc1.
+   */
+  provenance: PrerequisiteProvenance;
 }
 
 /**
@@ -163,6 +181,10 @@ export interface DependencyFixAction {
   fixId: ToolchainFixId;
   effect: DependencyActionEffect;
   title: string;
+  /** Present (`true`) only when the doctor run reported the bootstrap
+   *  manifest unreadable, so no provenance backs this row: the consent screen
+   *  then starts it unchecked. A fix row has no steps to carry it. */
+  tierUnreadable?: true;
 }
 
 /**
@@ -523,6 +545,20 @@ export function planDependencyReport(
   const host = input.host ?? DEFAULT_HOST;
   const prerequisites = data.missingPrerequisites;
   const prerequisiteDataUnavailable = prerequisites === undefined;
+  // tan collapses a malformed alp-sdk tier to wire `null`; its only signal is
+  // the `bootstrapManifest` check going non-pass (tan 0.7.0-rc1 words the
+  // artifactProvenance case "…block is not readable"; the rejected-manifest
+  // case also means no provenance was read). Either way a null tier is no
+  // longer "declared nothing", so the consent gate must fail closed on it.
+  const provenanceUnreadable = data.checks.some(
+    (check) => check.name === "bootstrapManifest" && check.status !== "pass",
+  );
+  const provenanceOf = (entry: unknown): PrerequisiteProvenance => {
+    const provenance = normaliseProvenance(entry);
+    return provenanceUnreadable && provenance.tier === null
+      ? { ...provenance, tierUnreadable: true }
+      : provenance;
+  };
 
   // Pass 1 / pass 2 partition (#603). A prerequisite whose `tool` matches some
   // check's `name` binds to THAT check, exactly as before (`entry` in
@@ -533,9 +569,17 @@ export function planDependencyReport(
   // carries, never a per-check `find`.
   const checkNames = new Set(data.checks.map((check) => check.name));
   const leftover = (prerequisites ?? []).filter((p) => !checkNames.has(p.tool));
-  const leftoverBound: DependencyCommandStep[] = leftover
-    .filter((p): p is { tool: string; command: string } => p.command !== null)
-    .map((p) => ({ tool: p.tool, command: p.command }));
+  const leftoverBound: DependencyCommandStep[] = leftover.flatMap((p) =>
+    p.command !== null
+      ? [
+          {
+            tool: p.tool,
+            command: p.command,
+            provenance: provenanceOf(p),
+          },
+        ]
+      : [],
+  );
   const leftoverOmitted = leftover
     .filter((p) => p.command === null)
     .map((p) => p.tool);
@@ -571,14 +615,26 @@ export function planDependencyReport(
     // A bootstrap is mid-flight and already mutating the toolchain; a second
     // installer racing it is how half-written workspaces happen.
     if (bootstrapRunning) return null;
-    const entry = (prerequisites ?? []).find((p) => p.tool === check.name);
+    // Duplicate entries for one tool: the MOST RESTRICTIVE tier wins (an
+    // unreadable or non-A/B tier beats A/B, B beats A); ties keep tan's order.
+    const entry = (prerequisites ?? [])
+      .filter((p) => p.tool === check.name)
+      .reduce<
+        MissingPrerequisite | undefined
+      >((best, p) => (best === undefined || tierRestrictiveness(provenanceOf(p)) > tierRestrictiveness(provenanceOf(best)) ? p : best), undefined);
     if (entry) {
       // tan spoke for this tool and its answer is FINAL. `command: null` means
       // tan knows no command — show the row, offer nothing.
       return entry.command !== null
         ? {
             kind: "command",
-            commands: [{ tool: entry.tool, command: entry.command }],
+            commands: [
+              {
+                tool: entry.tool,
+                command: entry.command,
+                provenance: provenanceOf(entry),
+              },
+            ],
             // A per-tool match is never partial — one `MissingPrerequisite`
             // entry cannot omit part of itself.
             omittedTools: [],
@@ -596,7 +652,12 @@ export function planDependencyReport(
     // extension knows how to remedy — never to parsing `check.fix`, prose.
     const fixId = FIX_IDS[check.name];
     return fixId && check.status !== "pass"
-      ? { kind: "fix", fixId, ...fixPresentation(fixId, host) }
+      ? {
+          kind: "fix",
+          fixId,
+          ...fixPresentation(fixId, host),
+          ...(provenanceUnreadable ? { tierUnreadable: true as const } : {}),
+        }
       : null;
   };
 

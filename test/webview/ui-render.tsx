@@ -376,10 +376,26 @@ function feedState() {
     ],
     issues: [],
   });
+  // One `tan model zoo` row in tan 0.7's camelCase envelope shape
+  // (`tan/core/model_zoo.py::entry_as_dict` plus `runsHere`), so the badge
+  // check below fails if the view reads a key tan does not emit (#699).
   g.__ALP_POST_TO_WEBVIEW__({
     type: "zooData",
     ok: true,
-    entries: [],
+    entries: [
+      {
+        id: "example-tiny",
+        kind: "tflite",
+        task: "keyword-spotting",
+        description: "d",
+        license: "Apache-2.0",
+        source: { bundled: "example-tiny.tflite" },
+        validatedSoms: ["E1M-AEN801"],
+        compile: [],
+        exampleApp: null,
+        runsHere: true,
+      },
+    ],
     issues: [],
   });
   // A real post-build manifest, not `null` — the System manifest section was
@@ -1274,6 +1290,9 @@ async function main() {
       if (!text.includes("falls back to the cpu silently")) {
         problems.push("models: silent-CPU-fallback caveat missing from the UI");
       }
+      if (!text.includes("runs here")) {
+        problems.push("models: zoo entry's runsHere badge not rendered (#699)");
+      }
     }
 
     const buttons = Array.from(container.querySelectorAll("button"));
@@ -1530,6 +1549,130 @@ async function main() {
     }
     console.log(
       `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  models-cli-gap: one notice, unusable actions disabled`,
+    );
+  }
+
+  // ── at the 0.7.0-rc1 pin the gap is the EXTENSION's `models.panel-not-wired` ──
+  // Every subcommand exists there, so tan never sends `model.unknown-subcommand`;
+  // the panel's own synthesised code must get the same treatment: no red
+  // alarm, the four unwired actions disabled, and a notice that does NOT tell
+  // the customer to update a tan that is not the problem.
+  {
+    const problemsBefore = problems.length;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const notWired = (sub: string) => ({
+      code: "models.panel-not-wired",
+      severity: "info",
+      message: `\`tan model ${sub}\` is implemented, but this panel has no call for it`,
+    });
+    const root = createRoot(container);
+    root.render(
+      React.createElement(AppProvider, null, React.createElement(ModelsView)),
+    );
+    await settle();
+    feedState();
+    await settle();
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "modelsData",
+      ok: false,
+      models: [],
+      toolchains: [],
+      issues: [notWired("list"), notWired("doctor")],
+    });
+    await settle();
+
+    const text = container.textContent ?? "";
+    if (container.querySelectorAll('[data-ok="false"]').length !== 0) {
+      problems.push("models-not-wired: a red alarm rendered for an info gap");
+    }
+    if (!text.includes("not available here yet")) {
+      problems.push("models-not-wired: the not-wired notice was not rendered");
+    }
+    if (text.includes("need a newer CLI")) {
+      problems.push("models-not-wired: blamed the CLI for the panel's own gap");
+    }
+    for (const want of ["Prep model", "Run model", "A/B compare"]) {
+      const hit = [...container.querySelectorAll("button")].find(
+        (b) => (b.textContent ?? "").trim() === want,
+      ) as HTMLButtonElement | undefined;
+      if (!hit || !hit.disabled) {
+        problems.push(`models-not-wired: "${want}" missing or clickable`);
+      }
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  models-not-wired: info notice, unwired actions disabled`,
+    );
+  }
+
+  // ── a REAL zoo / add failure survives the panel-not-wired gap ──
+  // At rc1 `list`/`doctor` always carry `models.panel-not-wired`, yet `zoo` and
+  // `add` are really spawned. The gap must not swallow their failures: before
+  // the fix `cliUnsupported` (panel-wide) hid both banners, so a failed zoo
+  // listing read as "No zoo entries available." and a failed add said nothing.
+  {
+    const problemsBefore = problems.length;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    root.render(
+      React.createElement(AppProvider, null, React.createElement(ModelsView)),
+    );
+    await settle();
+    feedState();
+    await settle();
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "modelsData",
+      ok: false,
+      models: [],
+      toolchains: [],
+      issues: [
+        {
+          code: "models.panel-not-wired",
+          severity: "info",
+          message: "list is implemented, but this panel has no call for it",
+        },
+      ],
+    });
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "zooData",
+      ok: false,
+      entries: [],
+      issues: [
+        {
+          code: "zoo.cli-error",
+          severity: "error",
+          message: "zoo listing exploded",
+        },
+      ],
+    });
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "zooAddResult",
+      ok: false,
+      issues: [
+        {
+          code: "model.failed",
+          severity: "error",
+          message: "add exploded",
+        },
+      ],
+    });
+    await settle();
+
+    const text = container.textContent ?? "";
+    if (!text.includes("zoo listing exploded")) {
+      problems.push("models-zoo-failure: the zoo error banner was swallowed");
+    }
+    if (text.includes("No zoo entries available.")) {
+      problems.push(
+        "models-zoo-failure: a failed listing read as an empty zoo",
+      );
+    }
+    if (!text.includes("add exploded")) {
+      problems.push("models-zoo-failure: the add error banner was swallowed");
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  models-zoo-failure: zoo/add errors render beside the not-wired notice`,
     );
   }
 

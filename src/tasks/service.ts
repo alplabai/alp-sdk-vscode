@@ -81,23 +81,23 @@ export function taskLabel(spec: TaskSpec): string {
  * It enumerated `BuildArgs` from `crates/tan-cli/src/cli.rs` — the RETIRED
  * Rust CLI — as "--plan/--plan-from/--materialise/--native/--manifest/
  * --manifest-from/--no-auto-bootstrap". We ship the Python port, and its
- * surface is neither a superset nor a subset of that: `tan build` at
- * SUPPORTED_CLI_VERSION accepts twenty-two options, of which TWELVE are inert
- * ("Accepted by other commands; not implemented for `build` yet",
- * tan-cli#427) — `--plan`, `--manifest` and `--manifest-from` among them
- * (#541). Reading a shipped surface off the oracle is the root cause of #541,
- * so the enumeration is deleted rather than corrected: the recording in
+ * surface is neither a superset nor a subset of that. Reading a shipped
+ * surface off the oracle is the root cause of #541, so the enumeration is
+ * deleted rather than corrected: the recording in
  * `test/golden/tan-surface/surface.json` is the one place that answers "what
  * does the pinned tan accept", it is regenerated when the pin moves, and
  * `test/tan.surfaceContract.test.js` checks every argv this tree sends
- * against it.
+ * against it. (At 0.7.0-rc1 it lists nineteen spellings for `build`, four of
+ * them retired and inert — `--plan`, `--manifest`, `--manifest-from`,
+ * `--no-auto-bootstrap`, tan-cli#427. Read the file, not this count.)
  *
  * What survives as a CLAIM, because it is what these three labels rest on:
- * there is no per-target build selector. `--target` IS accepted by `tan
- * build` at this pin and is recorded INERT, and `--core` exists on
- * `flash`/`run` but not on `build` at all. Do not reach for either to
- * "properly" distinguish the three labels — one does nothing and the other
- * does not exist.
+ * there is no per-target build selector. `--target` is no longer an option of
+ * `build` itself — at 0.7.0-rc1 it exists only as a ROOT-level global — and
+ * `--core ID` IS a `build` option. Neither distinguishes the three labels:
+ * `--core ID` only scopes `-D` to that core's Zephyr slice(s) (repeatable,
+ * default every Zephyr slice); it does not narrow what builds. Do not reach
+ * for either to "properly" tell them apart.
  *
  * "deploy and start gdbserver" has no tan equivalent at all: the extension
  * has no deploy story, and the yocto-userspace debug profile ships

@@ -103,7 +103,7 @@ async function drivePanel(opts) {
       runAlpCommand: async () => ({
         outcome: {
           message: "unused",
-          envelope: { ok: true, data: { slices: [] } },
+          envelope: opts.sizeEnvelope ?? { ok: true, data: { slices: [] } },
         },
       }),
       runAlpStreamed: async () => {},
@@ -216,4 +216,32 @@ test("no workspace at all says so, distinctly from 'no build yet', and toasts wi
     'planPrecondition("noWorkspace", …) always attaches an Open Folder ' +
       "action — a hand-typed copy of its message would have dropped it",
   );
+});
+
+test("a failed `tan size` headlines its ERROR, not the SDK warning tan 0.7 puts first", async () => {
+  // tan 0.7.0-rc1 (`size_cmd.py` `_error_outcome`) prepends its
+  // SDK-resolution advisories ahead of the command's own refusal.
+  const { posted } = await drivePanel({
+    workspaceRoot: PROJECT_B,
+    manifestAt: MANIFEST_B,
+    sizeEnvelope: {
+      ok: false,
+      data: null,
+      issues: [
+        {
+          code: "sdk.project-pin-unresolved",
+          severity: "warning",
+          message: "no project pin resolved",
+        },
+        {
+          code: "size.failed",
+          severity: "error",
+          message: "the size report could not be read",
+        },
+      ],
+    },
+  });
+
+  const sizes = posted.find((m) => m.type === "sliceSizesData");
+  assert.equal(sizes.error, "the size report could not be read");
 });

@@ -259,8 +259,9 @@ test("each line carries artifact, source, size and licence (ADR 0021 §3)", asyn
     }),
   ]);
 
-  // Assert -- the two nobody reports say so rather than showing an empty cell
-  // or an invented number (alp-sdk#1574).
+  // Assert -- a row carrying no producer provenance (an old tan, or this
+  // fixture's step) says so rather than showing an empty cell or an invented
+  // number (#467).
   const [item] = mod.shown[0];
   assert.equal(item.label, "Ninja");
   assert.match(item.detail, /apt-get install -y ninja-build/);
@@ -359,7 +360,7 @@ test("a FULL row (nothing omitted) gets no omission clause — no duplicated Run
   assert.equal(
     rollup.detail,
     "Runs: brew install cmake ; brew install ninja · " +
-      "Size: not reported · Licence: not reported",
+      "Tier: not reported · Size: not reported · Licence: not reported",
   );
   assert.doesNotMatch(rollup.detail, /Installs cmake/);
   assert.doesNotMatch(west.detail, /Runs the Alp SDK bootstrap/);

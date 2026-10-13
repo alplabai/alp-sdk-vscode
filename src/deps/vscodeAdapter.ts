@@ -44,6 +44,7 @@ import {
 } from "@alp-sdk/core/deps/planner";
 import {
   type ConsentItem,
+  NOT_REPORTED,
   planInstallConsent,
 } from "@alp-sdk/core/deps/consent";
 import { retargetWestCommand } from "@alp-sdk/core/deps/westCommand";
@@ -1643,24 +1644,21 @@ interface ConsentPick extends vscode.QuickPickItem {
   row: DependencyRow;
 }
 
-/** What a cell says when no producer reports it (alp-sdk#1574). */
-const NOT_REPORTED = "not reported";
-
-/** One consent line: artifact on the label, ADR 0021 §3's four facts under it,
- *  plus — for a partial `command` row only — a fifth clause naming what tan
- *  named no install command for (#603, second review, nit 10: this line
- *  drifted stale once `minor 7` added that fifth clause; the inline comment
- *  on `detail` below is the one that stays current). */
+/** One consent line: artifact on the label, ADR 0021 §3's facts and the
+ *  producer's tier under it, plus — for a partial `command` row only — a
+ *  closing clause naming what tan named no install command for (#603). The
+ *  inline comment on `detail` below is the one that stays current. */
 function consentPick(item: ConsentItem, row: DependencyRow): ConsentPick {
   return {
     name: item.name,
     row,
     label: item.artifact,
-    // The elevation note goes HERE, beside the label, because it is the one
-    // fact that changes what a customer is agreeing to rather than merely
-    // describing it. Derived from the command text tan emitted, never from the
-    // tool's name — see `@alp-sdk/core/deps/consent`.
-    description: item.needsElevation ? "requires elevation" : "",
+    // The notes that change what a customer is AGREEING to go here, beside
+    // the label, rather than in the descriptive line under it. Elevation is
+    // read off the command text tan emitted OR a producer tier `B`; licence
+    // gating only off a producer tier `C`. Never off the tool's name — see
+    // `@alp-sdk/core/deps/consent`.
+    description: consentNotes(item),
     // Every line, verbatim, in dispatch order — a multi-step `command` row
     // (#603) names EVERY command it will run, never just the first. The " ; "
     // join is DISPLAY TEXT for this QuickPick row only; it is never the string
@@ -1676,14 +1674,40 @@ function consentPick(item: ConsentItem, row: DependencyRow): ConsentPick {
     // `bootstrap` row (always `omittedTools: []`) got a second, competing
     // claim about what the button does.
     detail:
+      //
+      // `Runs:` is what runs, verbatim. Provenance's `sourceUrl` (the upstream
+      // project page) is deliberately NOT shown under that word: a brew bottle
+      // or an apt package is what installs, not the page behind it.
       `Runs: ${item.source ? item.source.join(" ; ") : NOT_REPORTED} · ` +
+      `Tier: ${item.tier ?? NOT_REPORTED} · ` +
       `Size: ${item.size ?? NOT_REPORTED} · ` +
       `Licence: ${item.licence ?? NOT_REPORTED}` +
       (item.omittedTools.length > 0
         ? ` · tan reported no install command for ${item.omittedTools.join(", ")}`
         : ""),
-    picked: true,
+    // A licence-gated (tier `C`) line starts UNCHECKED: ADR 0021 §3 says such
+    // an artifact is never fetched without an explicit action, and pressing
+    // "Fix all" is not one for an item the customer has not read yet. So does
+    // any tier word that is not `A` or `B` — the gate fails closed on a tier
+    // it does not know. A line with NO reported tier starts checked, as does
+    // every `A`/`B` line, so skipping stays an opt-out for those.
+    picked: !item.startsUnchecked,
   };
+}
+
+/** The label-side notes for one consent line, joined. */
+function consentNotes(item: ConsentItem): string {
+  const notes: string[] = [];
+  if (item.licenceGated) notes.push("licence-gated, check to install");
+  else if (item.tierUnreadable) {
+    notes.push("tier unreadable, check to install");
+  } else if (item.startsUnchecked) {
+    notes.push("unrecognised tier, check to install");
+  }
+  if (item.needsElevation || item.elevationTier) {
+    notes.push("requires elevation");
+  }
+  return notes.join(" · ");
 }
 
 /**
@@ -1706,10 +1730,12 @@ function consentPick(item: ConsentItem, row: DependencyRow): ConsentPick {
  * different: dismissed means "no answer", empty means "answered, none of them",
  * and the caller reports them with different words.
  *
- * NO TIERS. ADR 0021 §3 asks for three, and no producer can express one today —
- * measured, and filed as alp-sdk#1574. The alternative #467 explicitly rules
- * out is a local table keyed on tool name, so what ships is the screen without
- * the tiering rather than a tiering this extension invented.
+ * TIERS ARE THE PRODUCER'S. ADR 0021 §3 asks for three; tan 0.7.0-rc1
+ * (tan-cli#1066) carries alp-sdk's tier per `missingPrerequisites[]` entry, and
+ * that is the only source — #467 rules out a local table keyed on tool name.
+ * Measured on alp-sdk v0.16.0 through v0.17.0-rc2, every reported tier is
+ * `A`; a row with no producer entry says "not reported" rather than a tier
+ * this extension invented.
  */
 export async function confirmDependencyInstalls(
   rows: DependencyRow[],

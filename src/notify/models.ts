@@ -64,6 +64,7 @@ export type ActionId =
   | "retry"
   | "startAnyway"
   | "applyChanges"
+  | "saveAndContinue"
   | "openAnyway"
   | "deleteFromDisk"
   | "downloadTanCli"
