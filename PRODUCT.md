@@ -94,11 +94,10 @@ Four mechanisms a neighboring embedded extension could not truthfully copy:
 
 ## Capabilities and Constraints
 
-- **Pinned CLI:** `SUPPORTED_CLI_VERSION = "0.7.0-rc1"` (`src/alpCli/service.ts:106`)
-  — a prerelease again, on purpose: `tan model zoo`/`add` (tan-cli#1338),
+- **Pinned CLI:** `SUPPORTED_CLI_VERSION = "0.7.0"` (`src/alpCli/service.ts`)
+  — the GA of the line that carries `tan model zoo`/`add` (tan-cli#1338),
   per-entry artifact provenance on `missingPrerequisites[]` (tan-cli#1066) and
-  two newly frozen issue codes all wait on it, and it moves to `0.7.0` once
-  that tag is cut. The Renesas `CONFIG_ALP_SDK_CHIP_NONE` fix (tan-cli#688) has
+  two newly frozen issue codes. The Renesas `CONFIG_ALP_SDK_CHIP_NONE` fix (tan-cli#688) has
   been present since `0.6.0-rc1` ("45 ahead / 0 behind",
   `src/alpCli/service.ts:71-72`). `RENESAS_BUILD_CLI_VERSION = "0.6.0-rc1"`
   (`src/alpCli/somCliFloor.ts:39`) is a *separate* feature gate against the tan

@@ -529,7 +529,7 @@ unresolvable `preLaunchTask` aborts the pre-launch and
 `vscode.debug.startDebugging` returns `false` with no useful error, pointing
 the user at a `launch.json` that looks perfectly fine.
 
-MEASURED against tan 0.6.0, and unchanged in the 0.7.0-rc1 the extension pins
+MEASURED against tan 0.6.0, and unchanged in the 0.7.0 the extension pins
 now (`DEFAULT_PRE_LAUNCH_TASK` in tan's `core/debug_launch.py`): `debug-config` writes
 `preLaunchTask` to a per-target-kind default even when `--pre-launch-task` is
 entirely absent from the argv — the same three labels below for

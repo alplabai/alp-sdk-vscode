@@ -24,11 +24,15 @@
   `jlink`) report nothing. `Runs:` is still the command; the upstream page
   is not shown in its place.
 
-- **The extension pins tan `0.7.0-rc1`.** `SUPPORTED_CLI_VERSION` moves
-  from `0.6.0` to the `v0.7.0-rc1` pre-release, which carries
-  `tan model zoo`/`add` (tan-cli#1338) and per-entry artifact provenance on
-  `missingPrerequisites[]` (tan-cli#1066). It moves to `0.7.0` when that tag
-  ships. `cli.parse-error` and `monitor.no-port` are frozen in the pinned
+- **The extension pins tan `0.7.0`.** `SUPPORTED_CLI_VERSION` moves from
+  `0.6.0` to the `v0.7.0` release, which carries `tan model zoo`/`add`
+  (tan-cli#1338) and per-entry artifact provenance on
+  `missingPrerequisites[]` (tan-cli#1066). The `0.7.0-rc1` to `0.7.0` step
+  changed nothing the extension reads: its envelope contract differs by one
+  reserved code, `model.device-ab-scope-mismatch`, and the pinned surface
+  recording is unchanged beyond the producer's `(inert:KIND)` help marker,
+  which the surface fetcher now reads directly. Like `0.7.0-rc1`, `0.7.0`
+  publishes no arm64 Windows or arm64 Linux archive. `cli.parse-error` and `monitor.no-port` are frozen in the pinned
   contract now, and the contract gate says so (#655). The `--plan`,
   `--manifest`, `--manifest-from` and `--no-auto-bootstrap` build flags are
   retired at this pin, not deferred, and every `tan model` subcommand

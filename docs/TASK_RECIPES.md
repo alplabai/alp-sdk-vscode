@@ -93,7 +93,7 @@ and `--format` (`text|json`).
 
 ## 9. Model Tooling Beyond `build`
 
-The pinned tan 0.7.0-rc1 implements the CLI half of all four capabilities below
+The pinned tan 0.7.0 implements the CLI half of all four capabilities below
 (`tan model check`, `prep`, `zoo`/`add`, `run`/`ab` — tan-cli#674); `tan model
 --help` is the reference for their options. The VS Code half needs the Models
 panel back, which is #524.

@@ -37,7 +37,7 @@ needs the `_internal/` directory that ships next to it:
 #   Linux arm64, Windows arm64
 mkdir -p ~/tan-cli && cd ~/tan-cli
 curl -fL --retry 3 -o tan.tar.gz \
-  https://github.com/alplabai/tan-cli/releases/download/v0.7.0-rc1/tan-x86_64-unknown-linux-gnu.tar.gz
+  https://github.com/alplabai/tan-cli/releases/download/v0.7.0/tan-x86_64-unknown-linux-gnu.tar.gz
 tar -xzf tan.tar.gz   # extracts to ./tan/ (launcher + _internal/, already executable)
 export PATH="$HOME/tan-cli/tan:$PATH"   # add to your shell profile to persist
 tan --help
@@ -55,11 +55,10 @@ reproducibility. The VS Code extension provisions the same release asset
 automatically (see [GETTING_STARTED_VSCODE.md](GETTING_STARTED_VSCODE.md));
 this guide is for terminal/CI use where you manage `tan` yourself.
 
-The tag above, `v0.7.0-rc1`, is the release this extension pins
+The tag above, `v0.7.0`, is the release this extension pins
 (`SUPPORTED_CLI_VERSION` in `src/alpCli/service.ts`); install that one for
 terminal use too, so the binary you type at is the binary every gate in this
-repo measures. It is a PRE-RELEASE on purpose, and moves to `v0.7.0` once that
-tag is cut. Do not drop below `0.6.0-rc1` either (#502): below it tan's
+repo measures. Do not drop below `0.6.0-rc1` either (#502): below it tan's
 vendored planner emits
 `CONFIG_ALP_SDK_CHIP_NONE=y` and the four Renesas SKUs — `E1M-V2N101`,
 `E1M-V2N102`, `E1M-V2M101`, `E1M-V2M102` — die in Zephyr's configure step, so
@@ -223,7 +222,7 @@ tan completion --shell fish
 [`CLI.md`](CLI.md)): `{command,ok,exitCode,project,data,issues}`, plus an `sdk`
 block on a run that resolved one, with the packages it wrote in `data.built`.
 
-At the pinned tan (0.7.0-rc1) it takes nine subcommands — `build`, `doctor`,
+At the pinned tan (0.7.0) it takes nine subcommands — `build`, `doctor`,
 `check`, `list`, `zoo`, `add`, `prep`, `run` and `ab` (tan-cli#674).
 `tan model --help` prints the whole list and which options belong to which
 subcommand. This section covers `build`, the one the extension has always
