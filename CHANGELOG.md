@@ -21,8 +21,9 @@
   The bundled schemas and the new-project SoM list now match alp-sdk
   v0.17.0, adding `cameras`, `camera_connectors`, `ownership` and the
   `memory` pane, dropping `ota.server.tls_ca_bundle`, `drpai.spec` and
-  E1M-NX9101, and adding E1M-AEN803, E1M-V2N103 and E1M-V2M103. Developed against
-  v0.17.0-rc2; v0.17.0 leaves both schemas byte-identical.
+  E1M-NX9101, and adding E1M-AEN803, E1M-V2N103 and E1M-V2M103.
+  Developed against v0.17.0-rc2; v0.17.0 leaves both schemas
+  byte-identical.
 
 - **A failed tan command's toast quotes its error again, not an SDK
   advisory.** tan 0.7.0-rc1 lists `sdk.project-pin-unresolved` and

@@ -53,7 +53,7 @@ Four mechanisms a neighboring embedded extension could not truthfully copy:
   `board.yaml` and `system-manifest.yaml` validate against *that SDK's own*
   schemas at `<sdkRoot>/metadata/schemas/`. The extension pins no SDK version,
   so this is the only way the two can agree. The vendored copies
-  (`VENDORED_SDK_TAG = "v0.15.0"`) are the fallback for the common first-run
+  (`VENDORED_SDK_TAG = "v0.17.0"`) are the fallback for the common first-run
   state: a customer with no SDK yet.
 - **Native-first shell.** `docs/ADR-native-shell-ux.md` (Accepted, 2026-06-05)
   commits the shell to VS Code primitives — Activity Bar trees, status bar,
