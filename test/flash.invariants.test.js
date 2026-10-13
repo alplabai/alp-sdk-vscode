@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Cases from the independent verify pass over #540's arming change. Each one is
+// Invariant cases for #540's Flow D arming. Each one is
 // a way an invariant — "nothing was written" only when that is provable, one
 // consent per boot table, the customer told WHICH board — could be broken.
 
