@@ -36,7 +36,7 @@ export const FLOW_D_METHOD = "alif_mram_jlink";
  * - `writes`      exactly `zephyr_west_flash` and `baremetal_cmake_flash`:
  *                 they write on a bare `tan flash`, and `--confirm` changes
  *                 nothing.
- * - `unknown`     anything else (a renamed or new method, `swd_probe`, a
+ * - `unknown`     anything else (a renamed or new method, a
  *                 missing one). Not assumed to behave like `writes`; the
  *                 gate refuses it.
  */
@@ -168,7 +168,16 @@ export function parseFlashEnvelope(text: string): FlashEnvelope | null {
   try {
     doc = JSON.parse(text);
   } catch {
-    return null;
+    // A login profile that prints (a banner, `nvm use`) puts lines ahead of
+    // tan's own output, which is a single JSON line. The LAST line that opens
+    // an envelope is tan's: the shell `exec`s tan, so nothing follows it.
+    const start = text.lastIndexOf('\n{"command":');
+    if (start < 0) return null;
+    try {
+      doc = JSON.parse(text.slice(start + 1));
+    } catch {
+      return null;
+    }
   }
   if (!isObject(doc) || doc.command !== "flash") return null;
   if (typeof doc.ok !== "boolean" || typeof doc.exitCode !== "number")

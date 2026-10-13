@@ -9,8 +9,9 @@
 //
 // What `--confirm` does depends on the backend tan RESOLVES, and on AEN that is
 // not the one the manifest names: every planner-emitted Zephyr slice carries a
-// `flash_args.jlink_flash_device`, which `select_flash_method` routes to
-// Flow D (`alif_mram_jlink`) whatever `flash_method` says.
+// `flash_args.jlink_flash_device`, which `select_flash_method` upgrades to
+// Flow D (`alif_mram_jlink`) when the manifest says `zephyr_west_flash` (the
+// only method it upgrades, flash_plan.py:1623-1626).
 //
 //   zephyr_west_flash / baremetal_cmake_flash   writes without it; no change
 //   alif_mram_jlink (Flow D)                    previews without it; writes
@@ -70,6 +71,12 @@ export type FlashArmingDecision =
       kind: "arm-flow-d";
       /** tan's own replacement text, verbatim from the preview. */
       replacementNote: string;
+      /**
+       * tan's own probe-selection sentence (`(probe selection: serial … via
+       * …)`), verbatim: the only text that says WHICH board gets written. Null
+       * when the preview carries none.
+       */
+      probeSelection: string | null;
       /** The slices the new ATOC names, `DEVICE` excluded. */
       atocNames: readonly string[];
       setoolsDir: string | null;
@@ -117,6 +124,18 @@ export function flowDReplacementNote(message: string): string | null {
   if (start < 0) return null;
   const end = message.indexOf(NOTE_END, start);
   return (end < 0 ? message.slice(start) : message.slice(start, end)).trim();
+}
+
+/** tan's probe-selection sentence, which trails its replacement note. */
+function probeSelectionOf(message: string): string | null {
+  const at = message.indexOf(NOTE_END);
+  return at < 0 ? null : message.slice(at).trim();
+}
+
+/** A co-slice's message is its lead's, prefixed with this. It is folded into
+ *  the lead's ATOC and writes no boot table of its own. */
+function isCoSlice(entry: FlashEnvelopeEntry): boolean {
+  return entry.message.startsWith(`${entry.id}: written in the combined ATOC`);
 }
 
 function flowDIds(env: FlashEnvelope): string[] {
@@ -180,7 +199,9 @@ export function decideFlashArming(
         "tan only writes to a host block device or a flash-writer when told " +
         "to confirm. Alp does not arm that, and arming only the Flow D half " +
         "would leave the board half-programmed — so nothing was written. " +
-        "Flash the Flow D slices on their own.",
+        "Flashing just the Flow D slices cannot be done from the IDE yet: tan " +
+        "can select one slice (--core) or the whole board, not several, and one " +
+        "Flow D slice alone would delist the other's boot entry.",
     );
   }
 
@@ -197,20 +218,27 @@ export function decideFlashArming(
   }
 
   // ── Flow D in scope, and nothing that forbids arming it ─────────────────
-  // One ATOC, one modal. A slice that carries its own `atoc`/`atoc_map` is
-  // written separately (it is not folded into the combined ATOC), so two entries
-  // with an ATOC block are two replacements, and the second would delist what
-  // the first just wrote. A co-slice has no ATOC block of its own.
-  const withAtoc = flowD.filter((e) => e.atocNames !== null);
-  if (withAtoc.length > 1) {
+  // One ATOC, one modal. A slice that carries its own `atoc`/`atoc_map`/
+  // `atoc_address` is not folded into the combined ATOC and writes its own,
+  // with NO tan-signed `atoc` block on its entry — so boot-table writers are
+  // counted from the Flow D entries that are not co-slices and either carry
+  // that block or carry tan's replacement note. Two of them are two
+  // replacements, and the second delists what the first just wrote.
+  const writers = flowD.filter(
+    (e) =>
+      !isCoSlice(e) && (e.atocNames !== null || e.message.includes(NOTE_START)),
+  );
+  if (writers.length > 1) {
     return refuse(
       "multiple-atocs",
-      `This flash would write more than one boot table (${ids(withAtoc)}), ` +
+      `This flash would write more than one boot table (${ids(writers)}), ` +
         "and each replaces the other's entries. Alp asks about one — " +
         "nothing was written.",
     );
   }
-  const lead = withAtoc.find((e) => flowDReplacementNote(e.message) !== null);
+  const lead = writers.find(
+    (e) => e.atocNames !== null && flowDReplacementNote(e.message) !== null,
+  );
   if (flowD.some((e) => e.setools?.signSkipped === true)) {
     return refuse(
       "setools-not-operator-named",
@@ -240,17 +268,31 @@ export function decideFlashArming(
   const unverifiable = context.scoped && context.wholeBoard === null;
   if (unverifiable || leftOut.length > 0 || LEFT_OUT_SENTENCE.test(note)) {
     const who = leftOut.length > 0 ? ` (${leftOut.join(", ")})` : "";
+    // The way out this message points at must exist: if the whole board is
+    // itself refused (it also holds a yocto/xspi slice), say that instead.
+    const wholeIsRefused =
+      context.wholeBoard !== null &&
+      context.wholeBoard.entries.some(
+        (e) =>
+          e.status !== "skipped" && classifyBackend(e.method) === "never-arm",
+      );
+    const way = wholeIsRefused
+      ? "The whole-board Flash is refused too, because the board also holds a " +
+        "slice tan only writes under --confirm, so this cannot be done from " +
+        "the IDE yet (tan has no way to select several slices)"
+      : "Use the whole-board Flash instead";
     return refuse(
       "left-out-sibling",
       `Flashing one core would replace the whole boot table and delist the ` +
         `other Flow D slice(s)${who}${unverifiable ? ", or Alp could not check whether it would" : ""}. ` +
-        "Use the whole-board Flash instead — nothing was written.",
+        `${way} — nothing was written.`,
     );
   }
 
   return {
     kind: "arm-flow-d",
     replacementNote: note,
+    probeSelection: probeSelectionOf(lead.message),
     atocNames: lead.atocNames ?? [],
     setoolsDir: lead.setools?.dir ?? null,
     setoolsSource: lead.setools?.source ?? null,

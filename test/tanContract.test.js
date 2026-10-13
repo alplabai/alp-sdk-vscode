@@ -317,6 +317,9 @@ const GATED_CODES = {
   "flash.confirm-required": "reserved",
   "flash.nothing-flashed": "reserved",
   "flash.jlink-reset-unconfirmed": "reserved",
+  // tan's catch-all for an exception from its run, which can be raised AFTER
+  // the write: classified "unknown", never "nothing was written".
+  "flash.internal-failure": "reserved",
 
   "models.panel-not-wired": null,
 };

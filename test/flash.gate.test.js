@@ -936,6 +936,62 @@ test("cancelling the preview is 'cancelled, nothing was written' — not a missi
   assert.doesNotMatch(lastMessage(plans), /no preview/);
 });
 
+test("a customer-supplied ATOC on a Flow D slice is refused: the consent flow describes only the one tan signs", async () => {
+  for (const key of ["atoc", "atoc_map", "atoc_address"]) {
+    const dir = projectWithManifest(
+      FIXTURE.replace(
+        "    slot0_load_address: '0x802b0000'",
+        `    slot0_load_address: '0x802b0000'\n    ${key}: some/value`,
+      ),
+    );
+    const { mod, plans } = loadGate(acceptAll);
+    const tan = flowD();
+    assert.equal(await mod.gateFlashDispatch(["flash"], dir, tan.deps), null);
+    assert.match(lastMessage(plans), /m55_hp/);
+    assert.ok(lastMessage(plans).includes(key));
+    assert.match(lastMessage(plans), /nothing was written/);
+    assert.equal(tan.calls.length, 0);
+  }
+});
+
+test("modal 2 shows tan's probe-selection text: the one thing that says WHICH board is written", async () => {
+  const dir = projectWithManifest();
+  const { mod, plans } = loadGate(acceptAll);
+  await mod.gateFlashDispatch(["flash"], dir, flowD().deps);
+  const second = confirmPlans(plans)[1];
+  assert.match(second.modalDetail, /\(probe selection: serial/);
+});
+
+// The real AEN801 manifest carries the yocto a32_cluster slice. Built on a host
+// where it was built, the whole board is "mixed", and every per-core flash would
+// delist its sibling — and no UI path can select several slices. The refusals
+// must say so honestly instead of pointing at a Flash that is also refused.
+test("the AEN801 shape (yocto + two Flow D slices): both scopes are refused, and say it cannot be done from the IDE yet", async () => {
+  const dir = projectWithManifest();
+  const mixed = fakeTan((args) =>
+    args.includes("--core")
+      ? "dry-run.flow-d.core-left-out"
+      : "dry-run.mixed-yocto-flow-d",
+  );
+  for (const args of [["flash"], ["flash", "--core", "m55_hp"]]) {
+    const { mod, plans } = loadGate(acceptAll);
+    assert.equal(
+      await mod.gateFlashDispatch(args, dir, mixed.deps),
+      null,
+      args.join(" "),
+    );
+    const message = lastMessage(plans);
+    assert.match(message, /cannot be done from the IDE/i, args.join(" "));
+    assert.match(message, /nothing was written/i);
+    assert.doesNotMatch(
+      message,
+      /Flash the Flow D slices on their own|Use the whole-board Flash instead/,
+      "points at a path that does not exist",
+    );
+    assert.equal(confirmPlans(plans).length, 0);
+  }
+});
+
 test("a bare `tan run` is untouched — it never flashes", () => {
   // The control. `src/west.ts` sends exactly this, and gating it would put a
   // write dialog on a command that writes nothing.

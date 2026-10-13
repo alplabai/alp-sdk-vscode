@@ -25,10 +25,12 @@
 //                                 word `flash` somewhere the command reader
 //                                 could not account for, which is refused
 //                                 rather than guessed at (see below).
-//   2. `--dry-run`?               returned unchanged and UNARMED. tan's own
-//                                 help says a dry run prints what each backend
-//                                 would do "without spawning", so there is no
-//                                 write to consent to.
+//   2. `--dry-run`?               returned unchanged and UNARMED. A dry run
+//                                 writes no device: tan prints what each
+//                                 backend would do. (It is not spawn-free —
+//                                 a Flow D preview runs SETOOLS `app-gen-toc`
+//                                 in a scratch copy of the install — but
+//                                 nothing reaches the board.)
 //   3. `--recover`?               REFUSED here, never armed. Its help: "For a
 //                                 BRICKED device only, with Alp Lab-supplied
 //                                 binaries." Nothing in this extension has the
@@ -114,9 +116,11 @@
 // SETOOLS: a confirmed Flow D write signs with an install the OPERATOR named
 // (`--setools-dir`, then `SETOOLS_DIR`); one named only by the manifest is
 // refused (`flash.setools-untrusted-source`). The gate passes `SETOOLS_DIR`
-// from the extension host's environment as `--setools-dir` and otherwise lets
-// tan's own refusal reach the customer, as the preview that precedes the modal
-// fails the same way.
+// from the extension host's environment as `--setools-dir`; a `SETOOLS_DIR`
+// exported only by the login profile still reaches tan, because the run goes
+// through that shell. With neither, the preview fails with tan's message. With
+// a manifest-only install the preview succeeds but reports `signSkipped` (it
+// will not run a tool the project chose), which the arming rule refuses.
 //
 // ── DO-NOT-MERGE-WITHOUT-A-BENCH ──────────────────────────────────────────
 //
@@ -501,6 +505,28 @@ export async function gateFlashDispatch(
             "which arms tan's write gate without asking — so nothing was " +
             "written. Remove the key (the next build rewrites it) and flash " +
             "again.",
+          manifestPath,
+        );
+      }
+    }
+  }
+
+  // A Flow D slice that brings its own ATOC (`atoc`, `atoc_map`,
+  // `atoc_address`) is written as a boot table of its own and is not folded
+  // into the one this flow describes and asks about.
+  for (const target of plan.targets) {
+    const targetArgs = target.flashArgs;
+    if (typeof targetArgs !== "object" || targetArgs === null) continue;
+    const isFlowD =
+      target.flashMethod === "alif_mram_jlink" ||
+      targetArgs["jlink_flash_device"] !== undefined;
+    if (!isFlowD) continue;
+    for (const key of ["atoc", "atoc_map", "atoc_address"]) {
+      if (targetArgs[key] !== undefined && targetArgs[key] !== null) {
+        return refuse(
+          `${target.id} supplies its own ATOC (${key}) in ${MANIFEST_FILE}, ` +
+            "which tan writes as a separate boot table that this confirmation " +
+            "does not describe — so nothing was written.",
           manifestPath,
         );
       }

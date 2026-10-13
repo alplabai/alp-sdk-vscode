@@ -206,6 +206,11 @@ export function describeAtocReplacement(
 ): string {
   return [
     decision.replacementNote,
+    ...(decision.probeSelection === null
+      ? []
+      : [
+          `tan's probe selection, verbatim — which board is written: ${decision.probeSelection}`,
+        ]),
     setoolsLine(decision),
     "Continuing replaces the boot table on the device. Nothing is written " +
       "unless you continue.",

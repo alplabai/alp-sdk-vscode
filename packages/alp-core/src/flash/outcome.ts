@@ -50,6 +50,13 @@ const FLASH_PREVIEW_ONLY_CODES: ReadonlySet<string> = new Set([
   "flash.nothing-flashed",
 ]);
 
+/**
+ * tan's catch-all: ANY exception from its run is wrapped in this code with no
+ * entries. It can be raised after the MRAM write (record, read-back, boot
+ * confirmation), so it is never evidence that nothing was written.
+ */
+const FLASH_INTERNAL_FAILURE_CODE = "flash.internal-failure";
+
 /** A write that completed but whose reset J-Link could not confirm. Info only. */
 const FLASH_RESET_UNCONFIRMED_CODE = "flash.jlink-reset-unconfirmed";
 
@@ -92,6 +99,9 @@ function issueMessages(
 
 export function classifyFlashOutcome(env: FlashEnvelope | null): FlashOutcome {
   if (env === null) return { kind: "unknown" };
+  if (env.issues.some((i) => i.code === FLASH_INTERNAL_FAILURE_CODE)) {
+    return { kind: "unknown", detail: issueMessages(env) };
+  }
 
   const entries = env.entries.filter((e) => e.status !== "skipped");
   const ok = entries.filter((e) => e.status === "ok");
@@ -107,6 +117,9 @@ export function classifyFlashOutcome(env: FlashEnvelope | null): FlashOutcome {
     const isTied = (e: FlashEnvelopeEntry): boolean =>
       env.issues.some(
         (i) =>
+          // Only an ERROR can tie an entry to a refusal: tan emits some of
+          // these codes as warning/info about an entry that then went on.
+          i.severity === "error" &&
           FLASH_REFUSAL_CODES.has(i.code) &&
           i.message !== "" &&
           e.message.includes(i.message),
@@ -162,8 +175,10 @@ export function classifyFlashOutcome(env: FlashEnvelope | null): FlashOutcome {
     };
   }
 
-  // Nothing ok, planned or failed: tan matched nothing, or every entry was
-  // skipped. Whatever tan said is the reason, and no write happened.
+  // Nothing ok, planned or failed. If tan itself says not-ok with no entry to
+  // account for it, that is not evidence of anything: an exception can escape
+  // after a write. Only an ok run with nothing selected is "nothing written".
+  if (!env.ok) return { kind: "unknown", detail: issueMessages(env) };
   return {
     kind: "refused",
     codes: env.issues.map((i) => i.code),
@@ -252,7 +267,8 @@ export function describeFlashOutcome(outcome: FlashOutcome): FlashOutcomeText {
         severity: "warning",
         message:
           "Alp Flash did not complete cleanly, and tan's result is not one Alp can read as a verdict. " +
-          "That does not say whether any slice was written — read the log before re-flashing.",
+          "That does not say whether any slice was written, and the device may be partly programmed — " +
+          "read the log before re-flashing.",
         detail: outcome.detail,
       };
   }
