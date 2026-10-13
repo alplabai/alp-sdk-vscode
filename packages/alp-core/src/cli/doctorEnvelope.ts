@@ -54,15 +54,27 @@ export interface DoctorCheckEnvelope {
 }
 
 /**
- * tan's `MissingPrerequisite` (tan-cli #78/#81), verbatim:
- * `{ tool: String, command: Option<String> }`.
+ * tan's `MissingPrerequisite` (tan-cli #78/#81, `MissingPrerequisite.as_dict`
+ * at 0.7.0-rc1): `tool` and `command`, plus the four artifact-provenance keys
+ * tan-cli#1066 flattens on from alp-sdk's `artifactProvenance`.
  *
  * `command: null` is a real answer — "tan knows of no command for this tool"
  * — not an invitation to look somewhere else.
+ *
+ * The provenance keys are optional because a tan older than 0.7.0-rc1,
+ * reachable through `alpSdk.cliPath`, does not emit them; 0.7.0-rc1 always
+ * emits all four, `null` where alp-sdk declares nothing. These are the RAW
+ * wire values — untrusted. Read them through `normaliseProvenance`
+ * (`deps/provenance.ts`), never directly.
  */
 export interface MissingPrerequisite {
   tool: string;
   command: string | null;
+  tier?: string | null;
+  licence?: string | null;
+  /** The upstream project page — NOT what the install runs (`command`). */
+  sourceUrl?: string | null;
+  sizeBytes?: number | null;
 }
 
 /** The `data` payload of a `tan doctor` / `tan doctor --build` envelope. */

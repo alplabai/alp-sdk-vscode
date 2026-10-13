@@ -165,14 +165,13 @@ Palette (`"when": "false"`, #525). The commands are still registered, but nothin
 in the GUI reaches them, so there is no step here to follow on a first run.
 Restoring the surface is tracked as #524.
 
-The panel is also ahead of the CLI it shells. The pinned `tan` (0.6.0)
-implements exactly one `model` subcommand — `build`, which compiles and packages
-the `models:` entries of `board.yaml` into `.alpmodel` packages (default output
-directory `build/models`). The pre-flight NPU-coverage badge, INT8 prep with an
-fp32-vs-int8 accuracy report, host reference run, A-B compare and the model-zoo
-gallery are all intended, and each of them needs a `model` subcommand this `tan`
-does not have (`check`, `prep`, `run`, `ab`, `zoo`, `add`) — that gap is
-tan-cli#674, and keeping this documentation in step with it is #551.
+The CLI it shells is no longer the gap. The pinned `tan` (0.7.0-rc1)
+implements all nine `model` subcommands — `build`, `doctor`, `check`, `list`,
+`zoo`, `add`, `prep`, `run` and `ab` (tan-cli#674). The panel calls
+`build`, which compiles and packages the `models:` entries of `board.yaml` into
+`.alpmodel` packages (default output directory `build/models`), and `zoo` /
+`add` for the model-zoo gallery (#699); for the other six it reports that the
+capability arrived and the panel is not yet wired to it. Rewiring them is #524, and keeping this documentation in step is #551.
 
 > **When the surface returns, two of its numbers still need reading carefully:**
 >

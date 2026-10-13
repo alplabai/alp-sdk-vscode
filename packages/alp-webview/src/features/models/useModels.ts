@@ -466,8 +466,17 @@ export function useModels() {
   // `model.check-failed` is still a red banner, because hiding a genuine
   // failure behind the capability notice would trade four honest alarms for
   // none.
+  // Whether the gap covers the zoo / add sections THEMSELVES. The panel-wide
+  // flag above is true whenever ANY list carries a refusal, and at the rc1 pin
+  // the list/doctor pair always carries `models.panel-not-wired` while `zoo`
+  // and `add` are really spawned: a failure there is a real failure and must
+  // not be swallowed by a gap that is about other subcommands.
+  const zooUnsupported = Boolean(findUnsupportedSubcommand(state.zooIssues));
+  const addUnsupported = Boolean(findUnsupportedSubcommand(state.addIssues));
   return {
     ...state,
+    zooUnsupported,
+    addUnsupported,
     issues: withoutUnsupportedSubcommand(state.issues),
     coverageIssues: withoutUnsupportedSubcommand(state.coverageIssues),
     runIssues: withoutUnsupportedSubcommand(state.runIssues),

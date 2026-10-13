@@ -543,8 +543,10 @@ test("FLASH_VALUE_TAKING_FLAGS is exactly `tan flash`'s metavar'd options", () =
         "APP_PATH or the real --core value.",
     );
   }
-  assert.equal(withValue.length, 8);
-  assert.equal(booleans.length, 5);
+  // 0.7.0-rc1: 8 -> 14 value-takers (#701's six moved in from ahead of the
+  // pin) and 5 -> 13 booleans (`--ram`, `--readback`, `--no-reset`, …).
+  assert.equal(withValue.length, 14);
+  assert.equal(booleans.length, 13);
 });
 
 test("FLASH_VALUE_TAKING_FLAGS_AHEAD_OF_PIN names nothing the pin already has", () => {
@@ -562,16 +564,10 @@ test("FLASH_VALUE_TAKING_FLAGS_AHEAD_OF_PIN names nothing the pin already has", 
         "packages/alp-core/src/flash/argv.ts.",
     );
   }
-  // Pinned as data, so an entry dropped from (or slipped into) the set is
-  // caught here rather than only by the behavioural arity test.
-  assert.deepEqual(sortedSet(FLASH_VALUE_TAKING_FLAGS_AHEAD_OF_PIN), [
-    "--jlink",
-    "--probe-serial",
-    "--probe-usb-path",
-    "--raw",
-    "--wait",
-    "--watch",
-  ]);
+  // Pinned as data, so an entry slipped into the set is caught here rather
+  // than only by the behavioural arity test. Empty at 0.7.0-rc1: the six #701
+  // carried ahead of the pin are in the pinned list now.
+  assert.deepEqual(sortedSet(FLASH_VALUE_TAKING_FLAGS_AHEAD_OF_PIN), []);
 });
 
 test("ROOT_VALUE_TAKING_FLAGS is exactly the metavar'd global options", () => {

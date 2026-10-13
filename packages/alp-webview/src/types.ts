@@ -411,6 +411,20 @@ export type DependencyActionEffect = "install" | "open-docs" | "bootstrap";
 export interface DependencyCommandStep {
   tool: string;
   command: string;
+  /** The step's artifact provenance (#467). The view does not render it —
+   *  the consent screen is host-side — so it is declared for completeness. */
+  provenance: PrerequisiteProvenance;
+}
+
+/** Mirrors `PrerequisiteProvenance` in packages/alp-core/src/deps/
+ *  provenance.ts: tan's four provenance keys, normalised host-side. */
+export interface PrerequisiteProvenance {
+  tier: string | null;
+  licence: string | null;
+  sourceUrl: string | null;
+  sizeBytes: number | null;
+  /** Present (`true`) only when the tier was sent but unreadable. */
+  tierUnreadable?: true;
 }
 
 /**
@@ -449,6 +463,10 @@ export interface DependencyFixAction {
   fixId: ToolchainFixId;
   effect: DependencyActionEffect;
   title: string;
+  /** Present (`true`) only when the doctor run reported the bootstrap
+   *  manifest unreadable, so no provenance backs this row: the consent screen
+   *  then starts it unchecked. A fix row has no steps to carry it. */
+  tierUnreadable?: true;
 }
 
 /**

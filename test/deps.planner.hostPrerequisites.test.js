@@ -49,6 +49,15 @@ const plan = (overData = data, over = {}) =>
 
 const rowFor = (report, name) => report.rows.find((r) => r.name === name);
 
+/** What a step carries from a tan that reports no provenance (pre-0.7.0-rc1,
+ *  as these fixtures are) — #467. */
+const NO_PROVENANCE = {
+  tier: null,
+  licence: null,
+  sourceUrl: null,
+  sizeBytes: null,
+};
+
 test("the fixture is the real pinned tan v0.6.0 failing-state doctor envelope", () => {
   assert.equal(envelope.command, "doctor");
   assert.equal(envelope.exitCode, 4);
@@ -78,8 +87,8 @@ test("the hostPrerequisites row gets an install action covering BOTH tools, tan'
   assert.equal(row.action.kind, "command");
   assert.equal(row.action.effect, "install");
   assert.deepEqual(row.action.commands, [
-    { tool: "cmake", command: "brew install cmake" },
-    { tool: "ninja", command: "brew install ninja" },
+    { tool: "cmake", command: "brew install cmake", provenance: NO_PROVENANCE },
+    { tool: "ninja", command: "brew install ninja", provenance: NO_PROVENANCE },
   ]);
   assert.deepEqual(
     row.action.omittedTools,
@@ -196,7 +205,7 @@ test("a mixed row (one tool named, one command: null) says so in the title — n
   };
   const row = rowFor(plan(mixed), "hostPrerequisites");
   assert.deepEqual(row.action.commands, [
-    { tool: "cmake", command: "brew install cmake" },
+    { tool: "cmake", command: "brew install cmake", provenance: NO_PROVENANCE },
   ]);
   assert.deepEqual(
     row.action.omittedTools,

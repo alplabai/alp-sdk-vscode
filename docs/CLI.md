@@ -13,9 +13,9 @@ surface.
 > `alp` (`cli-rs`) binary and the TypeScript implementation (`packages/alp-cli`)
 > have been retired. This document is the envelope contract this repo depends
 > on. It describes the INTENDED surface: `tan` is not feature-complete at the
-> pinned `SUPPORTED_CLI_VERSION` 0.6.0 (`src/alpCli/service.ts`), and three
-> parts of it are declared by that binary but refuse when you run them — the
-> second note below names all three.
+> pinned `SUPPORTED_CLI_VERSION` 0.7.0-rc1 (`src/alpCli/service.ts`), and
+> two parts of it are declared by that binary but refuse when you run them —
+> the second note below names both.
 > `tan` is published as a GitHub release asset for each target (tag
 > `v<version>`) under one of two NAMES, not one: `tan-<triple>[.exe]` through
 > v0.5.0-rc4, holding a raw binary, or `tan-<triple>.zip` (win32) /
@@ -25,24 +25,24 @@ surface.
 > from the version — downloads it, unpacks an archive before running it, and
 > shells the resulting binary either way.
 
-> **The three gaps at 0.6.0.** Twelve of `build`'s options — `--all`,
-> `--ci`, `--manifest`, `--manifest-from`, `--no-auto-bootstrap`, `--no-color`,
-> `--non-interactive`, `--plan`, `--pristine`, `--quiet`, `--target`,
-> `--verbose` — are accepted by the parser and then refused. Each exits 1 with
-> `cli.command-deferred` and a message naming the flag it was given:
-> "`tan build --plan` is deferred and not available in this build (see
-> https://github.com/alplabai/tan-cli/issues/427)." (tan-cli#427). Second,
-> `sdk install` and `sdk switch` are real subcommands that exit 1 with
-> `sdk.not-ported`: "`sdk install` is not available in this build of tan. It
-> writes the active-SDK pointer and reconciles the west workspace manifest, and
-> a partial implementation would report success while `west` kept resolving the
-> old SDK." (tan-cli#305, CLOSED/COMPLETED — the refusal
-> outlived the issue that tracked it, so the number dates the gap rather than
-> promising a fix) — which is why the extension installs and switches
-> SDKs itself rather than shelling those two. Third, `model` implements exactly
-> one subcommand, `build`; every other subcommand §2.3 and §4.12 describe exits
-> 1 with `model.unknown-subcommand`: "Unknown model subcommand: check.
-> Available: build." (tan-cli#674). Every other command family listed in §2
+> **The two gaps at 0.7.0-rc1.** Four of `build`'s options — `--plan`,
+> `--manifest`, `--manifest-from` and `--no-auto-bootstrap` — are RETIRED: the
+> parser accepts them and tan refuses each with exit 2 and
+> `build.flag-retired`, naming what replaces it, e.g. "`--plan` is retired: run
+> `tan build --plan-from FILE` to inspect a build plan instead (add
+> `--materialise` or `--execute` to act on it)." (tan-cli#427). Through 0.6.0
+> these and eight more were deferred instead (exit 1, `cli.command-deferred`);
+> at 0.7.0-rc1 `--pristine` works and the other seven are no longer `build`
+> options. Second, `sdk install` and `sdk switch` are real subcommands that
+> still exit 1 with `sdk.not-ported` (measured at 0.7.0-rc1): "`sdk install` is
+> not available in this build of tan. It writes the active-SDK pointer and
+> reconciles the west workspace manifest, and a partial implementation would
+> report success while `west` kept resolving the old SDK." (tan-cli#305,
+> CLOSED/COMPLETED — the refusal outlived the issue that tracked it, so the
+> number dates the gap rather than promising a fix) — which is why the
+> extension installs and switches SDKs itself rather than shelling those two.
+> The `model` gap of 0.6.0 is closed: all nine subcommands §2.3 and §4.12 name
+> exist at 0.7.0-rc1 (tan-cli#674). Every other command family listed in §2
 > exists and runs at this pin.
 
 The goal is not to mirror the VS Code extension command-for-command.
@@ -87,9 +87,9 @@ The CLI should expose these top-level command families:
 - `tan presets`
 - `tan explain`
 - `tan size`
-- `tan model` (subcommands: `build`, `list`, `info`, `doctor`, `check`, `zoo`,
-  `add`, `prep`, `run`, `ab` — see §2.3; at 0.6.0 only `build` is
-  implemented, tan-cli#674)
+- `tan model` (subcommands: `build`, `doctor`, `check`, `list`, `zoo`, `add`,
+  `prep`, `run`, `ab` — see §2.3; all nine are implemented from 0.7.0-rc1,
+  tan-cli#674. There is no `info`.)
 
 `tan renode` was on this list until tan v0.6.0, which removed the verb, its
 modules and all 27 published `renode.*` issue codes (tan-cli#848). The
@@ -118,9 +118,10 @@ eligibility unless a real compile proves placement), and a Build action that
 builds EVERY model in `board.yaml` at once, since `tan model` has no `--model`
 option to select one with (tan-cli#674). PREP MODEL (pick model + calibration
 folder → quantize → accuracy report), RUN MODEL / A-B COMPARE (host reference
-run) and the MODEL ZOO GALLERY (browse "runs on your SoM" + one-click Add) are
-INTENDED, not shipped: they need `model prep`, `model run`, `model ab` and
-`model zoo`, and none of those exist at 0.6.0 (tan-cli#674). When Run and
+run) are INTENDED, not shipped: `model prep`, `model run` and `model ab`
+exist at 0.7.0-rc1 (tan-cli#674) and this panel is not wired to them yet
+(#524). The MODEL ZOO GALLERY (browse "runs on your SoM" + one-click Add)
+runs `model zoo` / `model add` (#699). When Run and
 A-B do arrive, the honest caveat still holds — they are a host reference, not
 target-SoM performance.
 
@@ -179,9 +180,10 @@ subcommands, same flags). `alp model` is the SDK-native command surface; `tan
 model` is the thin envelope wrapper emitting `{command, ok, exitCode, project,
 data, issues}`.
 
-At the pinned 0.6.0 the only subcommand implemented is `build`; every other
-entry below is the intended contract and exits 1 with `model.unknown-subcommand`
-("Unknown model subcommand: check. Available: build.") until tan-cli#674 lands.
+At the pinned 0.7.0-rc1 every entry below exists except `info` (tan-cli#674);
+through 0.6.0 only `build` did, and the rest exited 1 with
+`model.unknown-subcommand`. The flags listed are the contract the family was
+specified against — `tan model --help` is the authority on the real ones.
 Subcommands:
 
 - `build` — compile `board.yaml` `models:` → `.alpmodel`. The pinned tan builds
@@ -500,18 +502,14 @@ Suggested flags:
 value-add subcommands below each emit the standard envelope; their payloads live
 under `data`, warnings/errors under `issues`.
 
-Of everything in this section only `build` is implemented at the pinned
-0.6.0 — `check`, `zoo`, `add`, `prep`, `run` and `ab` (and `list`, `info`
-and `doctor`) exit 1 with `model.unknown-subcommand` — measured for every form,
-including one carrying a flag `tan model` really has (`tan model check --board
-board.yaml` refuses identically). The subcommand is rejected before any flag is
-read, so the Flags: blocks below describe arguments nothing parses yet. Some of
-those names ARE real options of `tan model` itself — `--board`, `--format` and
-`--out` are three — so they must not be read as a list of flags that do not
-exist. `tan model`'s own options are `--board`, `--board-yaml`, `--format`,
-`--help`, `--metadata-root`, `--out`, `--project` and `--sdk-root`, plus tan's
-global options. The contract below is what the family is meant to
-be; tan-cli#674 is the gap.
+Through tan 0.6.0 only `build` was implemented and every other subcommand
+exited 1 with `model.unknown-subcommand`. From 0.7.0-rc1 all of `build`,
+`doctor`, `check`, `list`, `zoo`, `add`, `prep`, `run` and `ab` exist
+(tan-cli#674); `info` does not. The Flags: blocks below are the contract the
+family was specified against, and have NOT been re-measured against 0.7.0-rc1
+— `tan model --help` is the authority for which option belongs to which
+subcommand. The extension spawns `build`, `zoo` and `add` (#699); wiring the
+rest is #524.
 
 #### `tan model check`
 

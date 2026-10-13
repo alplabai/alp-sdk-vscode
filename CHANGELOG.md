@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+- **A failed tan command's toast quotes its error again, not an SDK
+  advisory.** tan 0.7.0-rc1 lists `sdk.project-pin-unresolved` and
+  `sdk.global-default-foreign-project` warnings ahead of the command's own
+  error, so a headline read from the first issue named the wrong problem.
+  Every headline now quotes the first error, and falls back to the first
+  issue only when there is none.
+
+- **The dependency consent screen shows each artifact's tier, licence and
+  size from the producer (#467).** tan 0.7.0-rc1 (tan-cli#1066) carries
+  alp-sdk's artifact provenance on every missing prerequisite, and the
+  screen now reads it off the step that will run: `Tier`, `Licence` and
+  `Size` sit beside `Runs:`, per tool when a rollup row's tools disagree
+  (`cmake: BSD-3-Clause; ninja: Apache-2.0`). A tier `C` (licence-gated)
+  line starts unchecked, so it is never fetched without its own click, as
+  does any tier the screen cannot read (a malformed value, or a doctor run
+  that reports the provenance block unreadable), and
+  a tier `B` line says it requires elevation. Today alp-sdk declares tier
+  `A` for all eight entries it covers and no sizes, so `Size` still reads
+  "not reported", and rows with no entry (`west`, `zephyrSdk`, `setools`,
+  `jlink`) report nothing. `Runs:` is still the command; the upstream page
+  is not shown in its place.
+
+- **The extension pins tan `0.7.0-rc1`.** `SUPPORTED_CLI_VERSION` moves
+  from `0.6.0` to the `v0.7.0-rc1` pre-release, which carries
+  `tan model zoo`/`add` (tan-cli#1338) and per-entry artifact provenance on
+  `missingPrerequisites[]` (tan-cli#1066). It moves to `0.7.0` when that tag
+  ships. `cli.parse-error` and `monitor.no-port` are frozen in the pinned
+  contract now, and the contract gate says so (#655). The `--plan`,
+  `--manifest`, `--manifest-from` and `--no-auto-bootstrap` build flags are
+  retired at this pin, not deferred, and every `tan model` subcommand
+  exists, so the Models panel reports the ones it does not call yet as
+  unwired rather than missing. The surface fetcher learnt the new help
+  layouts it needed to record the pin (a short `-D` alias, `NAME=VALUE`,
+  `FILE@ADDR`, bare `a|b` choices, one-letter metavars). The six flash
+  options #701 carried ahead of the pin are in the pinned table now.
+  `RENESAS_BUILD_CLI_VERSION` stays at `0.6.0-rc1`.
+
 - **The flash consent gate reads tan 0.7's new flash options with the
   right arity (#701).** `--probe-serial`, `--probe-usb-path`, `--watch`,
   `--raw`, `--wait` and `--jlink` now swallow their value, so
@@ -25,9 +62,9 @@
   The zoo entry types and the gallery card read `validatedSoms` and
   `runsHere`, which tan emits from 0.7.0-rc1 (tan-cli#1338), instead of
   `validated_soms` / `runs_here`, which it never emitted. `tan model add`'s
-  `data.added` was already right. The zoo and add sections still report the
-  gap at the 0.6.0 pin; the short-circuit goes when `SUPPORTED_CLI_VERSION`
-  moves to a tan release that has them.
+  `data.added` was already right. With the pin on 0.7.0-rc1 the zoo and add
+  sections spawn `tan model zoo` and `tan model add <id>` again instead of
+  reporting a gap, and with no folder open neither one runs.
 
 - **The Build Plan panel is one page again, drawn in VS Code's own
   language.** The summary strip, the "needs attention" list and the

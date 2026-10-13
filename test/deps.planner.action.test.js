@@ -39,6 +39,15 @@ const plan = (over = {}) =>
 
 const rowFor = (report, name) => report.rows.find((r) => r.name === name);
 
+/** What a step carries from a tan that reports no provenance (pre-0.7.0-rc1,
+ *  as these fixtures are) — #467. */
+const NO_PROVENANCE = {
+  tier: null,
+  licence: null,
+  sourceUrl: null,
+  sizeBytes: null,
+};
+
 // tan dev's real struct: { tool: String, command: Option<String> }.
 const withPrereqs = (missingPrerequisites) => ({
   ...data,
@@ -205,14 +214,20 @@ test("entry with a command: carried VERBATIM", () => {
   assert.equal(report.prerequisiteDataUnavailable, false);
   assert.deepEqual(rowFor(report, "ninja").action, {
     kind: "command",
-    commands: [{ tool: "ninja", command }],
+    commands: [{ tool: "ninja", command, provenance: NO_PROVENANCE }],
     omittedTools: [],
     effect: "install",
     title: command,
   });
   assert.deepEqual(rowFor(report, "cmake").action, {
     kind: "command",
-    commands: [{ tool: "cmake", command: "sudo apt-get install -y cmake" }],
+    commands: [
+      {
+        tool: "cmake",
+        command: "sudo apt-get install -y cmake",
+        provenance: NO_PROVENANCE,
+      },
+    ],
     omittedTools: [],
     effect: "install",
     title: "sudo apt-get install -y cmake",
@@ -308,7 +323,13 @@ test("bootstrapRunning suppresses every action, in all three branches", () => {
   // Same envelope, bootstrap finished: the action comes back.
   assert.deepEqual(rowFor(plan({ data: branches[2] }), "ninja").action, {
     kind: "command",
-    commands: [{ tool: "ninja", command: "choco install ninja" }],
+    commands: [
+      {
+        tool: "ninja",
+        command: "choco install ninja",
+        provenance: NO_PROVENANCE,
+      },
+    ],
     omittedTools: [],
     effect: "install",
     title: "choco install ninja",

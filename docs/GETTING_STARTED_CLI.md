@@ -37,7 +37,7 @@ needs the `_internal/` directory that ships next to it:
 #   Linux arm64, Windows arm64
 mkdir -p ~/tan-cli && cd ~/tan-cli
 curl -fL --retry 3 -o tan.tar.gz \
-  https://github.com/alplabai/tan-cli/releases/download/v0.6.0/tan-x86_64-unknown-linux-gnu.tar.gz
+  https://github.com/alplabai/tan-cli/releases/download/v0.7.0-rc1/tan-x86_64-unknown-linux-gnu.tar.gz
 tar -xzf tan.tar.gz   # extracts to ./tan/ (launcher + _internal/, already executable)
 export PATH="$HOME/tan-cli/tan:$PATH"   # add to your shell profile to persist
 tan --help
@@ -55,12 +55,12 @@ reproducibility. The VS Code extension provisions the same release asset
 automatically (see [GETTING_STARTED_VSCODE.md](GETTING_STARTED_VSCODE.md));
 this guide is for terminal/CI use where you manage `tan` yourself.
 
-The tag above, `v0.6.0`, is the release this extension pins
+The tag above, `v0.7.0-rc1`, is the release this extension pins
 (`SUPPORTED_CLI_VERSION` in `src/alpCli/service.ts`); install that one for
 terminal use too, so the binary you type at is the binary every gate in this
-repo measures. The pin was deliberately a PRE-RELEASE at the time it was
-chosen (#502, `v0.6.0-rc1`) and moved to this GA tag once it was cut, without
-changing the reasoning: below `0.6.0` tan's vendored planner emits
+repo measures. It is a PRE-RELEASE on purpose, and moves to `v0.7.0` once that
+tag is cut. Do not drop below `0.6.0-rc1` either (#502): below it tan's
+vendored planner emits
 `CONFIG_ALP_SDK_CHIP_NONE=y` and the four Renesas SKUs — `E1M-V2N101`,
 `E1M-V2N102`, `E1M-V2M101`, `E1M-V2M102` — die in Zephyr's configure step, so
 a stable-only download policy does not get you a `tan` that can build those
@@ -223,8 +223,11 @@ tan completion --shell fish
 [`CLI.md`](CLI.md)): `{command,ok,exitCode,project,data,issues}`, plus an `sdk`
 block on a run that resolved one, with the packages it wrote in `data.built`.
 
-At the pinned tan (0.6.0) it takes exactly ONE subcommand, `build`.
-`tan model --help` prints the whole list: `SUBCOMMAND      <str>  build.`
+At the pinned tan (0.7.0-rc1) it takes nine subcommands — `build`, `doctor`,
+`check`, `list`, `zoo`, `add`, `prep`, `run` and `ab` (tan-cli#674).
+`tan model --help` prints the whole list and which options belong to which
+subcommand. This section covers `build`, the one the extension has always
+driven.
 
 ```bash
 tan model build --board board.yaml
@@ -232,13 +235,13 @@ tan model build --board board.yaml --format json
 tan model build --project . --sdk-root ../alp-sdk --out build/models --format json
 ```
 
-Its own options are `--board` / `--board-yaml` (path to `board.yaml`,
-default `board.yaml`), `--out` (output directory, default `build/models`),
-`--metadata-root` (path to the `metadata/` root, default
+The options `build` reads are `--board` / `--board-yaml` (path to
+`board.yaml`, default `board.yaml`), `--out` (output directory, default
+`build/models`), `--metadata-root` (path to the `metadata/` root, default
 `<sdk-root>/metadata`), `--project` (project root, default `.`), `--sdk-root`
-(alp-sdk checkout root), `--format` (`text` or `json`, default `text`) and
-`--help`. tan's global options are accepted on top of those, so
-`--non-interactive`, `--no-color` and the rest work here too.
+(alp-sdk checkout root) and `--format` (`text` or `json`, default `text`). The
+rest of `tan model`'s options are scoped to another subcommand, and their help
+says which.
 
 `tan model build` needs a resolved SDK before it does anything else. Where none
 resolves it exits 2 with `{"code":"model.sdk-root-unresolved"}`; the runs below
@@ -250,30 +253,21 @@ exits 0, prints
 ``model: no `models:` declared in board.yaml; nothing to build.`` in text
 format, and reports `"built": []` under `--format json`.
 
-Any other subcommand is refused by name rather than by a usage error.
-`tan model check`, for example, exits 1 and prints a `model` envelope whose
-`issues` carry
-`{"code":"model.unknown-subcommand","severity":"error","message":"Unknown model subcommand: check. Available: build."}`.
+### The rest of the model lifecycle (tan-cli#674)
 
-### The rest of the model lifecycle is not in this binary (tan-cli#674)
-
-A wider model lifecycle is intended: a static, offline NPU-coverage screen; a
-curated model zoo; adding a zoo entry to `board.yaml` `models:`; license-free
-INT8 preparation with an fp32-vs-int8 accuracy report; and host reference and
-A-B runs (host figures, never target-SoM performance). None of those subcommands exists at this
-pin, so this guide prints no command line for them. Nor does `tan model` accept
-the flags they were specified with: `--exact`, `--calibration`, `--per-channel`,
-`--min-samples`, `--input`, `--expected`, `--runs` and `--models-dir` are
-options of nothing it has. (`--name` and `--sku` are a different case — both are
-real, on `tan init`, where `--sku` is an alias of `--som`. They are absent from
-`tan model`, not from tan.) — landing them is upstream, `tan-cli#674`.
+The other eight subcommands landed in tan 0.7.0-rc1: a static, offline
+NPU-coverage screen (`check`), a curated model zoo (`zoo`) and adding a zoo
+entry to `board.yaml` `models:` (`add <id>`), license-free INT8 preparation
+with an fp32-vs-int8 accuracy report (`prep`), and host reference and A-B runs
+(`run`, `ab` — host figures, never target-SoM performance). `tan model --help`
+is the reference for each one's options.
 
 The VS Code extension's Models panel is a GUI over that same family, and it is
-hidden for the same reason (restoring it is #524). The hiding is not
-pin-conditional: both commands carry `"when": "false"` in the extension's
-palette contribution, so a newer tan does not reveal them on its own. See
+still hidden (restoring it is #524). The hiding is not pin-conditional: both
+commands carry `"when": "false"` in the extension's palette contribution, so a
+newer tan does not reveal them on its own. See
 [GETTING_STARTED_VSCODE.md](GETTING_STARTED_VSCODE.md) for what it shows once
-both land.
+it returns.
 
 ## 10. Exit Codes
 
