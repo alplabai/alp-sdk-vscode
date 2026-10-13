@@ -2841,9 +2841,9 @@ export async function runAlpStreamed(
     if (gated === null) return;
     // Whether THIS spawn writes a device. Asked of the argv actually going out,
     // and keyed on it being a FLASH rather than on `--confirm` being present:
-    // `plan_zephyr_west_flash`, `plan_baremetal_cmake_flash` and
-    // `plan_swd_probe` write without it (tan-cli#796), so an armed-only test
-    // would answer "not a write" on the backends that write unasked.
+    // `zephyr_west_flash` and `baremetal_cmake_flash` write without it
+    // (tan-cli#796), so an armed-only test would answer "not a write" on the
+    // backends that write unasked.
     // `streamRun` needs this for the two places a write and a build must not
     // behave alike: the Cancel button, and a death by signal.
     const isFlash = isFlashArgv(gated.argv);
@@ -2868,9 +2868,9 @@ export async function runAlpStreamed(
  * `runAlpStreamed`'s own header says the reservation refuses a same-named
  * re-run and NEVER terminates one, "killing a flash mid-write can leave a
  * board unbootable". The progress notification's Cancel button is the one
- * exception, and it is aimed at a live write — `plan_zephyr_west_flash`,
- * `plan_baremetal_cmake_flash` and `plan_swd_probe` write on a bare `tan flash`
- * (tan 0.7.0), and the gate now arms Flow D too, so Cancel sends SIGTERM, then
+ * exception, and it is aimed at a live write — `zephyr_west_flash` and
+ * `baremetal_cmake_flash` write on a bare `tan flash` (tan 0.7.0; `swd_probe`
+ * was removed in tan-cli#732), and the gate now arms Flow D too, so Cancel sends SIGTERM, then
  * SIGKILL ten seconds behind it, into a write on every AEN flash.
  *
  * Making the progress non-cancellable would trade one hazard for another. The
@@ -3172,9 +3172,9 @@ async function streamRun(
             // was the ONLY outcome that said nothing at all.
             //
             // Keyed on the run being a FLASH, not on the confirm gate being
-            // armed: at tan 0.7.0 `zephyr_west_flash`, `baremetal_cmake_flash`
-            // and `swd_probe` program the board on a bare `tan flash`, with
-            // no `--confirm` anywhere. An armed-only warning would stay silent
+            // armed: at tan 0.7.0 `zephyr_west_flash` and
+            // `baremetal_cmake_flash` program the board on a bare `tan flash`,
+            // with no `--confirm` anywhere. An armed-only warning would stay silent
             // on exactly the backends that write without being asked.
             if (options.isFlash) warnInterruptedFlash(options.name, signal);
           }

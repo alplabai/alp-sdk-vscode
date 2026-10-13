@@ -15,8 +15,18 @@
     added only after it; there is no "don't ask again".
   - A per-core Flash that would delist a sibling's boot entry is refused; use
     the whole-board Flash.
-  - Signing uses the SETOOLS in `SETOOLS_DIR`, passed as `--setools-dir`; one
-    named only by the manifest is refused by tan.
+  - Signing uses a SETOOLS install YOU name: `SETOOLS_DIR` in the extension
+    host's environment (passed as `--setools-dir`), or exported by your login
+    profile. One named only by the manifest is refused by tan. The run goes
+    through your login shell, which reads `.zprofile`/`.zlogin` for zsh and
+    `.bash_profile`/`.profile` for bash — not `.zshrc`/`.bashrc`. A profile that
+    prints is tolerated: Alp reads tan's JSON line even with output before it.
+  - On the real AEN801 manifest, which also holds the yocto `a32_cluster`
+    slice, the whole-board Flash and every per-core Flash are refused with
+    nothing written, and the message says it cannot be done from the IDE yet
+    (tan can select one slice, not several).
+  - tan's `flash.internal-failure` is reported as "may be partly programmed",
+    never "nothing was written": it can be raised after the write.
   - An armed AEN write is read from tan's JSON envelope rather than its exit
     status: previewed, refused before writing, failed during the write (with
     the partial-write warning) and written are different messages. Its live

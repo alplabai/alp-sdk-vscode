@@ -29,8 +29,12 @@ No silicon and no licence-gated tool was involved. Two stand-ins were on
 
 The `system-manifest.yaml` is `test/fixtures/system-manifest.aen801.yaml` with
 every slice set to `status: ok`, an `output_artefact` and a 68-byte placeholder
-image added per slice, the `ipc:` block removed, and (for `mixed`) the yocto
-slice's `target` set to `/dev/sdz`. `non-aen` is a one-slice
+image added per slice, the `ipc:` block removed, and the yocto `a32_cluster`
+slice **removed** from every manifest except the `mixed` ones — so the
+`flow-d`, `core-left-out`, `no-setools`, `manifest-only-setools`, `xspi` and
+`confirm.*` captures hold only the two Zephyr slices (the real AEN801 manifest
+also holds the yocto one). In `mixed` the yocto slice's `target` is set to
+`/dev/sdz`. `non-aen` is a one-slice
 `zephyr_west_flash` manifest with an empty `flash_args`; `xspi` is the m55_hp
 slice with `flash_method: xspi_flashwriter` and `flash_partition: mtd1`.
 

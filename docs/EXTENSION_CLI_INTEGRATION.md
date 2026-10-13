@@ -953,7 +953,10 @@ manifest names: every planner-emitted Zephyr slice carries
 3. **Arming rule** (`@alp-sdk/core/flash/arming`): add `--confirm` only when
    every entry with a confirm gate resolves to Flow D. A `yocto_wic*` or
    `xspi_flashwriter` entry is never armed, and beside a Flow D entry it refuses
-   the whole run. Only `zephyr_west_flash` and `baremetal_cmake_flash` are known
+   the whole run — which on a real AEN801 manifest (it holds the yocto
+   `a32_cluster` slice) means the whole-board Flash and every per-core Flash are
+   refused, with a message saying it cannot be done from the IDE yet, because
+   `tan` can select one slice (`--core`) or the board, not several. Only `zephyr_west_flash` and `baremetal_cmake_flash` are known
    to write unasked; any other or missing method refuses, as does more than one
    Flow D entry carrying its own ATOC.
 4. The first modal ("Write to Device") lists the manifest's targets and, from
@@ -973,10 +976,17 @@ the way. The gate compares the scoped preview with a whole-board preview rather
 than parsing `tan`'s sentence (which it also treats as a second guard).
 
 **SETOOLS.** A confirmed Flow D write signs with an install the _operator_ named;
-one named only by the manifest is refused (`flash.setools-untrusted-source`).
-The extension forwards `SETOOLS_DIR` from its own environment as
-`--setools-dir`; with neither, the preview fails with `tan`'s message, which
-names the ways to supply one. There is no extension setting for it.
+one named only by the manifest is refused (`flash.setools-untrusted-source`),
+and a preview against such an install returns `signSkipped`, which the arming
+rule refuses. The extension forwards `SETOOLS_DIR` from its own environment as
+`--setools-dir`; a `SETOOLS_DIR` exported only by the login profile still
+reaches `tan`, because the streamed run goes through the login shell. That shell
+reads `.zprofile`/`.zlogin` (zsh) or `.bash_profile`/`.profile` (bash) — **not**
+`.zshrc`/`.bashrc`, so put the export where a login shell reads it. With
+neither source the preview fails with `tan`'s message, which names the ways to
+supply one. There is no extension setting for it. A profile that prints to
+stdout is tolerated: the preview parser skips to the last line that opens a
+`{"command":` envelope (the shell `exec`s `tan`, so nothing follows it).
 
 **`ALP_FLASH_FORCE`.** A profile line `export ALP_FLASH_FORCE=1` would arm
 `tan` with no modal, because the streamed run goes through the user's login
