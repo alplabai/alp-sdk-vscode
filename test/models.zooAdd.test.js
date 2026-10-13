@@ -2,7 +2,7 @@
 //
 // `tan model zoo` and `tan model add` are spawned again (#699). Through the
 // 0.6.0 pin neither existed, so `src/models/panel.ts` answered both from the
-// pin with `unsupportedModelSubcommand`; the 0.7.0-rc1 pin carries
+// pin with `unsupportedModelSubcommand`; the 0.7.0 pin carries
 // tan-cli#1338, so the short-circuit is gone.
 //
 // Same `Module._load` swap test/models.buildModelNoWorkspace.test.js uses:
@@ -211,7 +211,7 @@ test("the zoo section spawns `tan model zoo` in the project, not a synthesised r
       /unknown-subcommand|panel-not-wired/.test(issue.code),
     ),
     false,
-    "the 0.7.0-rc1 pin implements `zoo`; neither capability verdict belongs here",
+    "the 0.7.0 pin implements `zoo`; neither capability verdict belongs here",
   );
 });
 

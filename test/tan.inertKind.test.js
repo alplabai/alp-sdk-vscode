@@ -3,7 +3,7 @@
 // An inert option is not one thing.
 //
 // `test/golden/tan-surface/surface.json` records 43 options as `inert: true`
-// at tan 0.7.0-rc1, and the recording's own markers put them in FIVE kinds of
+// at tan 0.7.0, and the recording's own markers put them in FIVE kinds of
 // situation (one of which has no instance at this pin):
 //
 //   deferred         0  "Accepted by other commands; not implemented for
@@ -12,8 +12,8 @@
 //   retired          4  build --plan/--manifest/--manifest-from/
 //                       --no-auto-bootstrap, "Retired -- … (tan-cli#427)" —
 //                       parsed, then REFUSED (`build.flag-retired`).
-//   compatibility    1  doctor --build, "Accepted for compatibility
-//                       (tan-cli#290)" — kept so old callers do not break.
+//   compatibility    1  doctor --build, "(inert:compatibility:tan-cli#290)"
+//                       — kept so old callers do not break.
 //   parity          35  diff/faultdecode/inspect/pinmux/support-bundle/trace's
 //                       global ergonomics flags (--all/--ci/--no-color/
 //                       --non-interactive/--quiet/--target/--verbose), each
@@ -27,9 +27,9 @@
 //                       of these `not-applicable` before an adversarial
 //                       review caught the distinction below.
 //   not-applicable   3  faultdecode --project/--sdk-root/--board-yaml,
-//                       "(unused: faultdecode is HW-free)" / "reads no
-//                       board.yaml and drives no alp-sdk checkout -- it is
-//                       pure ARMv8-M register arithmetic" — a genuine DOMAIN
+//                       "(inert:not-applicable)" on --project/--sdk-root
+//                       ("faultdecode is pure ARMv8-M register arithmetic
+//                       and opens no project") — a genuine DOMAIN
 //                       reason specific to this one command, not the generic
 //                       "every verb has it" reason `parity` names. The line
 //                       between the two: `parity` flags are applicable
@@ -41,8 +41,8 @@
 // `doctor --build` is "deferred, see tan-cli#427" would promise an arrival that
 // is not coming, and calling `faultdecode --project` live would claim an effect
 // it does not have. `inert` alone cannot separate them: it is a boolean, and
-// the reason lives in `marker` prose with a `ref` that is null for two of the
-// four markers.
+// the reason lives in `marker`, whose `ref` is null unless the kind cites an
+// issue (`retired` and `compatibility` do; `not-applicable` and `parity` do not).
 //
 // So the kind is DECLARED in `src/` and held to the recording by a gate, the
 // way MODEL_SUBCOMMANDS and DEFERRED_BUILD_OPTIONS already are — not sniffed

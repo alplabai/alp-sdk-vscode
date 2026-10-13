@@ -18,7 +18,7 @@ First-class IDE support for projects built against the
 * **Models / edge-AI panel — hidden at this pin.** A full-tab preview over the
   `tan model` CLI whose build action runs `tan model build` and whose Model
   Zoo gallery runs `tan model zoo` / `add` (#699). The pinned tan
-  0.7.0-rc1 implements all nine `model` subcommands (tan-cli#674), but its
+  0.7.0 implements all nine `model` subcommands (tan-cli#674), but its
   NPU-coverage badge (`full-eligible` / `partial` / `cpu-only` /
   `undetermined`), Prep Model, Run Model and A-B Compare screens are not
   wired to them yet, so the panel says so instead of running them; both of its commands,

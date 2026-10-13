@@ -165,7 +165,7 @@ Palette (`"when": "false"`, #525). The commands are still registered, but nothin
 in the GUI reaches them, so there is no step here to follow on a first run.
 Restoring the surface is tracked as #524.
 
-The CLI it shells is no longer the gap. The pinned `tan` (0.7.0-rc1)
+The CLI it shells is no longer the gap. The pinned `tan` (0.7.0)
 implements all nine `model` subcommands — `build`, `doctor`, `check`, `list`,
 `zoo`, `add`, `prep`, `run` and `ab` (tan-cli#674). The panel calls
 `build`, which compiles and packages the `models:` entries of `board.yaml` into

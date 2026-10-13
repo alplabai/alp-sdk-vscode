@@ -189,6 +189,14 @@ const FLAG_CELL = /^--?[^\s,]+(?:,\s*--?[^\s,]+)*$/;
  *  each is wrapped `(?:…)?` so it cannot change WHETHER a flag is inert — a
  *  reworded tail costs a fuller marker, never the detection. */
 const INERT_PATTERNS = [
+  // The producer's own marker, tan-cli#886: `(inert:KIND)` or
+  // `(inert:KIND:REF)`, KIND in deferred|compatibility|parity|not-applicable
+  // (grammar: tan-cli `contract/README.md`). Listed FIRST because it is
+  // authoritative: a help cell carrying it is inert whatever else its prose
+  // says, and `marker` then records the producer's token verbatim rather than
+  // the prose clause the older wordings below fall back on. The ref is the
+  // token's own, so a live option that merely cites an issue cannot borrow it.
+  /\(inert:[a-z-]+(?::([^)\s]+))?\)/,
   // `tan build`'s twelve (tan-cli#427), through 0.6.0.
   /Accepted by other commands; not implemented for `[^`]*` yet(?:\s*\((tan-cli#\d+)\))?/,
   // `tan build --plan`/`--manifest`/`--manifest-from`/`--no-auto-bootstrap`
