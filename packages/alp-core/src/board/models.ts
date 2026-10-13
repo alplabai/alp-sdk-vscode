@@ -71,7 +71,7 @@ export interface CoreEntry {
   recipe?: string;
   image?: string;
   /**
-   * Per-core toolchain override (#314, alp-sdk#964, schema v0.17.0-rc2): a
+   * Per-core toolchain override (#314, alp-sdk#964, schema first in v0.17.0-rc1): a
    * free-form id replacing the SoM preset's `topology.<core_id>.toolchain`
    * default, carried verbatim into the plan's `slices[].toolchain`. ABSENT
    * means "keep the derived default" — never write `""`.

@@ -9,7 +9,7 @@
 //      REMOVES the key instead of writing `toolchain: ""` (an empty id would be
 //      passed through to the plan verbatim).
 //   2. The vendored schema accepts the key — `core_entry` is
-//      `additionalProperties: false`, so before alp-sdk#964 (v0.17.0-rc2) the
+//      `additionalProperties: false`, so before alp-sdk#964 (v0.17.0-rc1) the
 //      same write failed validation on the next build.
 //   3. It writes no environment variable. `ZEPHYR_TOOLCHAIN_VARIANT` is
 //      plan-owned (`test/alpCli.planOwnedEnv.test.js`); the field's only

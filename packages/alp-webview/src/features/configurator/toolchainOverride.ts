@@ -3,7 +3,7 @@
 // The per-core "Toolchain" field (#314).
 //
 // It writes ONE thing: `cores.<id>.toolchain` in board.yaml (alp-sdk#964,
-// schema v0.17.0-rc2), a free-form id that overrides the SoM preset's
+// schema first in v0.17.0-rc1), a free-form id that overrides the SoM preset's
 // `topology.<id>.toolchain`. It never touches the environment — the build
 // plan owns `ZEPHYR_TOOLCHAIN_VARIANT`, and a second writer would silently
 // win over it (`test/alpCli.planOwnedEnv.test.js`).
