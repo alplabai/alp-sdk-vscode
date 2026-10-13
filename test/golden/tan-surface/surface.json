@@ -1,8 +1,8 @@
 {
-  "version": "0.7.0-rc1",
-  "capturedAt": "2026-10-12",
+  "version": "0.7.0",
+  "capturedAt": "2026-10-13",
   "sourceDigest": "a8845e21a3060f6520219ecb9e8f29774bf6709aa68e66911b2f891840dfb7d8",
-  "contentDigest": "095240db9f9a16ce9faf3e123c2feaf5ac8749b6dd9b914e9a19be4ddbea7d8c",
+  "contentDigest": "60be038d8743ca885f6946513aeb1699a090025a5972ae0f67dc6fad6d02e04c",
   "globalOptions": [
     "--project",
     "--board-yaml",
@@ -571,8 +571,8 @@
         },
         "--build": {
           "inert": true,
-          "ref": null,
-          "marker": "Accepted for compatibility",
+          "ref": "tan-cli#290",
+          "marker": "(inert:compatibility:tan-cli#290)",
           "metavar": null,
           "valueOptional": false
         },
@@ -887,7 +887,7 @@
         "--project": {
           "inert": true,
           "ref": null,
-          "marker": "`--project`/`--sdk-root`/`--board-yaml`/`--target`/`--all`/`--verbose`/ `--quiet`/`--non-interactive`/`--ci` are declared, not consumed",
+          "marker": "(inert:not-applicable)",
           "metavar": "PATH",
           "valueOptional": false
         },
@@ -901,7 +901,7 @@
         "--sdk-root": {
           "inert": true,
           "ref": null,
-          "marker": "`--project`/`--sdk-root`/`--board-yaml`/`--target`/`--all`/`--verbose`/ `--quiet`/`--non-interactive`/`--ci` are declared, not consumed",
+          "marker": "(inert:not-applicable)",
           "metavar": "PATH",
           "valueOptional": false
         },

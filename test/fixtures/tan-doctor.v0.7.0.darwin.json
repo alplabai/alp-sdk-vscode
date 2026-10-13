@@ -89,7 +89,7 @@
         "name": "tanInstall",
         "status": "pass",
         "scope": "host",
-        "detail": "tan 0.7.0-rc1"
+        "detail": "tan 0.7.0"
       },
       {
         "name": "hostPython",
