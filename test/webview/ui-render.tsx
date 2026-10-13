@@ -1548,7 +1548,7 @@ async function main() {
     );
   }
 
-  // ── at the 0.7.0-rc1 pin the gap is the EXTENSION's `models.panel-not-wired` ──
+  // ── at the 0.7.0 pin the gap is the EXTENSION's `models.panel-not-wired` ──
   // Every subcommand exists there, so tan never sends `model.unknown-subcommand`;
   // the panel's own synthesised code must get the same treatment: no red
   // alarm, the four unwired actions disabled, and a notice that does NOT tell

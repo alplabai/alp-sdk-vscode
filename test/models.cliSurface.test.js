@@ -179,7 +179,7 @@ test("the extension's own not-wired code is spelled as pinnedSurface produces it
 });
 
 test("models.panel-not-wired is a capability gap too: found, and stripped from banners", () => {
-  // At the 0.7.0-rc1 pin all nine subcommands exist, so this is the code the
+  // At the 0.7.0 pin all nine subcommands exist, so this is the code the
   // panel really receives instead of tan's refusal.
   const notWired = {
     code: "models.panel-not-wired",

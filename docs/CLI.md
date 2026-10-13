@@ -506,7 +506,7 @@ Through tan 0.6.0 only `build` was implemented and every other subcommand
 exited 1 with `model.unknown-subcommand`. From 0.7.0-rc1 all of `build`,
 `doctor`, `check`, `list`, `zoo`, `add`, `prep`, `run` and `ab` exist
 (tan-cli#674); `info` does not. The Flags: blocks below are the contract the
-family was specified against, and have NOT been re-measured against 0.7.0-rc1
+family was specified against, and have NOT been re-measured against 0.7.0
 — `tan model --help` is the authority for which option belongs to which
 subcommand. The extension spawns `build`, `zoo` and `add` (#699); wiring the
 rest is #524.
