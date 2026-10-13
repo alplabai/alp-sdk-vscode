@@ -915,6 +915,88 @@ This keeps a single, natively-driven `tan build` entry point for the extension
 and terminal alike, while the SDK's `alp_orchestrate.py` stays the single
 source of truth for per-core planning.
 
+## 6a-1. `tan flash` — consent, arming and the verdict (#540)
+
+Flash is the one command the extension does not hand to `tan` as written. Every
+`tan flash` passes `gateFlashDispatch` (`src/flash/gate.ts`) inside
+`runAlpStreamed`, and the gate asks `tan` before it asks the customer.
+
+**Why a bare `tan flash` is not enough (tan 0.7.0).** What `--confirm` does
+depends on the backend `tan` _resolves_, which on AEN is not the one the
+manifest names: every planner-emitted Zephyr slice carries
+`flash_args.jlink_flash_device`, which `select_flash_method` routes to Flow D
+(`alif_mram_jlink`) whatever `flash_method` says.
+
+| Backend `tan` resolves                          | Bare `tan flash`  | With `--confirm`                                                     |
+| ----------------------------------------------- | ----------------- | -------------------------------------------------------------------- |
+| `zephyr_west_flash` (non-AEN), `baremetal_cmake_flash` | writes     | no change                                                            |
+| `yocto_wic`, `yocto_wic_to_sd_or_emmc`          | previews          | a real `bmaptool`/`dd` to a **host** block device                    |
+| `xspi_flashwriter`                              | previews          | hard refusal (`FlashPlanError`, "HW-gated")                          |
+| `alif_mram_jlink` (Flow D)                      | previews          | writes — but refused (`flash.atoc-replacement-unacknowledged`) unless `--atoc-unqueryable` too |
+
+**The flow.**
+
+1. The existing pre-checks (`--recover`, `--project`, malformed argv, no
+   readable `build/system-manifest.yaml`) refuse as before. A call site that
+   already wrote `--confirm` or `--atoc-unqueryable` is refused: the gate adds
+   those itself.
+2. The gate runs the same argv with `--dry-run --format json` (no UI stream) and
+   reads each entry's _resolved_ `method` from the envelope. It does not
+   re-implement `select_flash_method`.
+3. **Arming rule** (`@alp-sdk/core/flash/arming`): add `--confirm` only when
+   every entry with a confirm gate resolves to Flow D. A `yocto_wic*` or
+   `xspi_flashwriter` entry is never armed, and beside a Flow D entry it refuses
+   the whole run. A scope of backends that write unasked is left as it was.
+4. The first modal ("Write to Device") lists the manifest's targets and, from
+   the preview, the backend `tan` resolved for each.
+5. Flow D only: a **second, separate** modal ("Replace boot table") prints
+   `tan`'s own replacement warning verbatim — which entries the new ATOC names,
+   that the resident table is unknown so anything unnamed is delisted, and that
+   the SES still reports `[SES] ATOC ok` — plus which SETOOLS signs. Only after
+   it is `--atoc-unqueryable` added. There is no "don't ask again", and
+   `flash_args.confirm`, `flash_args.atoc_unqueryable` and `ALP_FLASH_FORCE` are
+   never written or set.
+6. The manifest's sha256 is re-checked after each accept.
+
+**Per-slice (`--core`) Flash on Flow D** is refused when the preview shows a
+sibling Flow D slice the one-entry ATOC would delist; the whole-board Flash is
+the way. The gate compares the scoped preview with a whole-board preview rather
+than parsing `tan`'s sentence (which it also treats as a second guard).
+
+**SETOOLS.** A confirmed Flow D write signs with an install the _operator_ named;
+one named only by the manifest is refused (`flash.setools-untrusted-source`).
+The extension forwards `SETOOLS_DIR` from its own environment as
+`--setools-dir`; with neither, the preview fails with `tan`'s message, which
+names the ways to supply one. There is no extension setting for it.
+
+**`ALP_FLASH_FORCE`.** A profile line `export ALP_FLASH_FORCE=1` would arm
+`tan` with no modal, because the streamed run goes through the user's login
+shell. For a flash the shell command string unsets it after the profile has run
+(`posixLoginShellCommand`), and the spawn env drops it on Windows/direct spawns.
+`ALP_FLASH_REQUIRE_DPIDR` is left alone.
+
+**The verdict comes from the envelope.** A gated flash runs with
+`--format json`: stdout is held back, the entries and issues are written to the
+Alp SDK log when the run closes, and one of five outcomes is raised
+(`@alp-sdk/core/flash/outcome`): _cancelled_ (a modal declined — nothing was
+written), _previewed_ (an entry `planned`, or `flash.confirm-required`,
+including the exit-0 mixed run), _refused before writing_
+(`flash.atoc-replacement-unacknowledged`, `flash.setools-untrusted-source`, the
+probe and DPIDR refusals, `flash.atoc-guard-refused`), _failed during the write_
+(an entry `failed` after a write session started — the partial-write warning),
+and _written_ (`flash.jlink-reset-unconfirmed` is info only). The exit status
+cannot say: at 0.7.0 "every entry planned" exits 1 and a mixed run exits 0. The
+live text stream is the price; the log shows the same lines at the end.
+
+`tan run --flash` stays refused: `tan run` rebuilds before it flashes, so the
+manifest a modal described would be stale.
+
+**Contract status.** The flash issue codes are `reserved` with consumer `none`
+in tan v0.7.0's `envelope-contract.json` and there is no `flash` envelope in the
+vendored corpus. `test/tanContract.test.js` files every code bound here as
+`reserved`, and `test/fixtures/tan-flash/` holds real `tan 0.7.0` captures (see
+its `PROVENANCE.md`). Freezing the flash envelope is an upstream ask.
+
 ## 6b. Models panel — thin GUI shelling `tan model …`
 
 The extension's **Models panel** is the same shell-the-CLI-and-render-the-envelope

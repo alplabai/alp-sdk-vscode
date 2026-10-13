@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **Write to Device now writes on AEN (#540).** tan routes every AEN Zephyr
+  slice to Flow D (`alif_mram_jlink`), which only previews without
+  `--confirm`, so the button used to write nothing. Flash now asks tan for a
+  `--dry-run` preview, arms `--confirm` only when every gated entry resolves
+  to Flow D, and never arms a `yocto_wic*` or `xspi_flashwriter` entry; a scope
+  that mixes them with Flow D is refused with nothing written.
+  - A Flow D flash asks a second, separate question, "Replace boot table",
+    showing tan's own warning that the write replaces the whole ATOC and
+    delists every resident entry it does not name. `--atoc-unqueryable` is
+    added only after it; there is no "don't ask again".
+  - A per-core Flash that would delist a sibling's boot entry is refused; use
+    the whole-board Flash.
+  - Signing uses the SETOOLS in `SETOOLS_DIR`, passed as `--setools-dir`; one
+    named only by the manifest is refused by tan.
+  - The result is read from tan's JSON envelope rather than its exit status:
+    previewed, refused before writing, failed during the write (with the
+    partial-write warning) and written are now different messages. The live
+    text stream is replaced by the same lines in the Alp SDK log at the end.
+  - A profile `export ALP_FLASH_FORCE=1` no longer arms a flash; it is
+    unset for flash runs.
+
 - **Pick a core's toolchain in the Board Configurator (#314).** Each core
   has an optional Toolchain field that writes `cores.<core>.toolchain` to
   board.yaml, suggests the ids the SDK catalogue gives cores of the same

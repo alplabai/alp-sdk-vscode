@@ -311,15 +311,18 @@ export function activate(context: vscode.ExtensionContext): void {
         // action that opens nothing is worse than no action, so the reveal is
         // picked from the mode the run actually used.
         // A flash does NOT get "failed." (#540). A non-zero exit from `tan
-        // flash` is not evidence that a write was attempted and lost: at the
-        // 0.6.0 pin an UNARMED confirm gate exits non-zero for a run that
+        // flash` is not evidence that a write was attempted and lost: at tan
+        // 0.7.0 an UNARMED confirm gate exits non-zero for a run that
         // deliberately did nothing, a missing backend tool exits before any
         // slice is touched, and a multi-slice run can exit non-zero having
         // already programmed the slices ahead of the one that failed.
         // Nothing here can tell those apart — the exit status is one number —
-        // so this sentence says what is known and stops at it. Inventing a
-        // classification is what put "flash failed" on screen for a preview
-        // that wrote nothing; the log, not the toast, carries the reason.
+        // so this sentence says what is known and stops at it.
+        //
+        // A gated `tan flash` no longer arrives here with an exit code at all:
+        // the runner reads its `--format json` envelope and raises the verdict
+        // itself (`src/flash/outcome.ts`). This branch remains for a flash that
+        // reaches the finish event some other way.
         notifyAsync(
           planFailure({
             operation: name,
