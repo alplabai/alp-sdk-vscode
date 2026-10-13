@@ -65,5 +65,4 @@ Only host-specific text, by exact substitution: the project directory became
 `/home/dev/proj`, the SETOOLS stub `/home/dev/setools`, the empty SDK
 `/home/dev/alp-sdk`, the stub `JLinkExe` directory `/usr/local/bin`, tan's
 random `/tmp/tan-setools-<suffix>` scratch directory `/tmp/tan-setools-scratch`,
-and the flash-log timestamp `20261013T000000Z`. The stub J-Link serial
-`000123456789` is a placeholder, not a device.
+and the flash-log timestamp `20261013T000000Z`.

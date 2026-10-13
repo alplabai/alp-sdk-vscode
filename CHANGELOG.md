@@ -2,9 +2,10 @@
 
 ## Unreleased
 
-- **Write to Device now writes on AEN (#540).** tan routes every AEN Zephyr
-  slice to Flow D (`alif_mram_jlink`), which only previews without
-  `--confirm`, so the button used to write nothing. Flash now asks tan for a
+- **Write to Device arms the AEN write (#540) — not yet verified on hardware.**
+  tan routes every AEN Zephyr slice to Flow D (`alif_mram_jlink`), which only
+  previews without `--confirm`, so the button used to write nothing. Flash now
+  asks tan for a
   `--dry-run` preview, arms `--confirm` only when every gated entry resolves
   to Flow D, and never arms a `yocto_wic*` or `xspi_flashwriter` entry; a scope
   that mixes them with Flow D is refused with nothing written.
@@ -16,12 +17,16 @@
     the whole-board Flash.
   - Signing uses the SETOOLS in `SETOOLS_DIR`, passed as `--setools-dir`; one
     named only by the manifest is refused by tan.
-  - The result is read from tan's JSON envelope rather than its exit status:
-    previewed, refused before writing, failed during the write (with the
-    partial-write warning) and written are now different messages. The live
-    text stream is replaced by the same lines in the Alp SDK log at the end.
-  - A profile `export ALP_FLASH_FORCE=1` no longer arms a flash; it is
-    unset for flash runs.
+  - An armed AEN write is read from tan's JSON envelope rather than its exit
+    status: previewed, refused before writing, failed during the write (with
+    the partial-write warning) and written are different messages. Its live
+    text stream is replaced by tan's entries and issues, printed to the Alp SDK
+    log when the run ends; other flashes keep streaming as before.
+  - A flash is refused when the manifest already carries `flash_args.confirm`
+    or `flash_args.atoc_unqueryable`, or when the argv adds `--raw`, `--ram`,
+    `--replace-atoc`, `--no-reset` and the like.
+  - `ALP_FLASH_FORCE` is removed from a flash's environment after the login
+    shell's profile has run (`env -u`), so a profile `export` cannot arm tan.
 
 - **Pick a core's toolchain in the Board Configurator (#314).** Each core
   has an optional Toolchain field that writes `cores.<core>.toolchain` to

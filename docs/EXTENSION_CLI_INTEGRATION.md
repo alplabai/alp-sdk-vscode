@@ -937,16 +937,21 @@ manifest names: every planner-emitted Zephyr slice carries
 **The flow.**
 
 1. The existing pre-checks (`--recover`, `--project`, malformed argv, no
-   readable `build/system-manifest.yaml`) refuse as before. A call site that
-   already wrote `--confirm` or `--atoc-unqueryable` is refused: the gate adds
-   those itself.
+   readable `build/system-manifest.yaml`) refuse as before. So do a call site
+   that already wrote `--confirm` or `--atoc-unqueryable` (the gate adds those
+   itself), flags the consent screen cannot describe (`--raw`, `--ram`,
+   `--replace-atoc`, `--no-reset`, …), and a manifest that already carries
+   `flash_args.confirm` or `flash_args.atoc_unqueryable` — tan arms on either,
+   and a dry-run cannot reveal it.
 2. The gate runs the same argv with `--dry-run --format json` (no UI stream) and
    reads each entry's _resolved_ `method` from the envelope. It does not
    re-implement `select_flash_method`.
 3. **Arming rule** (`@alp-sdk/core/flash/arming`): add `--confirm` only when
    every entry with a confirm gate resolves to Flow D. A `yocto_wic*` or
    `xspi_flashwriter` entry is never armed, and beside a Flow D entry it refuses
-   the whole run. A scope of backends that write unasked is left as it was.
+   the whole run. Only `zephyr_west_flash` and `baremetal_cmake_flash` are known
+   to write unasked; any other or missing method refuses, as does more than one
+   Flow D entry carrying its own ATOC.
 4. The first modal ("Write to Device") lists the manifest's targets and, from
    the preview, the backend `tan` resolved for each.
 5. Flow D only: a **second, separate** modal ("Replace boot table") prints
@@ -971,13 +976,19 @@ names the ways to supply one. There is no extension setting for it.
 
 **`ALP_FLASH_FORCE`.** A profile line `export ALP_FLASH_FORCE=1` would arm
 `tan` with no modal, because the streamed run goes through the user's login
-shell. For a flash the shell command string unsets it after the profile has run
-(`posixLoginShellCommand`), and the spawn env drops it on Windows/direct spawns.
+shell. For a flash the shell command string is `exec env -u ALP_FLASH_FORCE
+<tan> …` (`posixLoginShellCommand`), so it is removed after the profile has run
+and works the same in bash, zsh, sh and fish; the spawn env drops it, matching
+case-insensitively on Windows, for direct spawns.
 `ALP_FLASH_REQUIRE_DPIDR` is left alone.
 
-**The verdict comes from the envelope.** A gated flash runs with
-`--format json`: stdout is held back, the entries and issues are written to the
-Alp SDK log when the run closes, and one of five outcomes is raised
+**The verdict comes from the envelope — for an armed Flow D run.** Only a run
+the gate armed is executed with `--format json`; every other gated flash (the
+backends that write unasked, or a yocto scope left unarmed) keeps the text-mode
+streamed run and the exit-code path, so west's and cmake's own output still
+reaches the log live. For the armed run, stdout is held back, tan's entries and
+issues are printed to the Alp SDK log when the run closes, and one of five
+outcomes is raised
 (`@alp-sdk/core/flash/outcome`): _cancelled_ (a modal declined — nothing was
 written), _previewed_ (an entry `planned`, or `flash.confirm-required`,
 including the exit-0 mixed run), _refused before writing_
@@ -986,7 +997,10 @@ probe and DPIDR refusals, `flash.atoc-guard-refused`), _failed during the write_
 (an entry `failed` after a write session started — the partial-write warning),
 and _written_ (`flash.jlink-reset-unconfirmed` is info only). The exit status
 cannot say: at 0.7.0 "every entry planned" exits 1 and a mixed run exits 0. The
-live text stream is the price; the log shows the same lines at the end.
+price for the armed run is its live text stream; the log gets tan's entries and
+issues at the end, not the tool's own progress output. A failed entry counts as
+_refused_ only when tan ties a refusal code to that entry or it is Flow D with
+no write session; anything else is reported as possibly partly written.
 
 `tan run --flash` stays refused: `tan run` rebuilds before it flashes, so the
 manifest a modal described would be stale.
