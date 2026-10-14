@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
+
+**Pre-release.** An odd minor, so `release-vsix.yml` publishes this build to
+the PRE-RELEASE Marketplace channel only; stable users stay on `0.6.0` until
+`0.8.0`. It pins tan `0.7.0` and bundles the alp-sdk `v0.17.0` schemas; tan
+`0.7.0` needs alp-sdk `v0.17.0` or newer to build any Zephyr board, so upgrade
+the SDK with the extension.
 
 - **Pick a core's toolchain in the Board Configurator (#314).** Each core
   has an optional Toolchain field that writes `cores.<core>.toolchain` to
@@ -140,12 +146,11 @@
   empty space, or Escape, clears the selection.
 
 - **The memory map reads the SoM's own region table (#484).**
-  `system-manifest-v1`'s `memory[]` pane (alp-sdk#1365; not yet in a tagged
-  release, alp-sdk#2047) supplies the regions on the strip's top lane and
-  their authority tier. A manifest without it — or one that resolves no
-  regions for the SoM — draws the placed slots alone and says so once.
-  Read-only: nothing on the page can write a region. No schema re-vendor, no
-  `SUPPORTED_CLI_VERSION` bump.
+  `system-manifest-v1`'s `memory[]` pane (alp-sdk#1365, first released in
+  alp-sdk `v0.17.0`, emitted by tan `0.7.0`) supplies the regions on the
+  strip's top lane and their authority tier. A manifest without it — or one
+  that resolves no regions for the SoM — draws the placed slots alone and
+  says so once. Read-only: nothing on the page can write a region.
 
 - **Address ranges and sizes are printed exactly (#484).** A range shows
   its inclusive last byte (`0x80010000 – 0x802affff`), not the exclusive
