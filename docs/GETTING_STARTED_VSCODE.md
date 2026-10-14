@@ -155,7 +155,7 @@ extension maps six `platform/arch` keys and `linux/arm` is not one of them, so
 download-on-demand refuses with:
 
 ```text
-No prebuilt tan CLI for linux/arm — tan v0.6.0 publishes binaries for other platforms only, so this is a limit of that release rather than a broken install. Point alpSdk.cliPath at a tan you build locally or install with pip.
+No prebuilt tan CLI for linux/arm — tan v0.7.0 publishes binaries for other platforms only, so this is a limit of that release rather than a broken install. Point alpSdk.cliPath at a tan you build locally or install with pip.
 ```
 
 **Building `tan` from source does not rescue this host.** The Zephyr SDK
@@ -234,19 +234,16 @@ surface is hidden. Restoring it is #524.
 
 The design is unchanged: the panel is a thin GUI over the `tan model …` command
 family — it shells `tan` and renders the JSON envelope, it does not re-implement
-any model logic. What is missing is the family. tan 0.6.0 implements exactly
-ONE `model` subcommand, `build`, whose own options are `--board`,
-`--board-yaml`, `--format`, `--help`, `--metadata-root`, `--out`, `--project`
-and `--sdk-root`. The eight subcommands the panel drives — `list`, `doctor`,
-`check`, `zoo`, `add`, `prep`, `run` and `ab` — are not in this binary, and
-neither are the flags that belong to them (`--exact`, `--calibration`,
-`--per-channel`, `--min-samples`, `--input`, `--expected`, `--runs`, `--sku`,
-`--name`, `--models-dir`). Landing them is upstream, `tan-cli#674`. Against the
-pinned binary today, `tan model build --help` is the whole surface.
+any model logic. The family is no longer what is missing: the pinned tan
+0.7.0 implements all nine subcommands the panel drives — `build`, `list`,
+`doctor`, `check`, `zoo`, `add`, `prep`, `run` and `ab` (tan-cli#674). The
+panel calls `build`, `zoo` and `add` (#699); for the rest it reports that the
+capability arrived and the panel is not wired to it yet. Rewiring them, and restoring the
+surface, is #524.
 
-The rest of this section is INTENT — what the panel shows once `tan-cli#674`
-lands the subcommands and #524 restores the surface. None of it renders at this
-pin, which is why no `tan model` recipe is printed with it.
+The rest of this section is INTENT — what the panel shows once #524 restores
+the surface. None of it renders today, which is why no `tan model` recipe is
+printed with it.
 
 - **NPU-coverage badge (before build).** Each model in board.yaml `models:`
   gets one badge per SoM NPU backend from a static eligibility screen. Offline,

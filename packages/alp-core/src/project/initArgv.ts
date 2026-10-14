@@ -128,8 +128,8 @@ export interface InitArgvPlan {
  * An EXAMPLE (`sourceDir` set) is copied verbatim via `--from-example`; it
  * ships its own `board.yaml`, so `--cores` does not apply. `--som` is still
  * appended when the user picked one, which retargets the copied `board.yaml`
- * onto that SoM instead of the example's default (verified for E1M-NX9101 on
- * the pinned tan).
+ * onto that SoM instead of the example's default (measured on the pinned tan
+ * against alp-sdk v0.16.0-rc1).
  *
  * A STARTER template is expanded via `--template` + `--som`, and heterogeneous
  * SoMs additionally get `--cores` — FILTERED through `planInitCores`, never the

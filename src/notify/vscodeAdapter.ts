@@ -172,6 +172,7 @@ const ACTIONS: Record<
   retry: { title: "Retry" },
   startAnyway: { title: "Start Anyway" },
   applyChanges: { title: "Apply Changes" },
+  saveAndContinue: { title: "Save and Continue" },
   openAnyway: { title: "Open Anyway" },
   deleteFromDisk: { title: "Delete from disk" },
   downloadTanCli: { title: "Download" },

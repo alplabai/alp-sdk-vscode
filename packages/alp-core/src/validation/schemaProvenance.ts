@@ -127,6 +127,15 @@ export interface SchemaProvenance {
    * both served and newer than this extension's model.
    */
   readonly unknownBoardKeys: readonly string[];
+  /**
+   * Whether the board schema the editor validates against declares
+   * `$defs.core_entry.properties.toolchain` (alp-sdk#964, first in v0.17.0-rc1).
+   * Older SDKs make `core_entry` `additionalProperties: false`, so writing the
+   * key fails their validation. Falls back to the bundled schema (which
+   * declares it) only when no SDK is resolved; with an SDK resolved but its
+   * schema unreadable or rejected the answer is unknown, so false.
+   */
+  readonly boardDeclaresCoreToolchain: boolean;
 }
 
 /** Input to {@link buildSchemaProvenance}. */
@@ -265,16 +274,20 @@ export function buildSchemaProvenance(
     vendoredTag: VENDORED_SDK_TAG,
     comparisons,
     unknownBoardKeys: unknownBoardKeysIn(board?.served ?? null),
+    boardDeclaresCoreToolchain:
+      input.sdkRoot === null
+        ? true
+        : board?.served != null && schemaDeclaresCoreToolchain(board.served),
   };
 }
 
 /**
  * How the SDK side is named in status text.
  *
- * `VENDORED_SDK_TAG` is a git tag (`v0.15.0`) while `metadata/sdk_version.yaml`
- * carries a bare version (`version: 0.15.0`), so the two sides must be
- * normalised or the customer reads "byte-identical to the ones in 0.15.0" next
- * to "alp-sdk v0.15.0" and cannot tell they are the same release.
+ * `VENDORED_SDK_TAG` is a git tag (`v0.16.0`) while `metadata/sdk_version.yaml`
+ * carries a bare version (`version: 0.16.0`), so the two sides must be
+ * normalised or the customer reads "byte-identical to the ones in 0.16.0" next
+ * to "alp-sdk v0.16.0" and cannot tell they are the same release.
  */
 function sdkLabel(p: SchemaProvenance): string {
   if (p.sdkVersion === null) return "your resolved SDK";
@@ -393,4 +406,15 @@ export function describeSchemaProvenance(
       `\`tan\` agree on what is valid.` +
       configuratorLoss(p),
   };
+}
+
+/** Does this board schema accept `cores.<id>.toolchain`? */
+export function schemaDeclaresCoreToolchain(
+  schema: Readonly<Record<string, unknown>>,
+): boolean {
+  const defs = schema["$defs"] as Record<string, any> | undefined;
+  const props = defs?.core_entry?.properties as
+    | Record<string, unknown>
+    | undefined;
+  return props != null && typeof props === "object" && "toolchain" in props;
 }

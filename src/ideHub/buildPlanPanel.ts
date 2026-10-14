@@ -10,6 +10,10 @@ import {
   type WebviewToExtMessage,
 } from "./messages";
 import { buildWebviewHtml } from "./webviewHtml";
+import { headlineIssue } from "@alp-sdk/core/cli/headlineIssue";
+import { buildMemoryView } from "@alp-sdk/core/systemManifest/memoryView";
+import type { SystemManifest } from "@alp-sdk/core/systemManifest/models";
+import { parseSystemManifest } from "@alp-sdk/core/systemManifest/service";
 import { manifestFreshness } from "@alp-sdk/core/systemManifest/staleness";
 import { readLastBuild } from "../build/lastBuild";
 import { warnIfCliCannotBuildSom } from "../build/somCliFloorGuard";
@@ -29,7 +33,15 @@ import {
 } from "../notify/service";
 import { notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { deferredBuildOptionMessage } from "../alpCli/pinnedSurface";
+import {
+  copyText,
+  openBoardYaml,
+  openInConfigurator,
+} from "./buildPlanNavigation";
+import {
+  deferredBuildOptionMessage,
+  retiredBuildOptionMessage,
+} from "../alpCli/pinnedSurface";
 import {
   MATERIALISE_SHAPE,
   SIZE_REPORT_SHAPE,
@@ -70,6 +82,12 @@ const PANEL_TITLE = "Alp Build Plan";
  * spawns for either — see `postBuildPlanUnavailable`. What it still runs is
  * `build --materialise`, `build` and `size`, all of which are live.
  */
+/** The manifest as the customer refers to it, relative to the project root.
+ *  Project-relative and never absolute: this string reaches the webview as
+ *  error text, and an absolute path there names the developer's home
+ *  directory in a panel a customer may screenshot. */
+const MANIFEST_DISPLAY_PATH = "build/system-manifest.yaml";
+
 export class BuildPlanPanel {
   private static instance?: BuildPlanPanel;
 
@@ -122,14 +140,14 @@ export class BuildPlanPanel {
     // The two survivors are here for different reasons, and the difference is
     // what decides membership: a watcher exists to re-derive something that
     // CHANGED. `tan size` measures the ELFs, and a build moves them.
-    // `postSystemManifestUnavailable` spawns nothing, but it reports whether
+    // `postSystemManifest` spawns nothing, but it reports whether
     // `build/system-manifest.yaml` exists and whether the last build wrote it
     // (#470) — both read off the file this watcher is watching. The build-plan
     // message is the one that is genuinely FIXED text, so re-posting it on a
     // save would be churn with no new fact in it; the panel said it when it
     // opened and the answer cannot have moved.
     const refresh = () => {
-      this.postSystemManifestUnavailable();
+      this.postSystemManifest();
       void this.handleRequestSliceSizes(false);
     };
     for (const glob of ["**/board.yaml", "**/system-manifest.yaml"]) {
@@ -152,6 +170,42 @@ export class BuildPlanPanel {
     }
   }
 
+  /** The open panel, or a fresh one. The three editor-title commands below
+   *  are offered — toolbar and palette alike — only while this panel is the
+   *  active webview (package.json `when`), so the instance normally exists
+   *  when they fire. A keybinding or an `executeCommand` call is not gated
+   *  by `when`, and that path opens the panel first. */
+  private static ensure(context: vscode.ExtensionContext): BuildPlanPanel {
+    BuildPlanPanel.open(context);
+    return BuildPlanPanel.instance as BuildPlanPanel;
+  }
+
+  /** `alp.buildPlan.refresh`: re-read the manifest and re-measure the
+   *  slices. `interactive: true` — a toolbar click is the customer's own
+   *  ask, the same as opening the panel. */
+  static refresh(context: vscode.ExtensionContext): void {
+    BuildPlanPanel.ensure(context).postEverything(true);
+  }
+
+  /** `alp.buildPlan.build`: run `tan build` for the whole plan. */
+  static build(context: vscode.ExtensionContext): void {
+    void BuildPlanPanel.ensure(context).handleRunBuild();
+  }
+
+  /** `alp.buildPlan.materialise`: write the plan's generated files. */
+  static materialise(context: vscode.ExtensionContext): void {
+    void BuildPlanPanel.ensure(context).handleMaterialiseBuildPlan();
+  }
+
+  /** Everything the panel shows, posted in order: the plan's absence, the
+   *  manifest off disk, the slice sizes. Only the last spawns anything, so
+   *  it is the only one that carries `interactive`. */
+  private postEverything(interactive: boolean): void {
+    this.postBuildPlanUnavailable();
+    this.postSystemManifest();
+    void this.handleRequestSliceSizes(interactive);
+  }
+
   private handleMessage(msg: WebviewToExtMessage): void {
     switch (msg.type) {
       // The view auto-requests the plan on mount, so `ready` needs no push.
@@ -160,20 +214,19 @@ export class BuildPlanPanel {
       case "requestBuildPlan":
         // The view posts this on mount, i.e. the user's explicit "Alp: Build
         // Plan" open — `interactive: true`, unlike the file-watcher `refresh`.
-        // Only `handleRequestSliceSizes` spawns anything, so it is the only
-        // one that carries the flag.
-        this.postBuildPlanUnavailable();
-        this.postSystemManifestUnavailable();
-        void this.handleRequestSliceSizes(true);
-        break;
-      case "materialiseBuildPlan":
-        void this.handleMaterialiseBuildPlan();
-        break;
-      case "runBuild":
-        void this.handleRunBuild();
+        this.postEverything(true);
         break;
       case "flashSlice":
         this.handleSliceCommand(msg.coreId);
+        break;
+      case "openBoardYaml":
+        void openBoardYaml();
+        break;
+      case "copyText":
+        void copyText(msg.text);
+        break;
+      case "openInConfigurator":
+        void openInConfigurator(msg);
         break;
       case "openUrl":
         if (msg.url.startsWith("https://") || msg.url.startsWith("vscode://")) {
@@ -220,17 +273,38 @@ export class BuildPlanPanel {
   }
 
   /**
-   * The system manifest's half of the same gap — `--manifest` (the pre-build
-   * projection) and `--manifest-from` (the populated post-build file) are both
-   * deferred under tan-cli#427, so neither can be read here.
+   * The system manifest, read from disk (#580).
    *
-   * `postBuild` and `provenance` are STILL COMPUTED AND STILL POSTED. They are
-   * facts about the file on disk — whether `build/system-manifest.yaml` exists
-   * and whether the last build wrote it (#470) — and they do not depend on the
-   * CLI being able to parse it. Dropping them would lose the one thing this
-   * panel can still say about the manifest while the parse is unavailable.
+   * ── Why this stopped waiting on the CLI ───────────────────────────────────
+   *
+   * It used to post `manifest: null` unconditionally, because `--manifest` and
+   * `--manifest-from` are deferred and this panel does not spawn a call the
+   * pinned CLI cannot answer. tan-cli#427 has since closed, and it did NOT
+   * deliver those flags — it RETIRED them, and named the replacement in the
+   * same breath: `build/system-manifest.yaml`, which "a native `tan build`
+   * already writes and which is plain YAML a caller can read directly".
+   *
+   * So the file was never the CLI's to hand over. `src/debug.ts` and
+   * `src/flash/gate.ts` have both read it this way the whole time, through the
+   * same `parseSystemManifest`, and its doc comment names THIS PANEL as one of
+   * the three hand-rolled copies that parser exists to replace. Waiting was the
+   * mistake; the renderer for this data has been written, correct and
+   * unreachable in `BuildPlanView.tsx` the entire time.
+   *
+   * `parseSystemManifest` defaults every array it returns (`arr()`), so
+   * `manifest.ipc.length` and `manifest.helper_mcus.length` cannot throw on a
+   * partial document — the crash-the-panel failure `tanPayloadShape.ts`
+   * describes is not reachable from here.
+   *
+   * ── What is still posted when there is no manifest ────────────────────────
+   *
+   * `postBuild` and `provenance` are computed FIRST and posted on every path.
+   * They are facts about the file on disk — whether it exists, and whether the
+   * last build wrote it (#470) — and a parse failure does not unmake them.
+   * They are what dates a manifest that IS rendered, so they matter more now
+   * than they did when nothing was rendered at all.
    */
-  private postSystemManifestUnavailable(): void {
+  private postSystemManifest(): void {
     // #607: this used to read `workspaceFolders[0]` directly — a DIFFERENT
     // resolver than `requireWorkspace()`'s `collectProjectContext().
     // workspaceRoot`, so on a multi-root workspace this could look at a folder
@@ -239,7 +313,7 @@ export class BuildPlanPanel {
     // panel's readers into agreement with its writers.
     const cwd = collectProjectContext().workspaceRoot;
     const built = cwd
-      ? path.join(cwd, "build", "system-manifest.yaml")
+      ? path.join(cwd, ...MANIFEST_DISPLAY_PATH.split("/"))
       : undefined;
     const postBuild = Boolean(built && fs.existsSync(built));
 
@@ -254,14 +328,46 @@ export class BuildPlanPanel {
         })
       : null;
 
+    // Nothing on disk. There is no projection to fall back on either: the
+    // pre-build `--manifest` is retired, not pending, so the message names
+    // what produces the file rather than a flag to wait for.
+    if (!postBuild) {
+      void this.panel.webview.postMessage({
+        type: "systemManifestData",
+        manifest: null,
+        postBuild,
+        provenance,
+        memory: null,
+        error: retiredBuildOptionMessage("--manifest"),
+      } satisfies ExtToWebviewMessage);
+      return;
+    }
+
+    let manifest: SystemManifest | null = null;
+    let error: string | undefined;
+    try {
+      manifest = parseSystemManifest(fs.readFileSync(built as string, "utf8"));
+    } catch (readError) {
+      // Named, not swallowed. `parseSystemManifest` throws on bad YAML and on a
+      // `schema_version` this build does not consume, and the second one is a
+      // real version-skew message the customer needs — rendering an empty
+      // panel instead would hide the one sentence that says what to upgrade.
+      const detail =
+        readError instanceof Error ? readError.message : String(readError);
+      error = `\`${MANIFEST_DISPLAY_PATH}\` could not be read: ${detail}`;
+    }
+
     void this.panel.webview.postMessage({
       type: "systemManifestData",
-      manifest: null,
+      manifest,
       postBuild,
       provenance,
-      error: deferredBuildOptionMessage(
-        postBuild ? "--manifest-from" : "--manifest",
-      ),
+      // Derived here, from the manifest that was just parsed, so the webview
+      // never re-derives an address off a raw field (#484). Null with no
+      // manifest, including on the parse-error path above: there is nothing to
+      // place, and an empty map would read as "no memory in use".
+      memory: manifest ? buildMemoryView(manifest) : null,
+      error,
     } satisfies ExtToWebviewMessage);
   }
 
@@ -279,7 +385,7 @@ export class BuildPlanPanel {
    *  ELF section headers and still returns rows. */
   private async handleRequestSliceSizes(interactive: boolean): Promise<void> {
     // #607: same resolver as `requireWorkspace()`, not `workspaceFolders[0]` —
-    // see `postSystemManifestUnavailable`'s note just above. A build dispatched
+    // see `postSystemManifest`'s note just above. A build dispatched
     // from this panel always writes under THIS root, so the watcher (which
     // fires on any `**/board.yaml`/`**/system-manifest.yaml` change) and this
     // reader now agree on where to look.
@@ -342,7 +448,9 @@ export class BuildPlanPanel {
             type: "sliceSizesData",
             report: null,
             error:
-              shapeError ?? envelope?.issues?.[0]?.message ?? outcome.message,
+              shapeError ??
+              headlineIssue(envelope?.issues)?.message ??
+              outcome.message,
           };
     void this.panel.webview.postMessage(msg);
   }
@@ -407,10 +515,10 @@ export class BuildPlanPanel {
       return;
     }
     try {
-      // `interactive: true`: reached only from the "Materialise" button click
-      // (`materialiseBuildPlan`), never from the file-watcher `refresh()` in
-      // the constructor — unlike `handleRequestSliceSizes` below, which that
-      // same watcher calls and must stay non-interactive.
+      // `interactive: true`: reached only from the toolbar's Materialise
+      // command (`alp.buildPlan.materialise`), never from the file-watcher
+      // `refresh()` in the constructor — unlike `handleRequestSliceSizes`
+      // below, which that same watcher calls and must stay non-interactive.
       const { outcome } = await runAlpCommand(
         this.context,
         ["build", "--materialise"],
@@ -446,7 +554,7 @@ export class BuildPlanPanel {
         // contributes at least its own `alp.conf` — a real materialise of the
         // sample project writes five files. Zero means the run did not do its
         // job, and the caller is about to build against whatever was already on
-        // disk. Related and NOT fixed here: tan-cli#505 item 3 — a PARTIAL loss
+        // disk. Related and NOT fixed here: tan-cli#505 — a PARTIAL loss
         // (one slice demoted, its `configArtefacts` dropped) still arrives as
         // `ok: true`, `issues: []`, exit 0, with no demotion signal anywhere in
         // the envelope. This extension cannot detect that until tan reports it;
@@ -491,8 +599,8 @@ export class BuildPlanPanel {
         // normally re-request it. There is nothing to re-request at this pin —
         // `build --plan` is deferred (tan-cli#427) — and the sizes DO move,
         // because materialising rewrites the build tree the ELFs sit in.
-        // `interactive: true`: the direct follow-through of the "Materialise"
-        // click just above, not a background re-derive.
+        // `interactive: true`: the direct follow-through of the Materialise
+        // command just above, not a background re-derive.
         await this.handleRequestSliceSizes(true);
       } else {
         // Severity comes from the outcome: the most common materialise failure
@@ -512,8 +620,8 @@ export class BuildPlanPanel {
   private async handleRunBuild(): Promise<void> {
     const cwd = this.requireWorkspace("build");
     if (!cwd) return;
-    // #606: the Build button was one of the three `tan build` sites that
-    // skipped #502's Renesas CLI-floor warning.
+    // #606: the panel's Build action was one of the three `tan build` sites
+    // that skipped #502's Renesas CLI-floor warning.
     await warnIfCliCannotBuildSom(this.context, cwd);
     // Stream to the "Alp SDK" channel (persistent), not a terminal that dies on
     // exit — same reason as the Build/Flash orchestrator commands (util.ts).
@@ -529,8 +637,8 @@ export class BuildPlanPanel {
    *  a `tan flash --core` that fails (e.g. `west` not on PATH) otherwise left
    *  only "failed to launch (exit 1)" with the real reason gone.
    *  There is no per-slice build equivalent: `tan build` has no `--core`
-   *  option (only `flash`/`run` do), so the Build button only runs the whole
-   *  plan (`runBuild`). */
+   *  option (only `flash`/`run` do), so the toolbar's Build only runs the
+   *  whole plan (`alp.buildPlan.build`). */
   private handleSliceCommand(coreId: string): void {
     const cwd = this.requireWorkspace("flash this slice");
     if (!cwd) return;

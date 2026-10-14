@@ -49,10 +49,15 @@ export interface ManifestSlice {
   status: SliceStatus | string;
   log_path?: string;
   reason?: string;
-  /** Schema-required, but omitted by the emitter for off/pending slices. */
+  /** Required by the schema on every slice that is not `os: off` and has no
+   *  `reason`; may be omitted otherwise. Reserved value `none` = the flasher
+   *  cannot flash this slice (read it as "nothing to flash"). */
   flash_method?: string;
   /** Method-specific (shape varies by flash_method); kept opaque. */
   flash_args?: Record<string, unknown>;
+  /** Backend the flasher actually dispatched to, when it differs from
+   *  `flash_method`. Written by the flasher (tan), never by the emitter. */
+  flash_method_resolved?: string;
 }
 
 export interface ManifestIpcLink {
@@ -65,6 +70,26 @@ export interface ManifestIpcLink {
   [key: string]: unknown;
 }
 
+/**
+ * WHO may invoke a helper's `flash_method`, and WHEN — projected verbatim from
+ * the SoM preset, and REQUIRED on every `helper_mcus[]` entry since alp-sdk
+ * v0.16.0.
+ *
+ * `customer`: a plain flash target. `factory`: Alp Lab programs it in
+ * production; never a customer flash target. `recovery_only`: Alp Lab programs
+ * it in production and the customer may flash it ONLY to recover a bricked
+ * device, using Alp Lab-supplied binaries.
+ *
+ * The schema states there is no absent-means-`customer` default, so a reader
+ * must distinguish "no policy declared" from every declared value — see
+ * `ManifestHelperMcu.flash_policy`. v0.17.0 ships 13 SoM presets, and
+ * every one declares its helper `recovery_only`. Enforcement is tan's
+ * (`flash_plan.py::helper_flash_gate`, tan-cli#611) and its ABSENT-policy
+ * branch only skips when a method AND a channel are both declared -- which is
+ * why this extension discloses the policy and never filters on it.
+ */
+export type HelperFlashPolicy = "customer" | "factory" | "recovery_only";
+
 export interface ManifestHelperMcu {
   name: string;
   chip: string;
@@ -72,6 +97,28 @@ export interface ManifestHelperMcu {
   flash_method?: string;
   /** An object, or the string "TBD" when the recipe isn't finalized. */
   flash_args?: Record<string, unknown> | string;
+  /**
+   * REQUIRED upstream since v0.16.0, optional HERE on purpose: a manifest
+   * emitted by an older SDK carries no such key, and the tolerant reader must
+   * surface that as unknown authority rather than inventing one. Absent is NOT
+   * `customer` — consumers compare against `"customer"` explicitly, so an
+   * absent, misspelled, or upstream-added value all fail closed.
+   *
+   * The union is OPEN (`| (string & {})`) because `parseSystemManifest` casts
+   * `helper_mcus` without validating it: a closed union would be a runtime lie
+   * the moment upstream adds a fourth member, and would defeat any exhaustive
+   * `switch` a later renderer writes over it. The three known members keep
+   * their autocomplete; an unknown one stays readable rather than impossible.
+   */
+  flash_policy?: HelperFlashPolicy | (string & {});
+  /**
+   * How this helper's firmware is updated in the FIELD (`alp_ota_spi_otp`,
+   * `alp_ota_spi_bridge`, ...). Deliberately unenumerated: the SoM-preset
+   * schema owns the vocabulary and this manifest is additive-only. INDEPENDENT
+   * of `flash_policy` and of `flash_method` — the schema is explicit that a
+   * consumer "must not read one key's presence as excluding another's".
+   */
+  update_channel?: string;
   [key: string]: unknown;
 }
 
@@ -84,8 +131,20 @@ export interface SystemManifest {
   helper_mcus: ManifestHelperMcu[];
   /** Inter-image boot sequencing — opaque until a SoM declares boot_order. */
   boot_order: unknown[];
+  /** Resolved per-product core ownership, `{<E1M instance>: <core>}` (rc2).
+   *  Absent means the SoM declares no assignable resources, NOT "all default".
+   *  Values are `a55 | m33` at rc2, kept `string` so a core added upstream is
+   *  tolerated. Parsed but not rendered by any view yet. */
+  ownership?: Record<string, string>;
   /** Resolved storage partitions — present only when the project declares storage. */
   storage?: unknown[];
+  /** The SoM's own region table (#484 phase 2) — present only from an
+   *  alp-sdk that carries alp-sdk#1365's `memory[]` pane (landed in
+   *  alp-sdk#2030; first vendored here at v0.17.0-rc2) and only
+   *  when it resolves at least one region for this SoM. `unknown[]` at
+   *  this boundary for the same reason `storage` is: every field is
+   *  narrowed from scratch in `memoryView.ts`, never cast. */
+  memory?: unknown[];
 }
 
 /** True for a slice whose core participates in build/flash (its os isn't off). */

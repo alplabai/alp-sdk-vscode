@@ -19,57 +19,41 @@
  */
 
 /** The alp-sdk tag `schemas/*.json` were vendored from. */
-export const VENDORED_SDK_TAG = "v0.15.0";
+export const VENDORED_SDK_TAG = "v0.17.0";
 
 /**
  * sha256 of `schemas/board.schema.json` over its LF-normalized bytes.
  *
- * board.schema.json moves for real at the v0.15.0 bump, in two ways that
- * change what the editor accepts:
- *  1. `som.sku`'s pattern widens from
- *     `^E1M-(AEN[3-8]01|V2N10[12]|V2M10[12]|NX9[0-9]{3})$` to
- *     `^E1M-(AEN[3-8][0-9]{2}|V2N[0-9]{3}|V2M[0-9]{3}|NX9[0-9]{3})$`.
- *     NO shipped preset uses a widened tail yet -- v0.15.0 carries the same 11
- *     as v0.14.0 (E1M-AEN301/401/501/601/701/801, E1M-NX9101, E1M-V2M101/102,
- *     E1M-V2N101/102) -- so this only stops the editor pre-rejecting a SKU the
- *     PLM has allocated but the SDK has not yet shipped a preset for. The
- *     schema's own new wording: "The config tail is a per-configuration
- *     increment allocated by the PLM; not every value in range has a shipped
- *     preset."
- *  2. `storage[].raw` (the legacy `fs: raw` alias) is GONE, and storage items
- *     are `additionalProperties: false`, so a board.yaml carrying `raw: true`
- *     is now rejected. Upstream's stated intent, not an oversight -- v0.15.0's
- *     `scripts/alp_orchestrate/loader.py` deleted the normalising branch and
- *     says so: "The legacy `raw: true` alias is gone: `board.schema.json` no
- *     longer declares the property and sets `additionalProperties: false` on
- *     storage items, so a board carrying it is rejected at validation rather
- *     than normalised here. Measured before removal: zero tracked `board.yaml`
- *     files used it."
+ * The v0.17.0 bump is the largest since v0.15.0 and the first to move the
+ * TOP-LEVEL PROPERTY SET: 21 keys become 24, still `additionalProperties:
+ * false`. The three new keys -- `camera_connectors`, `cameras`, `ownership` --
+ * are added to `BOARD_KEY_ORDER` (`packages/alp-core/src/board/models.ts`) so
+ * the C1 round-trip data-loss gate keeps them; no view edits them. Every
+ * `$ref` is still `#/$defs/...`, so `schemaSafety.ts` still takes the SDK's
+ * own copy. Two removals changed what a written board.yaml means:
+ * `ota.server.tls_ca_bundle` is gone (no emitter ever read it) and
+ * `models[].compile.drpai.spec` is replaced by REQUIRED `input_shape`,
+ * `input_name`, `images` (+ optional `product`). `som.sku` loses `E1M-NX9...`.
+ * `docs/COMPATIBILITY_RULES.md` section 5 lists the full change set.
  */
 export const BOARD_SCHEMA_SHA256 =
-  "f489eb9647776ed9dedc76be57323fa10715c15e2490cf161b1fd742b2f9193e";
+  "3a1770d9320fa7498ac9a567c943dbc8397f2539a921f04200bb36ac26ae49a7";
 
 /**
  * sha256 of `schemas/system-manifest-v1.schema.json` over its LF-normalized
  * bytes.
  *
- * Moves for the first time since the v0.13.0 re-vendor (#328), and by
- * DESCRIPTION TEXT only: the emitter is now named as the `alp_orchestrate`
- * package (`python -m alp_orchestrate`) rather than
- * `scripts/alp_orchestrate.py` -- the ADR 0020 relocation reaching the
- * contract's own prose. No property changed.
- *
- * The comment this replaced said "Unchanged from v0.11.0 -- byte-identical at
- * v0.13.0 and v0.14.0". That was FALSE, and inverted: upstream's
- * system-manifest schema moved at v0.12.0 (sha256 0a7ce139 -> ea7383b5), and
- * it is board.schema.json that was byte-identical v0.11.0..v0.13.0
- * (d9393ab0). So #328 moved this file for real and board.schema.json only by
- * label; #427 (v0.14.0) was the other way round. Verified by hashing both
- * schemas at all five tags -- do that before writing a claim like this, not
- * after.
+ * v0.17.0 grows the ROOT property set from eight keys to ten, still
+ * `additionalProperties: false`: `ownership` (resolved `{instance: core}`
+ * map, omitted when the SoM has no assignable resources) and `memory` (the
+ * resolved region pane, rows closed with required name/source/kind/status).
+ * `slices[].flash_method` / `flash_args` stop being unconditionally required
+ * (required unless `os: off` or a `reason` is present) and
+ * `flash_method_resolved` is new. The read-only tripwire in
+ * `test/memoryRegions.readOnly.test.js` pins the ten keys.
  */
 export const SYSTEM_MANIFEST_SCHEMA_SHA256 =
-  "be48d9159638968eb2cf42b0284b3c7ba9fe92f46bec3a8fdab8561c4d6dd59e";
+  "581d3540c57ee38bf5b519fd3ddceb5493e6131a1ae1cb49ef25d60082056c0c";
 
 /** Which vendored schema a provenance comparison is about. */
 export type VendoredSchemaId = "board" | "systemManifest";
@@ -79,7 +63,7 @@ export type VendoredSchemaId = "board" | "systemManifest";
  *
  * `vendored` is relative to the extension install root; `sdk` is relative to a
  * resolved `<sdkRoot>`. Both files are present at every alp-sdk tag this
- * extension supports (verified v0.11.0..v0.15.0), but the reader still treats
+ * extension supports (verified v0.11.0..v0.17.0), but the reader still treats
  * a missing file as a normal outcome rather than an error -- a customer can
  * point `alpSdk.sdkPath` at any directory.
  */

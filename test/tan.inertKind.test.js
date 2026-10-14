@@ -2,14 +2,18 @@
 //
 // An inert option is not one thing.
 //
-// `test/golden/tan-surface/surface.json` records 51 options as `inert: true`,
-// and the recording's own markers put them in FOUR different situations:
+// `test/golden/tan-surface/surface.json` records 43 options as `inert: true`
+// at tan 0.7.0, and the recording's own markers put them in FIVE kinds of
+// situation (one of which has no instance at this pin):
 //
-//   deferred        12  build --plan/--manifest/--manifest-from/--all/--ci/…
-//                       "Accepted by other commands; not implemented for
+//   deferred         0  "Accepted by other commands; not implemented for
 //                       `build` yet (tan-cli#427)" — the capability is coming.
-//   compatibility    1  doctor --build, "Accepted for compatibility
-//                       (tan-cli#290)" — kept so old callers do not break.
+//                       Twelve `build` flags through 0.6.0; none since.
+//   retired          4  build --plan/--manifest/--manifest-from/
+//                       --no-auto-bootstrap, "Retired -- … (tan-cli#427)" —
+//                       parsed, then REFUSED (`build.flag-retired`).
+//   compatibility    1  doctor --build, "(inert:compatibility:tan-cli#290)"
+//                       — kept so old callers do not break.
 //   parity          35  diff/faultdecode/inspect/pinmux/support-bundle/trace's
 //                       global ergonomics flags (--all/--ci/--no-color/
 //                       --non-interactive/--quiet/--target/--verbose), each
@@ -23,9 +27,9 @@
 //                       of these `not-applicable` before an adversarial
 //                       review caught the distinction below.
 //   not-applicable   3  faultdecode --project/--sdk-root/--board-yaml,
-//                       "(unused: faultdecode is HW-free)" / "reads no
-//                       board.yaml and drives no alp-sdk checkout -- it is
-//                       pure ARMv8-M register arithmetic" — a genuine DOMAIN
+//                       "(inert:not-applicable)" on --project/--sdk-root
+//                       ("faultdecode is pure ARMv8-M register arithmetic
+//                       and opens no project") — a genuine DOMAIN
 //                       reason specific to this one command, not the generic
 //                       "every verb has it" reason `parity` names. The line
 //                       between the two: `parity` flags are applicable
@@ -33,12 +37,12 @@
 //                       `not-applicable` flags are concepts that do not mean
 //                       anything for this command's domain at all.
 //
-// Only the first will ever start doing something. Telling a customer that
+// Only `deferred` will ever start doing something. Telling a customer that
 // `doctor --build` is "deferred, see tan-cli#427" would promise an arrival that
 // is not coming, and calling `faultdecode --project` live would claim an effect
 // it does not have. `inert` alone cannot separate them: it is a boolean, and
-// the reason lives in `marker` prose with a `ref` that is null for two of the
-// four markers.
+// the reason lives in `marker`, whose `ref` is null unless the kind cites an
+// issue (`retired` and `compatibility` do; `not-applicable` and `parity` do not).
 //
 // So the kind is DECLARED in `src/` and held to the recording by a gate, the
 // way MODEL_SUBCOMMANDS and DEFERRED_BUILD_OPTIONS already are — not sniffed
@@ -57,7 +61,7 @@ const {
 } = require("../out/alpCli/pinnedSurface.js");
 
 test("each recorded kind of inertness is told apart", () => {
-  assert.equal(inertKindOf("build", "--plan"), "deferred");
+  assert.equal(inertKindOf("build", "--plan"), "retired");
   assert.equal(inertKindOf("doctor", "--build"), "compatibility");
   assert.equal(inertKindOf("faultdecode", "--project"), "not-applicable");
   // `faultdecode --board-yaml` is the domain exclusion, same reason as
@@ -88,29 +92,41 @@ test("a live option has no kind at all", () => {
   );
 });
 
-test("every deferred build flag is described as deferred, not as working", () => {
-  // `--all` and `--ci` are recorded inert under tan-cli#427 exactly like
-  // `--plan` is. The message consulted a three-flag list — the flags the Build
-  // Plan panel would SEND — and said of everything else that it "does
-  // something", so nine of the twelve deferred build flags were described to
-  // the customer as working.
-  for (const flag of [
+test("every retired build flag is described as retired, not as working", () => {
+  // Through 0.6.0, `--all` and `--ci` were recorded inert under tan-cli#427
+  // exactly like `--plan`, and the message once said of all but three that
+  // they "do something". At 0.7.0-rc1 every flag #427 covered is either
+  // retired (these four) or gone from `build`, so the retired wording is the
+  // only one left; describing any of them as working is still the defect.
+  const RETIRED = [
     "--plan",
     "--manifest",
     "--manifest-from",
-    "--all",
-    "--ci",
-  ]) {
+    "--no-auto-bootstrap",
+  ];
+
+  for (const flag of RETIRED) {
     const message = deferredBuildOptionMessage(flag);
-    assert.match(
-      message,
-      /is deferred in tan/,
-      `\`tan build ${flag}\` is recorded inert under tan-cli#427 — ${message}`,
-    );
+    // The invariant this test exists for, and it holds across both wordings.
     assert.doesNotMatch(
       message,
       /it does something/,
       `\`tan build ${flag}\` does nothing at this pin — ${message}`,
+    );
+  }
+
+  for (const flag of RETIRED) {
+    const message = deferredBuildOptionMessage(flag);
+    assert.match(
+      message,
+      /is retired/,
+      `\`tan build ${flag}\` was retired by tan-cli#427, not deferred by it`,
+    );
+    assert.doesNotMatch(
+      message,
+      /is deferred in tan/,
+      `\`tan build ${flag}\` is not coming back, so the message must not ` +
+        `read as a wait — ${message}`,
     );
   }
 });

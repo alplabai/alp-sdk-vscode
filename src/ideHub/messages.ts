@@ -24,6 +24,7 @@ import type {
   SizeReport,
   SystemManifest,
 } from "@alp-sdk/core/systemManifest/models";
+import type { MemoryView } from "@alp-sdk/core/systemManifest/memoryView";
 import type { ToolchainFixId } from "@alp-sdk/core/toolchain/bootstrapPlan";
 
 // Re-export so callers only need this module.
@@ -407,7 +408,7 @@ export interface ModelAbResultMessage {
   issues: { code: string; severity: string; message: string }[];
 }
 
-/** A single curated zoo entry from `tan model zoo --board` — `runs_here` is
+/** A single curated zoo entry from `tan model zoo --board` — `runsHere` is
  *  `true`/`false` when the board's `som.sku` was resolvable, `null` when it
  *  wasn't (e.g. no board.yaml yet) — the MVP shows every entry badged rather
  *  than silently hiding the ones it can't validate. */
@@ -416,8 +417,8 @@ export interface ZooEntry {
   task: string;
   description: string;
   license: string;
-  validated_soms: string[];
-  runs_here: boolean | null;
+  validatedSoms: string[];
+  runsHere: boolean | null;
 }
 
 /** Zoo gallery state from `tan model zoo --board`. */
@@ -491,21 +492,24 @@ export interface BuildPlanDataMessage {
   error?: string;
 }
 
-/** The system manifest — the post-build IDE/tool contract (`alp build
- *  --manifest`). Pushed alongside the build plan: the plan is the planner's
- *  pre-build intent, the manifest is the resolved per-core slices + ipc +
- *  helper MCUs (post-build when `build/system-manifest.yaml` exists, else the
- *  SDK's pre-build projection). */
+/** The system manifest — the post-build IDE/tool contract. Pushed alongside
+ *  the build plan: the plan is the planner's pre-build intent, the manifest is
+ *  the resolved per-core slices + ipc + helper MCUs that a build wrote to
+ *  `build/system-manifest.yaml`.
+ *
+ *  There is no longer a pre-build projection to fall back on: `--manifest` is
+ *  RETIRED, not pending, so with no file on disk the panel posts a null
+ *  manifest and names what produces the file (`retiredBuildOptionMessage`)
+ *  rather than a flag to wait for. */
 export interface SystemManifestDataMessage {
   type: "systemManifestData";
   manifest: SystemManifest | null;
-  /** True when `manifest` is the populated `build/system-manifest.yaml`;
-   *  false when it's the SDK's pre-build projection (slices `status: pending`). */
+  /** True when `manifest` is the populated `build/system-manifest.yaml`.
+   *  False means there is no such file — not a projection standing in for it. */
   postBuild: boolean;
   /**
    * WHEN that file was written and whether it still describes the last build
-   * (#470). `null` on the projection path, which has no file — a projection is
-   * computed on the spot and cannot be stale.
+   * (#470). `null` when there is no file, which has no date to report.
    *
    * `postBuild` alone was the defect: it says a manifest EXISTS, and the panel
    * read that as "this is what your last build did". After a failed build the
@@ -513,6 +517,16 @@ export interface SystemManifestDataMessage {
    * nothing on screen saying so.
    */
   provenance: ManifestProvenance | null;
+  /**
+   * The address-space view of that same manifest (#484): the extents it
+   * actually pins, and the customer-declared entries it could not place.
+   *
+   * Derived host-side rather than in the webview so the narrowing has one
+   * home and a test can reach it — every field there becomes an ADDRESS on
+   * screen, and `parseSystemManifest`'s tolerant whole-array cast is the wrong
+   * doctrine for that. `null` exactly when `manifest` is null.
+   */
+  memory: MemoryView | null;
   error?: string;
 }
 
@@ -586,6 +600,18 @@ export interface NewProjectPreviewDataMessage {
   files: NewProjectFileChange[] | null;
 }
 
+/**
+ * Host → Configurator (#484): scroll to, focus and briefly highlight one
+ * entry's size field (`ipc[].carve_out_kb` / `storage[].size_kib`), found by
+ * `name`. A name board.yaml does not declare opens the section and says so;
+ * nothing is ever created.
+ */
+export interface ConfiguratorFocusEntryMessage {
+  type: "focusEntry";
+  section: "ipc" | "storage";
+  name: string;
+}
+
 export type ExtToWebviewMessage =
   | StateUpdateMessage
   | SdkReleasesLoadedMessage
@@ -594,6 +620,7 @@ export type ExtToWebviewMessage =
   | FocusSectionMessage
   | ConfiguratorRenderMessage
   | ConfiguratorSavedMessage
+  | ConfiguratorFocusEntryMessage
   | DependencyReportMessage
   | HardwareExplorerDataMessage
   | ProjectLocationPickedMessage
@@ -888,20 +915,50 @@ export interface RequestBuildPlanMessage {
   type: "requestBuildPlan";
 }
 
-/** Materialise the plan's files to disk (`alp build --materialise`). */
-export interface MaterialiseBuildPlanMessage {
-  type: "materialiseBuildPlan";
-}
-
-/** Run the build live in a terminal (`alp build`). */
-export interface RunBuildMessage {
-  type: "runBuild";
-}
-
 /** Flash a single manifest slice (`alp flash --core <id>`). */
 export interface FlashSliceMessage {
   type: "flashSlice";
   coreId: string;
+}
+
+/**
+ * Open the project's board.yaml, resolved by the HOST (#484) — carries no
+ * path, because the webview does not know (and must not guess) where
+ * board.yaml actually is: a custom or absolute `alpSdk.boardYamlPath`, or a
+ * multi-root workspace where it is not under `workspaceFolders[0]`, both
+ * make a webview-side literal wrong. The host answers from
+ * `collectProjectContext().boardYamlPath` — see
+ * `BuildPlanPanel.openBoardYaml`.
+ *
+ * A sibling `OpenWorkspaceFileMessage { path: string }` — a WEBVIEW-
+ * supplied, containment-checked relative path — existed in an earlier
+ * version and was deleted (#484): it had no product caller anywhere in
+ * `packages/alp-webview/src`, existed only to keep its own tests green, and
+ * left a webview-reachable sink (a string turned into a filesystem path and
+ * opened) that could rot unexercised, plus a live precedent for a future
+ * edit to add a `path` back onto THIS message "for symmetry". If a future
+ * control genuinely needs to open a path the webview itself names, re-add
+ * that message deliberately, and read `BuildPlanPanel`'s deleted
+ * `openWorkspaceFile` in this commit's history for the two containment traps
+ * its containment check had to survive: an absolute path discards
+ * `path.resolve`'s root argument outright, and a bare
+ * `resolved.startsWith(root)` accepts a sibling directory that merely shares
+ * the root as a string prefix.
+ */
+export interface OpenBoardYamlMessage {
+  type: "openBoardYaml";
+}
+
+/**
+ * Copy plain text to the system clipboard, through the host (#484).
+ *
+ * The webview cannot reach `navigator.clipboard` reliably under the webview
+ * CSP either, so this goes through `vscode.env.clipboard.writeText` the same
+ * way `openBoardYaml` goes through `showTextDocument`.
+ */
+export interface CopyTextMessage {
+  type: "copyText";
+  text: string;
 }
 
 /** Ask the host to open a folder picker for the new project's parent directory. */
@@ -917,6 +974,18 @@ export interface ReloadProjectTemplatesMessage {
   type: "reloadProjectTemplates";
   /** Selected SDK root to source the catalog from; omitted = active/default. */
   sdkPath?: string;
+}
+
+/**
+ * Build Plan → host (#484): open the Board Configurator on the project's
+ * board.yaml at one ipc or storage entry, by `name`. Navigation only — it
+ * carries no value to write; the Configurator remains the one board.yaml
+ * writer. The host resolves the path itself (`collectProjectContext()`).
+ */
+export interface OpenInConfiguratorMessage {
+  type: "openInConfigurator";
+  section: "ipc" | "storage";
+  name: string;
 }
 
 export type WebviewToExtMessage =
@@ -944,9 +1013,10 @@ export type WebviewToExtMessage =
   | RunFixAllMessage
   | ReloadHardwareExplorerMessage
   | RequestBuildPlanMessage
-  | MaterialiseBuildPlanMessage
-  | RunBuildMessage
   | FlashSliceMessage
+  | OpenBoardYamlMessage
+  | CopyTextMessage
+  | OpenInConfiguratorMessage
   | RequestModelsMessage
   | BuildModelMessage
   | CheckModelFitMessage

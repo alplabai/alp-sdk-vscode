@@ -16,7 +16,7 @@ import type {
   WebviewToExtMessage,
 } from "../ideHub/messages";
 import { buildWebviewHtml } from "../ideHub/webviewHtml";
-import { isCancellation } from "../notify/service";
+import { isCancellation, planSuccess } from "../notify/service";
 import { notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { offerBootstrapFix } from "../toolchain";
@@ -311,6 +311,20 @@ export class DependencyPanel {
       const consented = await confirmDependencyInstalls([row]);
       if (consented === null || consented.length === 0) {
         log(`[deps] ${row.name}: consent not given, nothing dispatched`);
+        // `null` is a dismissal, the customer's own cancel: say nothing. `[]`
+        // is an answer with the row left unchecked. A tier `C` or
+        // unrecognised row STARTS unchecked (it needs its own opt-in), so a
+        // bare Enter lands here, and a log line alone left the click looking
+        // dead.
+        if (consented !== null) {
+          notifyAsync(
+            planSuccess(
+              "Nothing was selected, so nothing was installed. Check the " +
+                "item in the list, then confirm, to install it.",
+              { detail: `${row.label} (${row.name}) was not installed.` },
+            ),
+          );
+        }
         return;
       }
     }

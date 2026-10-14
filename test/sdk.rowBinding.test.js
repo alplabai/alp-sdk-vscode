@@ -176,3 +176,47 @@ test("version-shaped directory names are told from other names", () => {
     assert.equal(looksLikeVersionDir(no), false, `${no} is not a version`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// A local install with no matching release is named by its directory
+// ---------------------------------------------------------------------------
+
+test("two installs whose metadata declares the same version get different labels", () => {
+  // The unmatched-install path (a linked checkout, a hand-made cache) used to
+  // label rows `e.version ?? pathTail(e.path)` — declaration first. An RC's
+  // metadata names the release it is a CANDIDATE for (alp-sdk#1902), so
+  // `v0.16.0` and `v0.16.0-rc1` both declare `0.16.0` and both rows read
+  // `0.16.0`. Two rows with one name in a list you ACT on is the #593 shape
+  // again: Remove on the wrong one deletes the other install.
+  const rows = buildRows(null, [
+    { path: "/home/dev/.alp/sdk/v0.16.0", version: "0.16.0", active: false },
+    {
+      path: "/home/dev/.alp/sdk/v0.16.0-rc1",
+      version: "0.16.0",
+      active: true,
+    },
+  ]);
+  const labels = rows.map((r) => r.label);
+  // Both keep the leading `v`, matching the labels the MATCHED rows carry
+  // (those use the release tag, `v0.16.0`). A directory that names a release
+  // is quoted as it is, not re-spelled.
+  assert.deepEqual(labels, ["v0.16.0", "v0.16.0-rc1"]);
+  assert.equal(
+    new Set(labels).size,
+    labels.length,
+    `both rows read "${labels.join('" and "')}" — indistinguishable in a list ` +
+      "whose rows carry Remove and Use",
+  );
+});
+
+test("an install whose directory names nothing still uses its declaration", () => {
+  const rows = buildRows(null, [
+    { path: "/home/dev/projects/alp-sdk", version: "0.16.0", active: false },
+  ]);
+  assert.equal(
+    rows[0].label,
+    "0.16.0",
+    "a sibling checkout's directory says nothing about which release it is, " +
+      "so the declared version is all there is — rule 2, unchanged",
+  );
+});

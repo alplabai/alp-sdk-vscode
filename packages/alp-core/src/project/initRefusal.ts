@@ -2,19 +2,23 @@
 //
 // The ways `tan init` refuses what the wizard sends it (#530, #582).
 //
-// The New Project flow offers every template with every SoM, and 12 of the 44
-// pairs cannot be scaffolded. Measured against the pinned tan 0.6.0 with
-// alp-sdk v0.16.0-rc1:
+// The New Project flow offers every template with every SoM, and not every
+// pair can be scaffolded. Measured against the pinned tan 0.6.0 with alp-sdk
+// v0.16.0-rc1, `iot-starter` scaffolds ONLY on E1M-AEN801 and every other SoM
+// gets `init.invalid-som`.
 //
-//   minimal-app      ok on all 11 SoMs
-//   zephyr-app       ok except E1M-NX9101   -> init.som-unsupported
-//   sensor-starter   ok except E1M-NX9101   -> init.som-unsupported
-//   iot-starter      ok ONLY on E1M-AEN801  -> init.invalid-som   (10 of 11)
+// `init.som-unsupported` is the other refusal: the template ships no scaffold
+// tree for the SoM's family. Its only trigger was E1M-NX9101, which was never
+// produced. alp-sdk removed it (alplabai/alp-sdk#2782), and from tan
+// 0.7.0-rc1 on every SoM family has a vendored tree and `tan explain
+// --template` publishes `initRefusesSkuPrefixes: []`, so no real SKU reaches
+// this kind any more. It stays mapped because tan keeps the code frozen, and a
+// family added later without a tree raises it again.
 //
-// tan is right to refuse both: rendering an Alif or Renesas scaffold tree under
-// an NXP SKU would write another vendor's content into the customer's project,
-// and `iot-starter`'s Wi-Fi path is silicon-validated on E1M-AEN801 only. What
-// was missing is on this side — the customer filled in a name and a
+// tan is right to refuse both: rendering one family's scaffold tree under
+// another's SKU would write another vendor's content into the customer's
+// project, and `iot-starter`'s Wi-Fi path is silicon-validated on E1M-AEN801
+// only. What was missing is on this side — the customer filled in a name and a
 // destination, pressed Create, and got a raw refusal with no route forward.
 //
 // The two codes need two different sentences. `init.invalid-som` is fixable by

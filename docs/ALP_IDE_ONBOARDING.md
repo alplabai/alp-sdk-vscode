@@ -64,9 +64,10 @@ Click a template card to select it (the card highlights with a blue border).
 
 Select the target E1M module from the grouped list:
 
-- **Alif Ensemble** — E1M-AEN801, AEN301, AEN401, AEN501, AEN601, AEN801
-- **Renesas RZ/V2N** — E1M-V2N101, V2N102, V2M101 (+ DEEPX DX-M1), V2M102
-- **NXP i.MX 9** — E1M-NX9101
+- **Alif Ensemble** — E1M-AEN801, AEN803, AEN301, AEN401, AEN501, AEN601,
+  AEN701
+- **Renesas RZ/V2N** — E1M-V2N101, V2N102, V2N103, V2M101 (+ DEEPX DX-M1),
+  V2M102, V2M103
 
 The selected module determines the `som.sku` value written to `board.yaml`.
 
@@ -165,14 +166,13 @@ Palette (`"when": "false"`, #525). The commands are still registered, but nothin
 in the GUI reaches them, so there is no step here to follow on a first run.
 Restoring the surface is tracked as #524.
 
-The panel is also ahead of the CLI it shells. The pinned `tan` (0.6.0)
-implements exactly one `model` subcommand — `build`, which compiles and packages
-the `models:` entries of `board.yaml` into `.alpmodel` packages (default output
-directory `build/models`). The pre-flight NPU-coverage badge, INT8 prep with an
-fp32-vs-int8 accuracy report, host reference run, A-B compare and the model-zoo
-gallery are all intended, and each of them needs a `model` subcommand this `tan`
-does not have (`check`, `prep`, `run`, `ab`, `zoo`, `add`) — that gap is
-tan-cli#674, and keeping this documentation in step with it is #551.
+The CLI it shells is no longer the gap. The pinned `tan` (0.7.0)
+implements all nine `model` subcommands — `build`, `doctor`, `check`, `list`,
+`zoo`, `add`, `prep`, `run` and `ab` (tan-cli#674). The panel calls
+`build`, which compiles and packages the `models:` entries of `board.yaml` into
+`.alpmodel` packages (default output directory `build/models`), and `zoo` /
+`add` for the model-zoo gallery (#699); for the other six it reports that the
+capability arrived and the panel is not yet wired to it. Rewiring them is #524, and keeping this documentation in step is #551.
 
 > **When the surface returns, two of its numbers still need reading carefully:**
 >

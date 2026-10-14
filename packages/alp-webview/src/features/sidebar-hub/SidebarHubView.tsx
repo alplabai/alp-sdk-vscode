@@ -200,6 +200,13 @@ const BUILD_ACTIONS: Array<{ icon: IconName; label: string; command: string }> =
     // second "Flash all cores" button dispatching this SAME command, which
     // told the user the two did different things.
     { icon: "bolt", label: "Flash", command: "alp.westAlpFlash" },
+    // The observe step (#552). `terminal`, not `monitor` -- the `monitor`
+    // icon is a display and is already spoken for by the native_sim row below.
+    {
+      icon: "terminal",
+      label: "Serial monitor",
+      command: "alp.openSerialMonitor",
+    },
     {
       icon: "monitor",
       label: "Run (native_sim)",

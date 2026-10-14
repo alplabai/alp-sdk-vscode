@@ -50,6 +50,7 @@ await esbuild.build({
   platform: "node",
   format: "cjs",
   jsx: "automatic",
+  loader: { ".yaml": "text" },
   outfile: out,
   external: ["jsdom"],
   // react/react-dom live under the alp-webview workspace package (pnpm).

@@ -178,9 +178,9 @@ test("ProjectTemplate category must be starter, example or library", () => {
 
 test("E1mModule family is a non-empty string", () => {
   const m = {
-    id: "E1M-NX9101",
-    displayName: "E1M-NX9101 (NXP i.MX 93)",
-    family: "nxp-imx9",
+    id: "E1M-V2N101",
+    displayName: "E1M-V2N101 (Renesas RZ/V2N)",
+    family: "renesas-rzv2n",
   };
   assert.ok(m.family.length > 0);
 });

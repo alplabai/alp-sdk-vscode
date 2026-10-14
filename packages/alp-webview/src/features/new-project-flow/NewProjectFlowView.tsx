@@ -386,7 +386,6 @@ function HardwareStep({ modules, selected, onSelect }: HardwareStepProps) {
     "alif-ensemble": "Alif Ensemble",
     "renesas-rzv2n": "Renesas RZ/V2N",
     "renesas-rzv2n-deepx": "Renesas RZ/V2N + DEEPX",
-    "nxp-imx9": "NXP i.MX 9",
   };
 
   const byFamily = modules.reduce<Record<string, E1mModule[]>>((acc, m) => {

@@ -81,7 +81,9 @@ const CONFIGURATOR_REL =
 const BOARD_REL = "packages/alp-core/src/board/models.ts";
 const MANIFEST_REL = "packages/alp-core/src/systemManifest/models.ts";
 const STALENESS_REL = "packages/alp-core/src/systemManifest/staleness.ts";
+const MEMORY_REL = "packages/alp-core/src/systemManifest/memoryView/types.ts";
 const PLANNER_REL = "packages/alp-core/src/deps/planner.ts";
+const PROVENANCE_REL = "packages/alp-core/src/deps/provenance.ts";
 const STATE_REL = "packages/alp-core/src/deps/state.ts";
 const CATALOGUE_REL = "packages/alp-core/src/sdkCatalogue/models.ts";
 const SDK_REL = "packages/alp-core/src/sdk/models.ts";
@@ -108,6 +110,17 @@ const MODELS = [
   { mirror: "SliceSize", file: MANIFEST_REL },
   { mirror: "SizeReport", file: MANIFEST_REL },
   { mirror: "ManifestProvenance", file: STALENESS_REL },
+  // #484: the address-space view. Strict is not set because these are core
+  // models, not HOST_REL wire types — the walk still requires every field to
+  // match, and a mirror-only field is refused outright either way.
+  { mirror: "MemorySpan", file: MEMORY_REL },
+  { mirror: "MemoryUnresolved", file: MEMORY_REL },
+  { mirror: "MemoryAperture", file: MEMORY_REL },
+  { mirror: "MemoryConflict", file: MEMORY_REL },
+  { mirror: "MemoryView", file: MEMORY_REL },
+  { mirror: "MemoryRegion", file: MEMORY_REL },
+  { mirror: "TargetLock", file: MEMORY_REL },
+  { mirror: "MemoryRegionTargetLock", file: MEMORY_REL },
 
   // ── board.yaml ──
   { mirror: "BoardConfig", file: BOARD_REL },
@@ -121,6 +134,7 @@ const MODELS = [
   { mirror: "BootSigning", file: BOARD_REL },
   { mirror: "Boot", file: BOARD_REL },
   { mirror: "OtaServer", file: BOARD_REL },
+  { mirror: "DrpaiCompile", file: BOARD_REL },
   { mirror: "Ota", file: BOARD_REL },
   { mirror: "IpcEntry", file: BOARD_REL },
   { mirror: "ModelEntry", file: BOARD_REL },
@@ -128,6 +142,8 @@ const MODELS = [
   // ── dependency panel ──
   { mirror: "DependencyLatest", file: PLANNER_REL },
   { mirror: "DependencyCommandStep", file: PLANNER_REL },
+  // #467: carried on every step, so the mirror declares it too.
+  { mirror: "PrerequisiteProvenance", file: PROVENANCE_REL },
   // The two `DependencyAction` union members (#603, third review, major 4):
   // named interfaces specifically so this walk reaches them — the union type
   // itself is invisible to it, which is how `omittedTools` grew on both
@@ -222,6 +238,12 @@ const KNOWN_UNMIRRORED = {
   "ManifestSlice.recipe?":
     "The bitbake recipe packaging an app-only Yocto slice. The manifest table " +
     "renders app/image; the recipe is a build-internal name with no column.",
+  "SystemManifest.memory?":
+    "The raw memory[] rows are not rendered directly. Only the DERIVED " +
+    "MemoryView.regions (built by buildMemoryView: authority-classified, " +
+    "narrowed field for field, joined to spans/apertures by name) reaches " +
+    "the webview — mirroring the raw pane too would give one screen two " +
+    "shapes of the same data to disagree about.",
 
   // ── board.yaml ──
   // The five below are safe for a reason the CoreEntry ones do not share: the
@@ -238,6 +260,14 @@ const KNOWN_UNMIRRORED = {
     "unstarted PinmuxConfigurator work, which will need a real mirrored model.",
   "BoardConfig.pins?":
     "Pin references, same story as e1m_routes: preserved, never rendered.",
+  "BoardConfig.camera_connectors?":
+    "Camera connectors (alp-sdk v0.17.0). Modelled in core so the C1 " +
+    "round-trip keeps them; no panel renders or edits them, and the mirror's " +
+    "index signature preserves the key.",
+  "BoardConfig.cameras?":
+    "Camera modules fitted to connectors (rc2). Same story as camera_connectors.",
+  "BoardConfig.ownership?":
+    "Per-product core ownership override (rc2). Preserved, not rendered.",
   "BoardConfig.features?":
     "An opaque feature bag (Record<string, unknown>) the SDK resolves. Nothing " +
     "in the webview can meaningfully render an untyped map.",
@@ -299,6 +329,18 @@ const ALIASES = [
   { mirror: "LogLevelOrOff", file: BOARD_REL },
   { mirror: "LibraryEntry", file: BOARD_REL },
   { mirror: "SliceSizeStatus", file: MANIFEST_REL },
+  { mirror: "HelperFlashPolicy", file: MANIFEST_REL },
+  { mirror: "MemorySpanKind", file: MEMORY_REL },
+  { mirror: "MemoryAuthorityClass", file: MEMORY_REL },
+  { mirror: "MemoryConflictKind", file: MEMORY_REL },
+  { mirror: "TargetLockField", file: MEMORY_REL },
+  // The three OPEN unions on `MemoryRegion` (#664). `(string & {})` is a
+  // member like any other here: it is what keeps the union open, so a side
+  // that drops it starts rejecting values the other side still emits, and a
+  // side that adds one the other lacks widens the contract silently.
+  { mirror: "MemoryRegionSource", file: MEMORY_REL },
+  { mirror: "MemoryRegionKind", file: MEMORY_REL },
+  { mirror: "MemoryRegionStatus", file: MEMORY_REL },
   { mirror: "ManifestFreshness", file: STALENESS_REL },
   { mirror: "DependencyStatus", file: PLANNER_REL },
   { mirror: "DependencyActionEffect", file: PLANNER_REL },

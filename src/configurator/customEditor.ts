@@ -24,10 +24,12 @@ import { buildWebviewHtml } from "../ideHub/webviewHtml";
 import { planFailure, planSuccess } from "../notify/service";
 import { notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
+import { readSchemaProvenance } from "../schemaProvenance";
 import { loadSdkCatalogue } from "../sdkCatalogue/vscodeAdapter";
 import { log } from "../util";
+import { CONFIGURATOR_VIEW_TYPE, focusRegistry } from "./focusRegistry";
 
-const VIEW_TYPE = "alp.boardConfigurator";
+const VIEW_TYPE = CONFIGURATOR_VIEW_TYPE;
 const EMPTY_BOARD: BoardConfig = { som: { sku: "" }, cores: {} };
 
 /**
@@ -101,7 +103,9 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
       );
       const message: ExtToWebviewMessage = {
         type: "configuratorRender",
-        viewModel: buildConfiguratorViewModel(board, catalogue),
+        viewModel: buildConfiguratorViewModel(board, catalogue, {
+          toolchainSupported: readSchemaProvenance().boardDeclaresCoreToolchain,
+        }),
         board,
         boardPath: document.uri.fsPath,
         sdkConnected: catalogue.soms.length > 0,
@@ -134,6 +138,13 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
       postRender(parse());
     });
 
+    // The toolchain field's availability follows the resolved SDK's board
+    // schema, so an `alpSdk.*` setting edit (SDK path) while the editor is open
+    // re-renders with the new answer instead of leaving the old gate up.
+    const configSub = vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("alpSdk")) postRender(parse());
+    });
+
     // Reset the webview's dirty baseline whenever the document is saved —
     // whether via the webview's Save button or a native Ctrl+S.
     const saveSub = vscode.workspace.onDidSaveTextDocument((saved) => {
@@ -145,10 +156,22 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
       void panel.webview.postMessage(msg);
     });
 
+    // #484: a Build Plan "Edit in Configurator" request for this file is
+    // delivered once the view has rendered the board it must find the entry
+    // in — i.e. right after the first `configuratorRender` below.
+    const focus = focusRegistry.attachConfiguratorPanel(
+      document.uri.fsPath,
+      (message) => {
+        void panel.webview.postMessage(message satisfies ExtToWebviewMessage);
+      },
+    );
+    panel.onDidDispose(() => focus.dispose());
+
     panel.webview.onDidReceiveMessage((msg: WebviewToExtMessage) => {
       switch (msg.type) {
         case "ready":
           postRender(parse());
+          focus.ready();
           // Then ask tan for the library vocabulary it owns and re-render once
           // it answers. It runs ONCE per editor rather than inside postRender,
           // which fires on every keystroke that reaches the document — spawning
@@ -235,6 +258,7 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
 
     panel.onDidDispose(() => {
       changeSub.dispose();
+      configSub.dispose();
       saveSub.dispose();
     });
   }

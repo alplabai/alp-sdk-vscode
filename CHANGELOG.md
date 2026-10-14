@@ -1,5 +1,166 @@
 # Changelog
 
+## 0.7.0
+
+**Pre-release.** An odd minor, so `release-vsix.yml` publishes this build to
+the PRE-RELEASE Marketplace channel only; stable users stay on `0.6.0` until
+`0.8.0`. It pins tan `0.7.0` and bundles the alp-sdk `v0.17.0` schemas; tan
+`0.7.0` needs alp-sdk `v0.17.0` or newer to build any Zephyr board, so upgrade
+the SDK with the extension.
+
+- **Pick a core's toolchain in the Board Configurator (#314).** Each core
+  has an optional Toolchain field that writes `cores.<core>.toolchain` to
+  board.yaml, suggests the ids the SDK catalogue gives cores of the same
+  runtime (a Zephyr core is never offered a Linux toolchain) and shows the
+  SoM default as its placeholder; leaving it empty removes the key and keeps
+  that default. The field is disabled with a "needs alp-sdk >= 0.17.0" hint
+  when the project's SDK schema does not accept the key, and an empty or
+  non-string value already in the file is flagged. The toolchain the build
+  plan resolves is shown on the core's line in the Build Plan.
+
+- **A board.yaml value of `<<` or `=` no longer breaks the whole file.**
+  PyYAML reads both bare as tags it cannot construct, so the SDK's
+  validator refused the document; the Configurator now writes them quoted.
+
+- **Edit an IPC carve-out or storage partition size straight from the Build
+  Plan.** Each IPC link and storage partition has an "Edit in Configurator"
+  link that opens the Board Configurator scrolled to that entry's size
+  field, while the Build Plan itself never writes board.yaml.
+  - The Configurator's storage section now warns that resizing a partition
+    can move the ones after it, and data already on the device may be lost.
+
+- **Memory regions now say whether they can be an edit target, and refuse
+  by default.** A region opens only when the manifest marks it `ok`,
+  `customer_runtime`, fully resolved and of a fitting kind, and no region
+  owned by anything else overlaps it or could, so the Secure-Enclave ATOC,
+  anything beside a region whose address is still unresolved, a region with
+  no declared authority and any value this build does not recognise all
+  stay locked.
+
+- **board.yaml validation and the SoM catalogue follow alp-sdk v0.17.0.**
+  The bundled schemas and the new-project SoM list now match alp-sdk
+  v0.17.0, adding `cameras`, `camera_connectors`, `ownership` and the
+  `memory` pane, dropping `ota.server.tls_ca_bundle`, `drpai.spec` and
+  E1M-NX9101, and adding E1M-AEN803, E1M-V2N103 and E1M-V2M103.
+  Developed against v0.17.0-rc2; v0.17.0 leaves both schemas
+  byte-identical.
+
+- **A failed tan command's toast quotes its error again, not an SDK
+  advisory.** tan 0.7.0-rc1 lists `sdk.project-pin-unresolved` and
+  `sdk.global-default-foreign-project` warnings ahead of the command's own
+  error, so a headline read from the first issue named the wrong problem.
+  Every headline now quotes the first error, and falls back to the first
+  issue only when there is none.
+
+- **The dependency consent screen shows each artifact's tier, licence and
+  size from the producer (#467).** tan 0.7.0-rc1 (tan-cli#1066) carries
+  alp-sdk's artifact provenance on every missing prerequisite, and the
+  screen now reads it off the step that will run: `Tier`, `Licence` and
+  `Size` sit beside `Runs:`, per tool when a rollup row's tools disagree
+  (`cmake: BSD-3-Clause; ninja: Apache-2.0`). A tier `C` (licence-gated)
+  line starts unchecked, so it is never fetched without its own click, as
+  does any tier the screen cannot read (a malformed value, or a doctor run
+  that reports the provenance block unreadable), and
+  a tier `B` line says it requires elevation. Today alp-sdk declares tier
+  `A` for all eight entries it covers and no sizes, so `Size` still reads
+  "not reported", and rows with no entry (`west`, `zephyrSdk`, `setools`,
+  `jlink`) report nothing. `Runs:` is still the command; the upstream page
+  is not shown in its place.
+
+- **The extension pins tan `0.7.0`.** `SUPPORTED_CLI_VERSION` moves from
+  `0.6.0` to the `v0.7.0` release, which carries `tan model zoo`/`add`
+  (tan-cli#1338) and per-entry artifact provenance on
+  `missingPrerequisites[]` (tan-cli#1066). The `0.7.0-rc1` to `0.7.0` step
+  changed nothing in the issue-code contract or the pinned surface
+  recording: the envelope contract differs by one reserved code,
+  `model.device-ab-scope-mismatch`, and the recording differs only in the
+  producer's `(inert:KIND)` help marker, which the surface fetcher now reads
+  directly. Like `0.7.0-rc1`, `0.7.0` publishes no arm64 Windows or arm64
+  Linux archive. tan 0.7.0 requires alp-sdk v0.17.0 or newer for every
+  Zephyr board; against v0.16.0 the Kconfig configure aborts. This release's
+  bundled schemas move to v0.17.0 separately (#703). `cli.parse-error` and
+  `monitor.no-port` are frozen in the pinned contract now, and the contract gate says so (#655). The `--plan`,
+  `--manifest`, `--manifest-from` and `--no-auto-bootstrap` build flags are
+  retired at this pin, not deferred, and every `tan model` subcommand
+  exists, so the Models panel reports the ones it does not call yet as
+  unwired rather than missing. The surface fetcher learnt the new help
+  layouts it needed to record the pin (a short `-D` alias, `NAME=VALUE`,
+  `FILE@ADDR`, bare `a|b` choices, one-letter metavars). The six flash
+  options #701 carried ahead of the pin are in the pinned table now.
+  `RENESAS_BUILD_CLI_VERSION` stays at `0.6.0-rc1`.
+
+- **The flash consent gate reads tan 0.7's new flash options with the
+  right arity (#701).** `--probe-serial`, `--probe-usb-path`, `--watch`,
+  `--raw`, `--wait` and `--jlink` now swallow their value, so
+  `tan flash --probe-serial 000801234567 --confirm` no longer reads the
+  serial as the APP_PATH and looks for a manifest beside it. This matters
+  when `alpSdk.cliPath` points at a tan newer than the 0.6.0 pin. They are
+  held apart from the pinned table, and the surface gate reds the re-pin
+  that vendors them until they are folded in.
+
+- **The i.MX 93 mappings for E1M-NX9101 are gone (#700).** The module was
+  never produced and alp-sdk removed it (alplabai/alp-sdk#2782). The
+  Configurator's chip filter and the pinmux loader no longer map `E1M-NX9*`
+  to `imx93`, the `nxp-imx9` chip-family alias went with it, and the
+  baremetal bootstrap no longer points at NXP MCUXpresso. The SoM picker,
+  the `board.yaml` snippet and their docs no longer list E1M-NX9101 either,
+  now that `alp-sdk-upstream` has moved to alp-sdk v0.17.0.
+
+- **The Models gallery reads `tan model zoo`'s camelCase envelope (#699).**
+  The zoo entry types and the gallery card read `validatedSoms` and
+  `runsHere`, which tan emits from 0.7.0-rc1 (tan-cli#1338), instead of
+  `validated_soms` / `runs_here`, which it never emitted. `tan model add`'s
+  `data.added` was already right. With the pin on 0.7.0 the zoo and add
+  sections spawn `tan model zoo` and `tan model add <id>` again instead of
+  reporting a gap, and with no folder open neither one runs.
+
+- **The Build Plan panel is one page again, drawn in VS Code's own
+  language.** The summary strip, the "needs attention" list and the
+  Slices / Memory / Notes tabs are gone. The page reads top to bottom:
+  the module's identity and one freshness line under the title, then
+  Cores, Memory, Interconnect and Helper MCUs as Explorer-style rows parted
+  by a hairline, sentence-case headings, no cards and no uppercase labels.
+  Every problem sits on the row it is about — a skipped core's reason on
+  its row, a blocked link's on its row with the resolver's text one
+  disclosure down, a stale manifest as one line under the header — so
+  nothing is said twice. Refresh, Build and Materialise moved to the
+  panel's editor-title toolbar (`alp.buildPlan.refresh` / `.build` /
+  `.materialise`, shown while the panel is active); the only in-page
+  action left is Flash on a built core's row.
+
+- **The memory map is a horizontal strip.** SoM regions run along the top
+  lane and placed images along the lower lane, cut at every declared
+  address on the log₂(size) scale (a 32 KiB `atoc` stays visible beside a
+  4 GiB `ddr_main`), with empty runs compressed and hatched, and address
+  ticks at declared edges only, thinned so none overprint. A placed
+  image's box is a field of small cells, lit from the slot's base column by
+  column, in the same series colour its core's meters use, so how full a
+  slot is reads at a glance; the exact bytes stay in the text. Regions carry an authority tier mark only
+  when the SoM declares write authority; otherwise the page says once that
+  it does not. Entries that could not be placed, and regions that resolve
+  no extent, are dashed ghosts beside the strip. Selecting any item (click,
+  the arrow keys over one roving tab stop, or a click anywhere on a core's
+  row, which picks that core's slot) prints it in full underneath:
+  the inclusive range, the size in both spellings, the exact used bytes,
+  the authority in words, and the producer's own reason whole. A click on
+  empty space, or Escape, clears the selection.
+
+- **The memory map reads the SoM's own region table (#484).**
+  `system-manifest-v1`'s `memory[]` pane (alp-sdk#1365, first released in
+  alp-sdk `v0.17.0`, emitted by tan `0.7.0`) supplies the regions on the
+  strip's top lane and their authority tier. A manifest without it — or one
+  that resolves no regions for the SoM — draws the placed slots alone and
+  says so once. Read-only: nothing on the page can write a region.
+
+- **Address ranges and sizes are printed exactly (#484).** A range shows
+  its inclusive last byte (`0x80010000 – 0x802affff`), not the exclusive
+  end that names the next region's first byte. Sizes gain GiB; an exact unit
+  multiple prints clean (`64 KiB`, `4 GiB`) and one that rounds carries its
+  exact hex (`2.63 MiB` with `0x2a0000`). Partition and device-overlap
+  offsets print as exact hex (`+0x10000`). An image larger than its slot
+  prints the bytes `tan size` measured and says it exceeds the slot, never a
+  figure clamped to the slot's size.
+
 ## 0.6.0
 
 **Stable.** First even-minor cut since `0.4.0`, so `release-vsix.yml` publishes

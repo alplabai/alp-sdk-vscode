@@ -42,7 +42,7 @@ const WRITTEN = [
 ];
 
 /**
- * Drive one `materialiseBuildPlan` click.
+ * Drive one `alp.buildPlan.materialise` command.
  *
  * `materialiseEnvelope` is what `runAlpCommand` answers for the
  * `build --materialise` argv; every other argv (the `--plan` re-request that
@@ -153,7 +153,7 @@ async function driveMaterialise(materialiseEnvelope) {
   }
 
   BuildPlanPanel.open({ extensionUri: "/ext" });
-  onMessage({ type: "materialiseBuildPlan" });
+  BuildPlanPanel.materialise({ extensionUri: "/ext" });
   for (let i = 0; i < 8; i += 1) await new Promise((r) => setImmediate(r));
   return { notified, logs };
 }

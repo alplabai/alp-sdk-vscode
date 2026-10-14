@@ -116,6 +116,12 @@ const GATED_CODES = {
   // it. Measured at the pin, a `validate` with no resolvable SDK returns exit
   // 2 carrying exactly this code.
   "validate.sdk-root-unresolved": "reserved",
+  // tan: python/tan/commands/examples_cmd.py (tan-cli#400). Ext: the spelling
+  // lives once, as `EXAMPLES_SDK_ROOT_UNRESOLVED_CODE`
+  // (ideHub/newProjectFlowPanel.ts), matched through `unresolvedSdkReason` to
+  // say why the example catalogue is empty. `reserved` / `consumer: "none"` in
+  // the artefact for the same reason as `validate.sdk-root-unresolved` above.
+  "examples.sdk-root-unresolved": "reserved",
 
   // RETIRED — no current tan emits it, and tan reserves the spelling so it can
   // never come back meaning something else.
@@ -197,20 +203,19 @@ const GATED_CODES = {
   // (`src/alpCli/service.ts`) is now that consumer, and `planCliOutcome` routes
   // the whole toast on it, so the note's premise no longer holds.
   //
-  // The status stays `reserved` because that is what tan declares TODAY and
-  // this file asserts tan's declaration, not the one we would prefer.
-  // Promoting it is an upstream ask against tan-cli, not an edit to the
-  // vendored corpus.
+  // FROZEN from tan 0.7.0-rc1: tan-cli#885 promoted it, and the pin bump that
+  // first carried that promotion is the one that flips this row (#655), in
+  // the same change rather than as a follow-up.
   //
   // Worth knowing when reading the consumer: this code is OVERLOADED on tan
   // releases older than tan-cli#399. The artefact's own notes record that
   // `new-som` refusals and `faultdecode`'s reached consumers "as
   // `cli.parse-error` on a `command: "cli"` envelope" before that change, and
   // that an interrupted run "fell into the `cli.parse-error` fallback" before
-  // `cli.interrupted` existed. Against the PINNED 0.6.0 all three have
+  // `cli.interrupted` existed. Against the pinned 0.7.0 all three have
   // their own codes, so the branch means what it says; on an older binary
   // reached through `alpSdk.cliPath` it can over-report "wrong command line".
-  "cli.parse-error": "reserved",
+  "cli.parse-error": "frozen",
 
   // RESERVED in the artefact ("consumer: none -- no consumer matches this code
   // yet"), and this extension now DOES match it: `src/debug.ts` uses it to tell
@@ -240,6 +245,52 @@ const GATED_CODES = {
   // day tan declares a `models.panel-not-wired` of its own is the day two
   // different verdicts share one spelling on the same wire. The assertion
   // above turns that collision into a red instead of a silent overlap.
+  // RESERVED in the artefact, with `consumer: none` and a note that says
+  // outright "Pre-consumer -- nothing in alp-sdk-vscode matches this code
+  // yet, so renaming or dropping it is cheap". That stopped being true when
+  // #552 wired `tan monitor`: `src/monitor.ts` binds this code, and it binds
+  // it on the SUCCESS path -- the port list rides back inside the refusal, so
+  // a rename does not degrade the feature, it removes the only way this
+  // extension can enumerate serial ports.
+  //
+  // Registered the same day that consumer landed, for the reason
+  // `debug-config.invalid-argument` above was: tan reserves the right to
+  // rename a code nothing binds to, and without this row that rename lands
+  // green in both repos while the port picker silently starts reporting every
+  // listing call as a CLI failure.
+  //
+  // Filed upstream as tan-cli#1092: tan's own note says to promote this to
+  // `frozen` "the moment a consumer binds to it", which is what #552 did. That
+  // landed -- tan-cli#1158 (`dd6ac839`) flipped the entry to `frozen` and filled
+  // in `consumer: "alp-sdk-vscode src/monitor.ts :: listSerialPorts"` and a
+  // `consumerEffect` for real. tan's record and this one now agree about the
+  // cost of a rename.
+  //
+  // This row is asserted against the `envelope-contract.json` published for
+  // the PINNED tan, never `latest`, so the flip was DATED: v0.6.0's copy, cut
+  // before #1158, said `reserved`; v0.7.0-rc1's says `frozen`, and the pin
+  // bump onto it flips this row in the same change (#655). A deferred flip
+  // would not red a PR, it would fail the RELEASE -- `release-vsix.yml` runs
+  // this suite inside `package_and_publish` and `package_darwin_arm64`.
+  "monitor.no-port": "frozen",
+
+  // `tan init` refusals, keyed in `packages/alp-core/src/project/
+  // initRefusal.ts`'s `KINDS` table (found by idiom 5 below), which decides
+  // which wizard step the customer is sent back to. tan 0.7.0-rc1 froze
+  // `init.som-unsupported` and names that table as its consumer; the other two
+  // are still reserved there, so a rename of either lands with tan's CI green
+  // and only this row red.
+  "init.som-unsupported": "frozen",
+  "init.invalid-som": "reserved",
+  "init.invalid-cores": "reserved",
+  // Same idiom, `packages/alp-core/src/wizard/scaffoldPayload.ts`'s `KINDS`:
+  // the module wizard's `tan scaffold` refusals. All four reserved at
+  // 0.7.0-rc1 — bound here since that table landed, gated only now.
+  "scaffold.would-overwrite": "reserved",
+  "scaffold.invalid-name": "reserved",
+  "scaffold.name-required": "reserved",
+  "scaffold.invalid-template": "reserved",
+
   "models.panel-not-wired": null,
 };
 
@@ -289,6 +340,11 @@ const ISSUE_CODE_SHAPE = /^[a-z][a-z0-9-]*\.[a-z0-9-]+$/;
  * built by concatenation — is still invisible outside `bootstrap.*`/`presets.*`.
  * Add the idiom here when someone writes one; do not widen the shape filter.
  */
+/** Idiom 5's declaration: a `*KINDS` / `*CODE(S)` constant whose value is an
+ *  object literal, body captured up to the closing brace at column 0. */
+const GATED_CODE_TABLE =
+  /\b(?:[A-Z][A-Z0-9_]*_)?(?:KINDS|CODES?)\b[^=\n]*=\s*(?:Object\.freeze\s*\(\s*)?\{\n([\s\S]*?)\n\}/g;
+
 function scanGatedCodes(roots) {
   const found = new Set();
   const add = (code) => {
@@ -330,6 +386,15 @@ function scanGatedCodes(roots) {
         /\b[A-Z][A-Z0-9_]*CODE\b[^=\n]*=\s*"([^"]*)"/g,
       )) {
         add(m[1]);
+      }
+      // 5. A code-KEYED table — `const KINDS: Record<string, …> = { "fam.code":
+      //    …, }` — looked up with `KINDS[issue.code]`. Neither idiom 2 (an
+      //    array) nor idiom 4 (one string) sees an object's KEYS, so
+      //    `initRefusal.ts`'s three `init.*` codes — one of them frozen at
+      //    0.7.0-rc1 with that table named as its consumer — were bound with
+      //    nothing here noticing. Keys only, and only keys in code shape.
+      for (const m of text.matchAll(GATED_CODE_TABLE)) {
+        for (const key of m[1].matchAll(/^\s*"([^"]*)"\s*:/gm)) add(key[1]);
       }
     }
   }
@@ -660,6 +725,33 @@ test("gated issue codes: every code matched in src/ is classified exactly once",
       "match nobody decided the fate of. Add it to GATED_CODES with the status tan's " +
       "frozen list gives it, or `null` if tan declares it nowhere.",
   );
+});
+
+test("gated issue codes: a code-keyed KINDS table is scanned (idiom 5)", (t) => {
+  // Without idiom 5 the `init.*` rows above would be unreachable by the scan
+  // and the exhaustiveness assertion would red on them as stale. Proved on a
+  // file of its own so it cannot pass by accident of what src/ holds today.
+  const dir = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "gate-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(
+    path.join(dir, "refusal.ts"),
+    [
+      "const KINDS: Readonly<Record<string, Kind>> = {",
+      '  "fam.first-code": "a",',
+      "  // a comment between rows",
+      '  "fam.second-code": "b",',
+      '  "not a code": "c",',
+      "};",
+      "const OTHER = {",
+      '  "fam.unbound-table": "d",',
+      "};",
+      "",
+    ].join("\n"),
+  );
+  assert.deepEqual([...scanGatedCodes([dir])].sort(), [
+    "fam.first-code",
+    "fam.second-code",
+  ]);
 });
 
 test(

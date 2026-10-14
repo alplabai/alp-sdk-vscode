@@ -202,6 +202,24 @@ function loadPanel(stubs) {
  * requested only when `build/system-manifest.yaml` exists, and returns early
  * with `report: null` otherwise.
  */
+/** A minimal but REAL `build/system-manifest.yaml`, at the schema version this
+ *  build consumes. `parseSystemManifest` version-guards, so a fixture written
+ *  at the wrong version would exercise the throw path while looking like the
+ *  success path. */
+const MANIFEST_YAML = [
+  "schema_version: 1",
+  "generated_by: tan 0.6.0",
+  "hw_info:",
+  "  sku: E1M-AEN801",
+  "slices:",
+  "  - core_id: m55_hp",
+  "    os: zephyr",
+  "    status: ok",
+  "ipc: []",
+  "helper_mcus: []",
+  "boot_order: []",
+].join("\n");
+
 async function drivePanel(envelopeFor) {
   const posted = [];
   let onMessage = () => {};
@@ -212,7 +230,14 @@ async function drivePanel(envelopeFor) {
     dispose() {},
   };
   const { BuildPlanPanel } = loadPanel({
-    fs: { existsSync: () => true },
+    fs: {
+      existsSync: () => true,
+      // #580: the panel now READS this file instead of posting `manifest:
+      // null`. A stub that only answers `existsSync` sends the panel down the
+      // read path and then fails inside it, which reads as a panel bug rather
+      // than a missing stub.
+      readFileSync: () => MANIFEST_YAML,
+    },
     vscode: {
       // `buildPlanPanel` imports `runAlpStreamed` (#333), which pulls in
       // `../util`. That module builds the "Alp SDK" output channel AND an
@@ -323,19 +348,50 @@ test("call site: the deferred flags reach no shape check because they reach no s
     [],
     "a deferred flag reaching the CLI is #541 coming back",
   );
-  for (const type of ["buildPlanData", "systemManifestData"]) {
-    const msg = posted.find((m) => m.type === type);
-    assert.ok(msg, `the panel posted no ${type} at all`);
-    assert.match(
-      msg.error,
-      /tan-cli#427/,
-      "the empty state must name the upstream issue, exactly as tan's own " +
-        "refusal did",
-    );
+  const plan = posted.find((m) => m.type === "buildPlanData");
+  assert.ok(plan, "the panel posted no buildPlanData at all");
+  assert.match(
+    plan.error,
+    /tan-cli#427/,
+    "the empty state must name the upstream issue, exactly as tan's own " +
+      "refusal did",
+  );
+  assert.match(
+    plan.error,
+    /retired/,
+    "#427 closed by RETIRING `--plan`, not by shipping it. Calling it " +
+      "deferred tells a customer to wait for something that is not coming.",
+  );
+  assert.match(
+    plan.error,
+    /--plan-from/,
+    "and a retired flag's message has to name its replacement, which is what " +
+      "tan's own decision comment asked consumers to do",
+  );
+
+  // #580: the manifest half no longer HAS an empty state when the file is on
+  // disk. `--manifest-from` was retired in favour of reading
+  // `build/system-manifest.yaml` directly, so the panel reads it.
+  const manifest = posted.find((m) => m.type === "systemManifestData");
+  assert.ok(manifest, "the panel posted no systemManifestData at all");
+  assert.equal(
+    manifest.error,
+    undefined,
+    "a manifest that parsed is not an error state",
+  );
+  assert.ok(manifest.manifest, "the parsed manifest never reached the view");
+  assert.equal(manifest.manifest.hw_info.sku, "E1M-AEN801");
+  assert.equal(manifest.postBuild, true);
+
+  for (const msg of [plan, manifest]) {
+    if (!msg.error) continue;
     assert.doesNotMatch(
       msg.error,
-      /\.yaml/,
-      "the customer-facing message must not carry the absolute manifest path",
+      /(^|[\s`])(\/home|\/Users|[A-Za-z]:\\)/,
+      "the customer-facing message must not carry an ABSOLUTE path — it " +
+        "names the developer's home directory in a panel a customer may " +
+        "screenshot. A project-relative `build/system-manifest.yaml` is the " +
+        "point, not the hazard: it says which file without saying whose.",
     );
   }
 });

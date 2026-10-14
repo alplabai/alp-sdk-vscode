@@ -13,10 +13,13 @@ const SAMPLE =
 
 test("pinmuxFamilyForSku maps known SKU prefixes", () => {
   assert.strictEqual(pinmuxFamilyForSku("E1M-AEN801"), "aen");
-  assert.strictEqual(pinmuxFamilyForSku("E1M-NX9101"), "imx93");
+  // E1M-NX9101 left the SKU list in alp-sdk v0.17.0: no table to resolve.
+  assert.strictEqual(pinmuxFamilyForSku("E1M-NX9101"), null);
   assert.strictEqual(pinmuxFamilyForSku("E1M-V2N101"), "v2n");
   assert.strictEqual(pinmuxFamilyForSku("E1M-V2M102"), "v2n");
   assert.strictEqual(pinmuxFamilyForSku("UNKNOWN-1"), null);
+  // E1M-NX9101 was never produced and alp-sdk removed it (#700).
+  assert.strictEqual(pinmuxFamilyForSku("E1M-NX9101"), null);
 });
 
 test("loadPinmuxTable reads metadata/pinmux/<family>.yaml under the SDK root", () => {

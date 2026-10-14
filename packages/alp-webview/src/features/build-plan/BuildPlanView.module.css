@@ -1,44 +1,82 @@
+/* The panel shell: title, the module's identity, one freshness line, then
+ * the sections (rows.module.css, MemoryStrip.module.css) and a muted footer.
+ * No cards and no summary strip — every fact is stated once, where it is
+ * about something. */
+
 .root {
-  padding: var(--space-5) var(--space-5) var(--space-7);
-  color: var(--vscode-editor-foreground);
+  padding: var(--space-6) var(--space-5) var(--space-8);
+  max-width: var(--content-max);
+  color: var(--text-primary);
 }
 
 .header {
-  margin-bottom: var(--space-4);
-}
-
-.titleRow {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  margin-bottom: var(--space-7);
 }
 
+/* xl: DESIGN.md's Display size, "panel titles only, one per view" — this is
+ * a full editor-tab panel, and every other size in this panel is ranked
+ * against it (test/buildPlan.typeScale.test.js). */
 .title {
-  font-size: var(--font-size-md);
+  margin: 0;
+  font-size: var(--font-size-xl);
   font-weight: 600;
   color: var(--text-primary);
-  margin: 0;
 }
 
-.subtitle {
+/* The SKU, the carrier and the silicon, verbatim: what a reader checks
+ * against the board on the bench. Mono for the identifiers, no chip behind
+ * them — the line is the surface. */
+.identity {
+  margin: 0;
   font-size: var(--font-size-base);
   color: var(--text-secondary);
-  line-height: 1.5;
-  margin: var(--space-2) 0 0;
+  overflow-wrap: anywhere;
 }
 
-.subtitle code,
-.cmd {
+.mono {
   font-family: var(--text-mono);
-  color: var(--text-mono, var(--text-primary));
+  color: var(--text-primary);
 }
 
-/* Paths (board.yaml, generated artefacts) are chrome — UI font, not editor mono. */
-.boardYaml code,
-.fileList code {
-  font-family: var(--vscode-font-family, system-ui, sans-serif);
-  color: var(--text-mono, var(--text-primary));
+.identity .mono {
+  color: var(--text-primary);
+}
+
+/* When the manifest was written and whether a later build left it behind:
+ * one line, coloured by the verdict, carrying the host's own sentence. */
+.freshness {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin: 0;
+  max-width: var(--prose-max);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.freshness[data-freshness="stale"] {
+  color: var(--status-warn);
+}
+
+.freshness[data-kind="err"] {
+  color: var(--status-err);
+}
+
+.freshnessIcon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
 }
 
 .skeletons {
@@ -47,452 +85,39 @@
   gap: var(--space-3);
 }
 
-.body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.sku {
-  font-weight: 600;
-  font-size: var(--font-size-base);
-  color: var(--text-primary);
-}
-
-.metaItem {
+.footer {
+  margin: var(--space-10) 0 0;
+  padding: 0 var(--space-4);
   font-size: var(--font-size-base);
   color: var(--text-secondary);
-}
-
-.boardYaml {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.actions {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.buildNote {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  margin: calc(-1 * var(--space-2)) 0 0;
-  font-size: var(--font-size-sm);
-  line-height: 1.45;
-  color: var(--status-warn);
-}
-
-.buildNote strong {
-  font-family: var(--vscode-font-family, system-ui, sans-serif);
-  font-weight: 600;
-}
-
-.slices {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.slice {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.sliceHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.coreId {
-  font-weight: 600;
-  font-size: var(--font-size-base);
-  color: var(--text-primary);
-}
-
-.backend {
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-full, 9999px);
-  background: var(--surface-badge, var(--surface-hover));
-  color: var(--text-secondary);
-}
-
-.backend[data-backend="zephyr"] {
-  background: color-mix(in srgb, var(--status-info) 18%, transparent);
-  color: var(--status-info);
-}
-
-.backend[data-backend="yocto"] {
-  background: color-mix(in srgb, var(--status-warn) 18%, transparent);
-  color: var(--status-warn);
-}
-
-.backend[data-backend="baremetal"] {
-  background: color-mix(in srgb, var(--status-ok) 18%, transparent);
-  color: var(--status-ok);
-}
-
-.cmd {
-  display: block;
-  font-size: var(--font-size-base);
   line-height: 1.5;
-  word-break: break-all;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm, 2px);
-  background: var(--surface-input, var(--surface-hover));
-  border: 1px solid var(--border-default);
-}
-
-.sliceMeta {
-  display: flex;
-  gap: var(--space-3);
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-}
-
-.buildDir {
-  font-family: var(--vscode-font-family, system-ui, sans-serif);
-}
-
-.env {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0;
-}
-
-.envRow {
-  display: flex;
-  gap: var(--space-2);
-  font-size: var(--font-size-sm);
-  font-family: var(--vscode-font-family, system-ui, sans-serif);
-}
-
-.envKey {
-  margin: 0;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-.envVal {
-  margin: 0;
-  color: var(--text-primary);
-  word-break: break-all;
-}
-
-.section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.sectionTitle {
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-section-header, var(--text-secondary));
-  margin: 0;
-}
-
-.fileList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.fileRow {
-  font-size: var(--font-size-sm);
-}
-
-.fileToggle {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  text-align: left;
-  background: none;
-  border: none;
-  padding: 2px 0;
-  cursor: pointer;
-  color: var(--text-secondary);
-}
-
-.fileToggle:hover .filePath {
-  color: var(--text-primary);
-}
-
-.chevron {
-  flex-shrink: 0;
-  display: inline-flex;
-  color: var(--text-secondary);
-  transition: transform var(--duration-fast) var(--ease-out);
-}
-.chevron[data-open] {
-  transform: rotate(90deg);
-}
-
-.filePath {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--vscode-font-family, system-ui, sans-serif);
-}
-
-.fileContent {
-  margin: var(--space-1) 0 var(--space-2) var(--space-4);
-  padding: var(--space-2) var(--space-3);
-  max-height: 220px;
-  overflow: auto;
-  font-size: var(--font-size-sm);
-  line-height: 1.45;
-  white-space: pre;
-  border-radius: var(--radius-sm, 2px);
-  background: var(--surface-input, var(--surface-hover));
-  border: 1px solid var(--border-default);
-  color: var(--text-mono, var(--text-primary));
-}
-
-.warnings {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.warning {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-}
-
-.warnCode {
-  font-weight: 600;
-  color: var(--status-warn);
-  white-space: nowrap;
-}
-
-.warnCore {
-  font-family: var(--vscode-font-family, system-ui, sans-serif);
-  color: var(--text-primary);
-}
-
-.warnMsg {
-  line-height: 1.4;
-}
-
-/* ── System manifest section (the post-build IDE/tool contract) ───────────── */
-.backend[data-backend="off"] {
-  background: color-mix(in srgb, var(--text-secondary) 16%, transparent);
-  color: var(--text-secondary);
-}
-
-.manifestBadge {
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 1px var(--space-2);
-  border-radius: var(--radius-full, 9999px);
-  background: color-mix(in srgb, var(--text-secondary) 14%, transparent);
-  color: var(--text-secondary);
-}
-
-/* #470. `stale` is the only variant that recolours: it is a claim with
-   evidence behind it. `unknown` deliberately keeps the neutral badge — it is
-   the ABSENCE of a claim, and colouring it would make it look like one. */
-.manifestBadge[data-freshness="stale"] {
-  background: color-mix(in srgb, var(--status-warn) 18%, transparent);
-  color: var(--status-warn);
-}
-
-/* Always rendered when the file's mtime is readable, whatever the verdict:
-   the age is the fact this side can always support. */
-.manifestAge {
-  margin-left: var(--space-2);
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-}
-
-/* Never only a badge — the sentence saying WHY, in the warning colour so it
-   is not read as one more muted note. */
-.manifestStaleNote {
-  font-size: var(--font-size-sm);
-  color: var(--status-warn);
-}
-
-.manifestNote {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-}
-
-.manifestSlices {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.manifestSlice {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.manifestStatus {
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  padding: 1px var(--space-2);
-  border-radius: var(--radius-full, 9999px);
-  background: color-mix(in srgb, var(--text-secondary) 16%, transparent);
-  color: var(--text-secondary);
-}
-.manifestStatus[data-status="ok"] {
-  background: color-mix(in srgb, var(--status-ok) 18%, transparent);
-  color: var(--status-ok);
-}
-.manifestStatus[data-status="failed"] {
-  background: color-mix(in srgb, var(--status-err) 20%, transparent);
-  color: var(--status-err);
-}
-
-.manifestFlash {
-  font-family: var(--font-family-mono, monospace);
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-}
-
-.manifestTarget {
-  font-family: var(--font-family-mono, monospace);
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.manifestActions {
-  margin-left: auto;
-  display: inline-flex;
-  gap: var(--space-2);
-  flex: 0 0 auto;
-}
-
-/* Why a slice ended the way it did, plus what it produced and where its log
- * is (#331). `flex-basis: 100%` inside the wrapping `.manifestSlice` row puts
- * it on its own line without restructuring the row into a column. */
-.manifestDetail {
-  flex: 1 0 100%;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-1) var(--space-3);
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-  padding-left: var(--space-3);
-}
-
-.manifestReason {
-  color: var(--status-warn);
-}
-
-.manifestDetailPath {
-  font-family: var(--font-family-mono, monospace);
+  max-width: var(--prose-max);
   overflow-wrap: anywhere;
 }
 
-/* Budget verdict for a slice's footprint (#359). `over` is the one a firmware
- * developer must act on, so it reads as an error; `warn` and `no-budget` are
- * advisory; `not-built` / `n/a` are absence of data, not a problem. */
-.sizeStatus {
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-.sizeStatus[data-size-status="ok"] {
-  color: var(--status-ok);
-}
-.sizeStatus[data-size-status="warn"],
-.sizeStatus[data-size-status="no-budget"] {
-  color: var(--status-warn);
-}
-.sizeStatus[data-size-status="over"] {
-  color: var(--status-err);
+.footer a {
+  color: var(--text-link);
 }
 
-.sliceBtn {
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  padding: 2px var(--space-2);
-  border: 1px solid
-    var(
-      --border-widget,
-      color-mix(in srgb, var(--text-secondary) 30%, transparent)
-    );
-  border-radius: var(--radius-sm, 2px);
-  background: transparent;
-  color: var(--text-primary);
+.footer a:hover {
+  color: var(--text-link-active);
+}
+
+/* A one-line summary with the producer's verbatim sentence beneath it. The
+   marker is the browser's own disclosure triangle, kept small and muted. */
+.why summary {
   cursor: pointer;
 }
-.sliceBtn:hover {
-  background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
-}
 
-.manifestSub {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-.manifestSubTitle {
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+.why summary::marker {
   color: var(--text-secondary);
 }
 
-.manifestChip {
-  font-size: var(--font-size-xs);
-  font-family: var(--font-family-mono, monospace);
-  padding: 1px var(--space-2);
-  border-radius: var(--radius-sm, 2px);
-  background: color-mix(in srgb, var(--text-secondary) 8%, transparent);
+.why[open] summary {
+  margin-bottom: var(--space-1);
 }
-.manifestChip em {
-  font-style: normal;
+
+.why p {
+  margin: 0;
   color: var(--text-secondary);
 }

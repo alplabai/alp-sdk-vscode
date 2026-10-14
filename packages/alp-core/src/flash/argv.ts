@@ -48,27 +48,57 @@
 // site the extractor calls `flash` is a site `isFlashArgv` recognises.
 
 /**
- * Options of `tan flash` that CONSUME the next token, at the 0.6.0 pin.
+ * Options of `tan flash` that CONSUME the next token, at the 0.7.0 pin.
  *
  * Exactly the entries of `commands.flash.options` carrying a `metavar` in the
- * vendored surface (their metavars: PATH, PATH, CORE_ID, <text|json>, NAME,
- * PATH, PATH, PATH). The five booleans — `--confirm`, `--dry-run`, `--help`,
- * `--recover`, `--skip-missing-tools` — are deliberately absent: this set is
- * consulted only to decide whether to skip a token.
+ * vendored surface. Six of them — `--jlink PATH`, `--probe-serial SN`,
+ * `--probe-usb-path BUS-PORT`, `--raw FILE@ADDR`, `--wait SECONDS` and
+ * `--watch ADDR[:WORDS][@PERIOD-MS]` — arrived in 0.7.0-rc1 and were carried
+ * here ahead of the pin (#701) until it moved onto them. The booleans
+ * (`--confirm`, `--dry-run`, `--recover`, `--ram`, `--ram-console`, …) are
+ * deliberately absent: these lists are consulted only to decide whether to
+ * skip a token.
  */
-export const FLASH_VALUE_TAKING_FLAGS: ReadonlySet<string> = new Set([
+const PINNED_FLASH_VALUE_TAKING_FLAGS = [
   "--board-yaml",
   "--build-root",
   "--core",
   "--format",
   "--helper",
+  "--jlink",
+  "--probe-serial",
+  "--probe-usb-path",
   "--project",
+  "--raw",
   "--sdk-root",
   "--setools-dir",
+  "--wait",
+  "--watch",
+] as const;
+
+/**
+ * Value-taking `tan flash` options known from a tan NEWER than the pin.
+ *
+ * Empty at 0.7.0: the six #701 added here moved into the pinned list above
+ * with the re-pin. Kept as a slot because `alpSdk.cliPath` can point the
+ * extension at a newer tan than the pin, and a value-taker this file does not
+ * know reads as boolean, leaving its value to be taken for APP_PATH.
+ *
+ * `test/flash.consent.test.js` asserts that no entry here is in the vendored
+ * surface, so the re-pin that vendors one reds the gate until it moves.
+ */
+export const FLASH_VALUE_TAKING_FLAGS_AHEAD_OF_PIN: ReadonlySet<string> =
+  new Set<string>();
+
+/** Every `tan flash` option that consumes the next token: the pinned surface
+ *  plus any known to be coming. */
+export const FLASH_VALUE_TAKING_FLAGS: ReadonlySet<string> = new Set([
+  ...PINNED_FLASH_VALUE_TAKING_FLAGS,
+  ...FLASH_VALUE_TAKING_FLAGS_AHEAD_OF_PIN,
 ]);
 
 /**
- * ROOT-position options that consume the next token, at the 0.6.0 pin.
+ * ROOT-position options that consume the next token, at the 0.7.0 pin.
  *
  * Exactly the members of the surface's `globalOptions` that carry a `metavar`
  * in some command's option map. `globalOptions` is a bare name list with no

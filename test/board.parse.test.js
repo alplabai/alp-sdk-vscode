@@ -47,7 +47,10 @@ test("parseBoardConfig maps the PRODUCTION example (boot/ota/memory/power/iot)",
   ]);
   assert.equal(c.boot.method, "mcuboot");
   assert.equal(c.boot.signing.algorithm, "ecdsa_p256");
-  assert.equal(c.boot.swap_algorithm, "scratch");
+  // Absent on purpose: E1M-AEN801 is single-slot, so alp-sdk refuses an
+  // explicit swap_algorithm on it. The canonical production board must not
+  // teach the one shape the build rejects (alp-sdk#1413, #658).
+  assert.equal(c.boot.swap_algorithm, undefined);
   assert.equal(c.ota.provider, "mender");
   assert.equal(c.ota.rollback.min_version, 1);
   assert.ok(c.chips.includes("optiga_trust_m"));

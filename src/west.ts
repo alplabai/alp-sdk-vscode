@@ -45,7 +45,7 @@ import { BUILD_RUN_NAME, FLASH_RUN_NAME, log } from "./util";
  *  (no folder open and no `alpSdk.westCwd`) — in which case the run must be
  *  refused, never spawned with an inherited cwd. Takes an already-collected
  *  context so a caller that needs both doesn't resolve the project twice. */
-function westCwd(
+export function westCwd(
   context: WestWorkspaceContext = collectWestWorkspaceContext(),
 ): string | undefined {
   return context.westCwd ?? context.workspaceRoot ?? undefined;

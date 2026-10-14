@@ -45,6 +45,9 @@ test/golden/tan-contract/
 .claude/worktrees/
 .claude/alp-tasks.json
 
+# Superpowers SDD task briefs and reports — dev-only, not repo content.
+.superpowers/
+
 # VS Code e2e test runtime (downloaded VS Code + user data)
 .vscode-test/
 

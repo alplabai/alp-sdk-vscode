@@ -99,6 +99,9 @@ function syncInto(
 // eslint-disable-next-line no-control-regex
 const PLAIN_SCALAR_HAZARD = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/;
 
+/** Scalars PyYAML's `safe_load` resolves to a tag it cannot construct. */
+const PYYAML_UNCONSTRUCTIBLE: ReadonlySet<string> = new Set(["<<", "="]);
+
 /**
  * Would a YAML 1.1 reader resolve this string to a different TYPE?
  *
@@ -132,6 +135,11 @@ const PLAIN_SCALAR_HAZARD = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/;
  * That gap is covered by `PLAIN_SCALAR_HAZARD` above, by character, not here.
  */
 function misreadUnderYaml11(text: string): boolean {
+  // PyYAML resolves a bare `<<` (merge) and `=` (value) to tags it has no
+  // constructor for under `safe_load`, which fails the WHOLE file. The `yaml`
+  // package's 1.1 mode reads both back as plain strings, so the probe below
+  // cannot see them.
+  if (PYYAML_UNCONSTRUCTIBLE.has(text)) return true;
   try {
     const probe = YAML.parse(`x: ${text}`, { version: "1.1" }) as {
       x?: unknown;

@@ -34,17 +34,27 @@ const { E1M_MODULES } = require("../out/ideHub/projectScaffold.js");
  *  `E1M_MODULES` would assert only that one filter equals itself; a catalog
  *  edit that dropped `family` from a Renesas entry would then silently stop
  *  warning and stay green. */
-const BROKEN_SKUS = ["E1M-V2N101", "E1M-V2N102", "E1M-V2M101", "E1M-V2M102"];
+// V2N103/V2M103 (alp-sdk v0.17.0) are memory-tier variants of the V2N101
+// PCB and silicon, so the same Renesas configure path -- and the same floor --
+// applies; #502 itself measured the first four.
+const BROKEN_SKUS = [
+  "E1M-V2N101",
+  "E1M-V2N102",
+  "E1M-V2N103",
+  "E1M-V2M101",
+  "E1M-V2M102",
+  "E1M-V2M103",
+];
 
-test("every SKU #502 measured as broken is recognised as Renesas", () => {
+test("every Renesas SKU the #502 floor covers is recognised as Renesas", () => {
   // Arrange / Act / Assert
   for (const sku of BROKEN_SKUS) {
     assert.equal(isRenesasSku(sku), true, `${sku} must be recognised`);
   }
 });
 
-test("the catalog holds no Renesas SKU beyond the four #502 measured", () => {
-  // Arrange -- if a fifth Renesas module is added to E1M_MODULES later, this
+test("the catalog holds no Renesas SKU beyond the Renesas set the floor covers", () => {
+  // Arrange -- if another Renesas module is added to E1M_MODULES later, this
   // reds so someone confirms the floor still describes it, rather than the new
   // SKU inheriting a version claim nobody checked.
   const catalogRenesas = E1M_MODULES.filter((m) => isRenesasSku(m.id)).map(
@@ -56,7 +66,7 @@ test("the catalog holds no Renesas SKU beyond the four #502 measured", () => {
 });
 
 test("no non-Renesas SKU is ever warned about", () => {
-  // Arrange -- Alif and NXP build fine on v0.5.1; #502 is Renesas-only, and a
+  // Arrange -- Alif builds fine on v0.5.1; #502 is Renesas-only, and a
   // blanket "your CLI is old" on every build is how a real warning gets muted.
   const others = E1M_MODULES.filter((m) => !BROKEN_SKUS.includes(m.id));
   assert.ok(

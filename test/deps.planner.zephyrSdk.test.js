@@ -92,6 +92,15 @@ const plan = (over = {}) =>
 
 const rowFor = (report, name) => report.rows.find((r) => r.name === name);
 
+/** What a step carries from a tan that reports no provenance (pre-0.7.0-rc1,
+ *  as these fixtures are) — #467. */
+const NO_PROVENANCE = {
+  tier: null,
+  licence: null,
+  sourceUrl: null,
+  sizeBytes: null,
+};
+
 test("the Zephyr SDK row gets a button tan's list never offered", () => {
   const row = rowFor(plan(), "zephyrSdk");
   assert.equal(row.status, "warn", "tan's verdict, verbatim");
@@ -142,7 +151,11 @@ test("tan's own answer still wins wherever tan gave one", () => {
   assert.deepEqual(rowFor(report, "ninja").action, {
     kind: "command",
     commands: [
-      { tool: "ninja", command: "winget install -e --id Ninja-build.Ninja" },
+      {
+        tool: "ninja",
+        command: "winget install -e --id Ninja-build.Ninja",
+        provenance: NO_PROVENANCE,
+      },
     ],
     omittedTools: [],
     effect: "install",

@@ -18,6 +18,45 @@ dom.window.Element.prototype.scrollIntoView = function scrollIntoView() {};
 
 const g = globalThis;
 
+// jsdom ships no ResizeObserver at all — `new ResizeObserver(...)` at mount
+// throws `ResizeObserver is not defined`, which (uncaught, inside a
+// component's own useEffect) takes every view in this harness down, not
+// just the one that uses it. MemoryRegions.tsx (build-plan, #484 Task 8)
+// measures its chart column with one, so this stub exists for every view,
+// not only that one.
+//
+// A real ResizeObserver also answers a genuine layout question this
+// environment cannot: jsdom computes no layout, so every geometry read
+// (getBoundingClientRect, clientWidth, offsetWidth) already answers 0 —
+// stubbing only the CONSTRUCTOR would still leave the measured code path
+// unexercised, reporting 0 forever. `__ALP_TEST_CHART_WIDTH__` is what makes
+// that path exercisable at all: a pass sets it before mounting to claim
+// "the column measured THIS many units", and the stub below reports it the
+// moment `observe()` is called — synchronously, unlike a real
+// ResizeObserver's first (asychronous) callback, which keeps every existing
+// `await settle()` call sufficient with no new knowledge of this stub.
+//
+// It defaults to 0, which is ALSO the real, production first-paint case (no
+// callback has fired yet) — so a pass that never touches this global still
+// exercises MemoryChart's own fallback to its pinned default width, not a
+// harness-invented one.
+g.__ALP_TEST_CHART_WIDTH__ = 0;
+class FakeResizeObserver {
+  constructor(callback) {
+    this._callback = callback;
+  }
+  observe(target) {
+    this._callback(
+      [{ target, contentRect: { width: g.__ALP_TEST_CHART_WIDTH__ } }],
+      this,
+    );
+  }
+  unobserve() {}
+  disconnect() {}
+}
+dom.window.ResizeObserver = FakeResizeObserver;
+g.ResizeObserver = FakeResizeObserver;
+
 // An exception thrown inside an event listener is REPORTED, not propagated —
 // the DOM spec says so, and jsdom obeys it. So `button.click()` returns
 // normally even when the handler threw, and the try/catch around the click in

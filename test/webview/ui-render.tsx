@@ -5,11 +5,27 @@
 // and clicks every button — the real "check the UI" test. esbuild-bundled then
 // run under Node; see test/webview/run.mjs.
 import "./jsdom-setup.js";
+// esbuild's `text` loader (configured in run.mjs) inlines these as plain
+// strings AT BUNDLE TIME — before the bundle ever runs from the temp
+// directory run.mjs builds it into. Reading them with fs + __dirname at
+// RUN time would resolve against that temp directory instead of this
+// file's real location; see run.mjs's own comment.
+declare module "*.yaml" {
+  const content: string;
+  export default content;
+}
+import aenFixtureText from "../fixtures/system-manifest.rpmsg-aen.memory.yaml";
+import v2nFixtureText from "../fixtures/system-manifest.rpmsg-v2n.memory.yaml";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { AppProvider } from "../../packages/alp-webview/src/shared/AppContext";
 import { ErrorBoundary } from "../../packages/alp-webview/src/shared/ui";
-import { TextInput } from "../../packages/alp-webview/src/features/configurator/ConfiguratorView";
+import {
+  ConfiguratorView,
+  NumberInput,
+  TextInput,
+} from "../../packages/alp-webview/src/features/configurator/ConfiguratorView";
+import { useFocusEntry } from "../../packages/alp-webview/src/features/configurator/focusEntry";
 import { OverviewView } from "../../packages/alp-webview/src/features/overview";
 import { SidebarHubView } from "../../packages/alp-webview/src/features/sidebar-hub";
 import { SetupFlowView } from "../../packages/alp-webview/src/features/setup-flow";
@@ -24,6 +40,9 @@ import { DependenciesView } from "../../packages/alp-webview/src/features/depend
 import { HardwareExplorerView } from "../../packages/alp-webview/src/features/hardware-explorer";
 import { BuildPlanView } from "../../packages/alp-webview/src/features/build-plan";
 import { ModelsView } from "../../packages/alp-webview/src/features/models";
+// #484: the harness runs the REAL narrower, not a hand-written payload.
+import { buildMemoryView } from "../../packages/alp-core/src/systemManifest/memoryView";
+import { parseSystemManifest } from "../../packages/alp-core/src/systemManifest/service";
 // Imported, not hardcoded: a hardcoded `_v: 2` outlived the bump to 3, so every
 // AppProvider here saw a protocol mismatch, held `state` at null, and rendered
 // nine skeletons that the harness scored as PASS.
@@ -358,68 +377,146 @@ function feedState() {
     ],
     issues: [],
   });
+  // One `tan model zoo` row in tan 0.7's camelCase envelope shape
+  // (`tan/core/model_zoo.py::entry_as_dict` plus `runsHere`), so the badge
+  // check below fails if the view reads a key tan does not emit (#699).
   g.__ALP_POST_TO_WEBVIEW__({
     type: "zooData",
     ok: true,
-    entries: [],
+    entries: [
+      {
+        id: "example-tiny",
+        kind: "tflite",
+        task: "keyword-spotting",
+        description: "d",
+        license: "Apache-2.0",
+        source: { bundled: "example-tiny.tflite" },
+        validatedSoms: ["E1M-AEN801"],
+        compile: [],
+        exampleApp: null,
+        runsHere: true,
+      },
+    ],
     issues: [],
   });
   // A real post-build manifest, not `null` — the System manifest section was
   // never rendered by this harness at all, so nothing here covered it. The
   // shape is the one #331 is about: one slice that succeeded and one that did
   // not, the latter carrying the `reason` the UI used to drop.
+  // #484: the address-space view of that same manifest. NOT hand-written —
+  // `buildMemoryView` is the narrower the panel itself runs, so this harness
+  // exercises the real thing end to end. A hand-written payload is what let the
+  // first revision ship reading the resolver's dataclass field names instead of
+  // the keys the emitter writes: the fixture agreed with the broken code and
+  // every gate was green. The manifest above therefore carries the EMITTER's
+  // keys (`carve_out_base`, `carve_out_size`, `carve_out_region`,
+  // `offset_kib`), verbatim in shape.
+
+  const MANIFEST = {
+    schema_version: 1,
+    generated_by: "tan",
+    hw_info: { sku: "E1M-AEN801" },
+    slices: [
+      {
+        // The second M55: a load address and NO tan-size row, so a hairline
+        // with no budget band beside one that has both. It also makes the
+        // window's span indivisible by the 22x detail factor, which is what
+        // lets the fractional-address gate below actually fire — a gate that
+        // cannot go red is not a gate.
+        core_id: "m55_he",
+        os: "zephyr",
+        status: "ok",
+        board: "alp_e1m_aen801_m55_he",
+        flash_args: { slot0_load_address: "0x80010000" },
+      },
+      {
+        core_id: "m55_hp",
+        os: "zephyr",
+        status: "ok",
+        build_dir: "build/m55_hp",
+        output_artefact: "build/m55_hp/zephyr/zephyr.elf",
+        flash_method: "jlink",
+        toolchain: "arm-zephyr-eabi",
+        flash_args: { slot0_load_address: "0x802b0000" },
+      },
+      {
+        // No `toolchain` — either an SDK predating the field, or a preset
+        // that declares none. Deliberately paired with the slice above that
+        // has one, so the harness covers both the reported and the "not
+        // reported" branch of the readout.
+        core_id: "a32_cluster",
+        os: "yocto",
+        status: "skipped",
+        reason: "bitbake not found",
+        log_path: "build/a32_cluster/bitbake.log",
+      },
+      {
+        // `os: "off"` — this slice never builds. The real fixture
+        // (test/fixtures/system-manifest.aen801.yaml) carries exactly this
+        // shape: an off slice with a `toolchain` value still on it. The
+        // build-toolchain row must be gated on `active`, like the Flash
+        // button, so this value must NOT reach the screen (asserted below).
+        core_id: "a32_idle",
+        os: "off",
+        status: "pending",
+        toolchain: "poky-glibc",
+      },
+    ],
+    ipc: [
+      {
+        name: "rpmsg0",
+        kind: "rpmsg",
+        endpoints: ["m55_hp", "a32_cluster"],
+        status: "degraded",
+        reason: "peer slice skipped",
+      },
+      {
+        // A RESOLVED carve-out, in the emitter's own spelling: quoted hex,
+        // `carve_out_*` keys, and no `status` at all — absence is what
+        // "resolved" looks like in this contract.
+        name: "alp_shmem0",
+        kind: "raw_shmem",
+        endpoints: ["m55_hp", "a32_cluster"],
+        carve_out_base: "0x80540000",
+        carve_out_size: "0x00040000",
+        carve_out_region: "mram_main",
+        cacheable: false,
+        mailbox_channel: 0,
+      },
+      {
+        // Pinned by hand onto the HP image slot (`ipc[].address:`). The
+        // allocator compares carve-outs against carve-outs in the same
+        // region, so this pair is checked nowhere upstream — the view's own
+        // conflict pass is the only thing that reports it.
+        name: "alp_shmem1",
+        kind: "raw_shmem",
+        endpoints: ["m55_hp", "m55_he"],
+        carve_out_base: "0x802b0000",
+        carve_out_size: "0x00001000",
+        carve_out_region: "mram_main",
+        cacheable: false,
+        mailbox_channel: 1,
+      },
+    ],
+    storage: [
+      {
+        name: "data",
+        fs: "littlefs",
+        flash_device: "storage",
+        dt_label: "storage",
+        offset_kib: 0,
+        size_kib: 64,
+        mount: "/lfs",
+      },
+    ],
+    helper_mcus: [],
+    boot_order: [],
+  };
   g.__ALP_POST_TO_WEBVIEW__({
     type: "systemManifestData",
     postBuild: true,
-    manifest: {
-      schema_version: 1,
-      generated_by: "tan",
-      hw_info: { sku: "E1M-AEN801" },
-      slices: [
-        {
-          core_id: "m55_hp",
-          os: "zephyr",
-          status: "ok",
-          build_dir: "build/m55_hp",
-          output_artefact: "build/m55_hp/zephyr/zephyr.elf",
-          flash_method: "jlink",
-          toolchain: "arm-zephyr-eabi",
-        },
-        {
-          // No `toolchain` — either an SDK predating the field, or a preset
-          // that declares none. Deliberately paired with the slice above that
-          // has one, so the harness covers both the reported and the "not
-          // reported" branch of the readout.
-          core_id: "a32_cluster",
-          os: "yocto",
-          status: "skipped",
-          reason: "bitbake not found",
-          log_path: "build/a32_cluster/bitbake.log",
-        },
-        {
-          // `os: "off"` — this slice never builds. The real fixture
-          // (test/fixtures/system-manifest.aen801.yaml) carries exactly this
-          // shape: an off slice with a `toolchain` value still on it. The
-          // build-toolchain row must be gated on `active`, like the Flash
-          // button, so this value must NOT reach the screen (asserted below).
-          core_id: "a32_idle",
-          os: "off",
-          status: "pending",
-          toolchain: "poky-glibc",
-        },
-      ],
-      ipc: [
-        {
-          name: "rpmsg0",
-          kind: "rpmsg",
-          endpoints: ["m55_hp", "a32_cluster"],
-          status: "degraded",
-          reason: "peer slice skipped",
-        },
-      ],
-      helper_mcus: [],
-      boot_order: [],
-    },
+    manifest: MANIFEST,
+    memory: buildMemoryView(MANIFEST as never),
   });
   // #359: per-slice footprint from `tan size`. Deliberately mixed — one slice
   // in budget with real numbers, one that produced nothing — so the harness
@@ -544,6 +641,119 @@ function feedState() {
   });
 }
 
+/**
+ * Dispatch a real `keydown` and hand the event back, so a check can read
+ * `defaultPrevented` as well as what the handler did with it.
+ *
+ * `bubbles` is not optional: React listens on the root container, never on
+ * the row itself, so an event dispatched without it reaches no handler at all
+ * and every assertion downstream of it passes by measuring nothing.
+ */
+function pressKey(el: Element, key: string): Event {
+  const view = window as unknown as { KeyboardEvent: typeof KeyboardEvent };
+  const event = new view.KeyboardEvent("keydown", {
+    key,
+    bubbles: true,
+    cancelable: true,
+  });
+  el.dispatchEvent(event);
+  return event;
+}
+
+/**
+ * A tab stop's own name, so a failure message says WHICH element it found.
+ *
+ * BOUNDED. When focus has fallen off the widget entirely `document
+ * .activeElement` is `<body>`, whose `textContent` is every rendered view in
+ * this harness at once — 70 KB of prose in what was meant to be a one-line
+ * failure. The tag name is what actually identifies that case.
+ */
+function describeStop(el: Element): string {
+  const name = (el.getAttribute("aria-label") || el.textContent || "").trim();
+  if (name.length === 0) return `<${el.tagName.toLowerCase()}>`;
+  // A row's accessible name is a ", "-joined list whose FIRST segment is the
+  // row's own name, so that segment is the identifying half; everything after
+  // it is authority class and provenance, which no failure here is about.
+  const head = name.split(", ")[0];
+  return head.length > 60 ? `<${el.tagName.toLowerCase()}>` : head;
+}
+
+/**
+ * `els` holds exactly ONE tab stop, it is `expected`, and every other element
+ * carries an explicit `tabindex="-1"`.
+ *
+ * READ FROM THE NEGATIVE, ON PURPOSE. Counting elements whose `tabindex`
+ * equals `"0"` reads 1 the moment the active one is marked, and goes on
+ * reading 1 whether the rest carry `-1` or carry no `tabindex` attribute at
+ * all — and a native `<button>` with no `tabindex` is Tab-reachable anyway.
+ * A positive count cannot see what is missing: absence is not -1. Both tab
+ * strips this harness checks were in exactly that state (three `role="tab"`
+ * buttons, no `tabindex` attribute on any of them), where a count of
+ * `tabindex="0"` reads 0 rather than the 3 tab stops a user actually meets.
+ */
+function checkRovingTabStop(
+  els: Element[],
+  expected: Element | null,
+  what: string,
+  passName: string,
+  problems: string[],
+) {
+  const stops = els.filter((e) => e.getAttribute("tabindex") === "0");
+  if (stops.length !== 1) {
+    problems.push(
+      `${passName}: ${stops.length} of ${els.length} ${what} carry tabindex="0", want exactly 1`,
+    );
+  } else if (expected && stops[0] !== expected) {
+    problems.push(
+      `${passName}: the ${what} tab stop is "${describeStop(stops[0])}", want "${describeStop(expected)}"`,
+    );
+  }
+  const stillReachable = els.filter(
+    (e) => e !== stops[0] && e.getAttribute("tabindex") !== "-1",
+  );
+  if (stillReachable.length > 0) {
+    problems.push(
+      `${passName}: ${stillReachable.length} of ${els.length} ${what} carry no tabindex="-1" and stay Tab-reachable — a single tabindex="0" does not make a roving model`,
+    );
+  }
+}
+
+/**
+ * Every heading in `container`, read in document order, starts at h1 and
+ * skips no rung on the way down.
+ *
+ * Two separate faults, and the flat-set one is the easier to miss. A panel
+ * whose headings are all h3 skips nothing BETWEEN them, so a "no skipped
+ * level" check alone calls it well-formed — while the outline it builds has
+ * no top at all, and a reader jumping by heading arrives in the middle of a
+ * document with nothing above them saying which one it is.
+ */
+function checkHeadingOutline(
+  container: HTMLElement,
+  passName: string,
+  problems: string[],
+) {
+  const levels = Array.from(
+    container.querySelectorAll("h1, h2, h3, h4, h5, h6"),
+  ).map((h) => Number(h.tagName.slice(1)));
+  if (levels.length === 0) {
+    problems.push(`${passName}: the view renders no headings at all`);
+    return;
+  }
+  if (levels[0] !== 1) {
+    problems.push(
+      `${passName}: the outline starts at h${levels[0]} — the panel has no root heading`,
+    );
+  }
+  for (let i = 1; i < levels.length; i++) {
+    if (levels[i] > levels[i - 1] + 1) {
+      problems.push(
+        `${passName}: the heading outline jumps from h${levels[i - 1]} to h${levels[i]}`,
+      );
+    }
+  }
+}
+
 const VIEWS: Array<[string, React.FC]> = [
   ["overview", OverviewView],
   ["sidebar-hub", SidebarHubView],
@@ -558,6 +768,41 @@ const VIEWS: Array<[string, React.FC]> = [
   ["models", ModelsView],
 ];
 
+// Everything the Build Plan page must still say over the `feedState()`
+// manifest, at every width — the wide "build-plan" pass and the narrow pass
+// further down check the SAME list, so a narrow width cannot pass by
+// checking less. Matched against `reachableText()`: visible text plus every
+// `aria-label` and `title`, because a strip box narrower than its name
+// keeps the name in its accessible name rather than clipping it mid-glyph.
+const BUILD_PLAN_NEEDLES = [
+  "bitbake not found", // the skipped core's reason, on its own row
+  "build/a32_cluster/bitbake.log", // its log_path, in the row's details
+  "build/m55_hp/zephyr/zephyr.elf", // output_artefact, in the details
+  "peer slice skipped", // the degraded link's reason, verbatim
+  // #359 — footprint from `tan size`: the rounded figure and the percentage
+  // on the row, the exact hex in the row's details.
+  "97.1 kib",
+  "of 5.50 mib",
+  "1.7%",
+  "16.6 kib",
+  "of 256 kib",
+  "6.5%",
+  "0x1847c",
+  "skipped", // a32_cluster: the manifest's own status word
+  "arm-zephyr-eabi", // m55_hp: toolchain reported
+  "not reported", // a32_cluster: toolchain absent from the manifest
+  // The memory strip (#484): a sized carve-out, its INCLUSIVE last byte,
+  // the region it came from, the partition's exact device offset, and the
+  // conflict the allocator never checks — stated beside the picture.
+  "alp_shmem0",
+  "0x80540000 – 0x8057ffff",
+  "mram_main",
+  "+0x0 in storage",
+  "64 kib",
+  "covers an image load address",
+  "0x802b0000",
+];
+
 // Text a broken/degraded UI shows — flagged so we SEE the problem, not skip it.
 const ERROR_MARKERS = [
   "cli unavailable",
@@ -569,6 +814,96 @@ const ERROR_MARKERS = [
   "[object object]",
   "nan",
 ];
+
+/** Visible text plus every accessible name and tooltip under `root`,
+ *  lowercased — what a reader or a screen reader can reach. */
+function reachableText(root: Element): string {
+  const attrs = Array.from(root.querySelectorAll("[aria-label], [title]"))
+    .flatMap((el) => [el.getAttribute("aria-label"), el.getAttribute("title")])
+    .filter((v): v is string => !!v);
+  return `${root.textContent || ""}\n${attrs.join("\n")}`.toLowerCase();
+}
+
+/** Every strip item a reader can select, in DOM order. */
+const stripItems = (root: Element): HTMLButtonElement[] =>
+  Array.from(root.querySelectorAll<HTMLButtonElement>("button[aria-pressed]"));
+
+/** The strip item whose accessible name starts with `name`. */
+const stripItem = (root: Element, name: string): HTMLButtonElement | null =>
+  stripItems(root).find((b) =>
+    (b.getAttribute("aria-label") || "").startsWith(name),
+  ) ?? null;
+
+/** An address is an integer or it is not an address: `0x80291745.d`
+ *  reached a real screen once (the old fixed-magnification detail rail).
+ *  Checked per LEAF element and per attribute, never on a glued
+ *  `textContent` — `0x802b1000` beside `4.0 KiB` would otherwise read as
+ *  one fractional number. */
+function checkNoFractionalAddress(
+  root: Element,
+  passName: string,
+  problems: string[],
+) {
+  const re = /0x[0-9a-fA-F]+\.[0-9a-fA-F]+/;
+  for (const el of Array.from(root.querySelectorAll("*"))) {
+    const candidates = [
+      el.children.length === 0 ? el.textContent || "" : "",
+      el.getAttribute("aria-label") || "",
+      el.getAttribute("title") || "",
+    ];
+    for (const text of candidates) {
+      const frac = text.match(re);
+      if (frac) {
+        problems.push(
+          `${passName}: rendered a fractional address "${frac[0]}"`,
+        );
+      }
+    }
+  }
+}
+
+/** Mount one Build Plan panel over `manifest` (run through the REAL
+ *  narrower, never a hand-written memory payload) and the given sizes. */
+async function mountBuildPlan(
+  manifest: unknown,
+  sizes: unknown[] = [],
+  provenance: unknown = null,
+): Promise<HTMLDivElement> {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  createRoot(container).render(
+    React.createElement(AppProvider, null, React.createElement(BuildPlanView)),
+  );
+  await settle();
+  feedState();
+  await settle();
+  feedState();
+  await settle();
+  g.__ALP_POST_TO_WEBVIEW__({
+    type: "systemManifestData",
+    postBuild: true,
+    manifest,
+    provenance,
+    memory: buildMemoryView(manifest as never),
+  });
+  await settle();
+  g.__ALP_POST_TO_WEBVIEW__({
+    type: "sliceSizesData",
+    report: {
+      schema: "alp-size/1",
+      slices: sizes,
+      summary: { over_budget: [], unknown_budget: [] },
+    },
+  });
+  await settle();
+  return container;
+}
+
+/** The host messages posted since `since`. */
+const postedSince = (since: number) =>
+  (g.__ALP_POSTED__ as Array<{ type: string; [k: string]: unknown }>).slice(
+    since,
+  );
 
 async function main() {
   let totalButtons = 0;
@@ -637,39 +972,228 @@ async function main() {
     // only the status chip, so "skipped" arrived with no explanation and the
     // produced artefact and log were invisible. `text` is lowercased above.
     if (mode === "build-plan") {
-      for (const needle of [
-        "bitbake not found", // slice reason
-        "build/a32_cluster/bitbake.log", // slice log_path
-        "build/m55_hp/zephyr/zephyr.elf", // slice output_artefact
-        "peer slice skipped", // ipc link reason
-        // #359 — footprint from `tan size`, and the no-data branch beside it.
-        "97.1 kib / 5.50 mib (1.7%)", // flash, measured
-        "16.6 kib / 256.0 kib (6.5%)", // ram, measured
-        "in budget", // status verdict
-        "not built", // a slice tan could not measure
-        // #314 readout half — the per-slice toolchain from THIS build's
-        // emitted manifest, and the explicit absence text for the slice that
-        // has none (never a blank cell, never the Hardware Explorer preset).
-        "arm-zephyr-eabi", // m55_hp: toolchain reported
-        "not reported", // a32_cluster: toolchain absent from the manifest
-      ]) {
-        if (!text.includes(needle)) {
-          problems.push(
-            `build-plan: system manifest detail missing "${needle}"`,
-          );
+      // Paths, flash wiring and exact sizes sit behind each row's
+      // disclosure, a link's reason behind "Show reason". Open every one, so
+      // the needles assert the data is REACHABLE, not merely drawn first.
+      for (const toggle of Array.from(
+        container.querySelectorAll('button[aria-expanded="false"]'),
+      )) {
+        (toggle as HTMLButtonElement).click();
+      }
+      await settle();
+      const reach = reachableText(container);
+      for (const needle of BUILD_PLAN_NEEDLES) {
+        if (!reach.includes(needle)) {
+          problems.push(`build-plan: missing "${needle}"`);
         }
       }
-      // The build-toolchain row is gated on `active` (`os !== "off"`), same as
-      // the Flash button — an `os: "off"` slice never builds, so its manifest
+      // The toolchain is gated on `active` (`os !== "off"`), same as the
+      // Flash button — an `os: "off"` slice never builds, so its manifest
       // toolchain value (a32_idle: "poky-glibc") must not render even though
       // the manifest carries one.
-      for (const forbidden of ["poky-glibc"]) {
-        if (text.includes(forbidden)) {
+      if (reach.includes("poky-glibc")) {
+        problems.push(
+          'build-plan: rendered "poky-glibc" for an inactive (os: "off") slice',
+        );
+      }
+      // The page says every fact once: no summary strip, no "needs
+      // attention" list repeating what the rows already say.
+      for (const retired of ["needs attention", "largest flash use"]) {
+        if (reach.includes(retired)) {
+          problems.push(`build-plan: the retired "${retired}" surface is back`);
+        }
+      }
+      // #484 — the memory strip. A run neither a span nor a region occupies
+      // is COMPRESSED and MARKED, never silently drawn to scale or dropped.
+      // This manifest has no `memory:` table, so the 0x2a0000 B run between
+      // m55_he's own load address and m55_hp's slot is a real gap.
+      if (!container.querySelector("[data-strip-width]")) {
+        problems.push("build-plan: no memory strip was drawn");
+      }
+      const gapMarks = container.querySelectorAll('[data-segment="gap"]');
+      if (gapMarks.length === 0) {
+        problems.push("build-plan: no compressed gap was marked on the strip");
+      }
+      for (const mark of Array.from(gapMarks)) {
+        if (!/\d/.test(mark.getAttribute("title") || "")) {
           problems.push(
-            `build-plan: system manifest rendered "${forbidden}" for an inactive (os: "off") slice`,
+            "build-plan: a compressed gap does not state how much it compressed",
           );
         }
       }
+      checkNoFractionalAddress(container, "build-plan", problems);
+      // Selecting a slot on the strip prints its exact figures: the range
+      // to the slot's INCLUSIVE last byte, the size, the exact used bytes.
+      const hp = stripItem(container, "m55_hp");
+      if (!hp) {
+        problems.push('build-plan: no strip item for "m55_hp"');
+      } else {
+        hp.click();
+        await settle();
+        const detail = (container.textContent || "").toLowerCase();
+        for (const needle of [
+          "0x802b0000 – 0x8082ffff", // base + the 5.50 MiB tan-size budget
+          "5.50 mib",
+          "from tan size",
+          "0x1847c",
+        ]) {
+          if (!detail.includes(needle)) {
+            problems.push(
+              `build-plan: selected-slot detail missing "${needle}"`,
+            );
+          }
+        }
+        if (hp.getAttribute("aria-pressed") !== "true") {
+          problems.push("build-plan: clicking a strip item did not select it");
+        }
+        // ONE roving tab stop over the strip's items, moved by the arrows.
+        const items = stripItems(container);
+        checkRovingTabStop(items, hp, "strip items", "build-plan", problems);
+        hp.focus();
+        const right = pressKey(hp, "ArrowRight");
+        await settle();
+        const after = stripItems(container).find(
+          (b) => b.getAttribute("aria-pressed") === "true",
+        );
+        if (!right.defaultPrevented || !after || after === hp) {
+          problems.push(
+            "build-plan: ArrowRight on a strip item did not move the selection",
+          );
+        } else if (document.activeElement !== after) {
+          problems.push(
+            "build-plan: ArrowRight moved the selection but not the focus",
+          );
+        }
+        const home = pressKey(after ?? hp, "Home");
+        await settle();
+        if (
+          !home.defaultPrevented ||
+          stripItems(container)[0].getAttribute("aria-pressed") !== "true"
+        ) {
+          problems.push("build-plan: Home did not select the first strip item");
+        }
+
+        // A click anywhere on a core row — not just its name, and not on its
+        // own controls — picks that core's slot on the strip, and marks the
+        // row. Then a click on empty space, and Escape, clear the pick.
+        const pressed = () =>
+          stripItems(container).filter(
+            (b) => b.getAttribute("aria-pressed") === "true",
+          );
+        const hpRow = Array.from(
+          container.querySelectorAll<HTMLElement>("[data-locatable]"),
+        ).find((r) => (r.textContent || "").includes("m55_hp"));
+        const meter = hpRow?.querySelector<HTMLElement>('[role="meter"]');
+        if (!hpRow || !meter) {
+          problems.push(
+            "build-plan: the m55_hp core row is not locatable, or has no meter to click",
+          );
+        } else {
+          meter.click();
+          await settle();
+          const picked = pressed();
+          if (
+            picked.length !== 1 ||
+            !(picked[0].getAttribute("aria-label") || "").startsWith("m55_hp")
+          ) {
+            problems.push(
+              "build-plan: a click on the m55_hp row (its meter) did not pick m55_hp's slot",
+            );
+          }
+          if (!hpRow.closest("[data-selected]")) {
+            problems.push(
+              "build-plan: the core whose slot is picked is not marked in the list",
+            );
+          }
+          container.querySelector("h1")?.click();
+          await settle();
+          if (pressed().length !== 0) {
+            problems.push(
+              "build-plan: a click on empty space did not clear the strip selection",
+            );
+          }
+          if (
+            !(container.textContent || "")
+              .toLowerCase()
+              .includes("select a slot or region")
+          ) {
+            problems.push(
+              "build-plan: with nothing selected, the detail line does not say how to select",
+            );
+          }
+          meter.click();
+          await settle();
+          pressKey(container.querySelector("h1") as HTMLElement, "Escape");
+          await settle();
+          if (pressed().length !== 0) {
+            problems.push(
+              "build-plan: Escape did not clear the strip selection",
+            );
+          }
+        }
+
+        // A device-relative partition has no x on the strip, so it sits
+        // beside it — but it is still selectable, and its detail prints the
+        // exact device offset. It used to be absent from the selectable
+        // order, so a click cleared the selection instead.
+        const partition = container.querySelector<HTMLButtonElement>(
+          "button[data-placed]",
+        );
+        if (!partition) {
+          problems.push("build-plan: the storage partition is not drawn");
+        } else {
+          partition.click();
+          await settle();
+          const detail =
+            container.querySelector("dl[data-keep-selection]")?.textContent ??
+            "";
+          if (partition.getAttribute("aria-pressed") !== "true") {
+            problems.push("build-plan: clicking a partition did not select it");
+          } else if (partition.tabIndex !== 0) {
+            problems.push(
+              "build-plan: a selected partition is not the strip's tab stop",
+            );
+          }
+          if (!detail.includes("in storage")) {
+            problems.push(
+              "build-plan: a selected partition's detail does not print its device offset",
+            );
+          }
+        }
+      }
+      checkHeadingOutline(container, "build-plan", problems);
+
+      // `tan build --plan` is retired (tan-cli#427), so on the pinned CLI the
+      // panel ALWAYS posts `plan: null` with a message. That used to collapse
+      // the whole tab into "No build plan" and take the manifest down with
+      // it. The manifest stays; the message is one footer sentence.
+      g.__ALP_POST_TO_WEBVIEW__({
+        type: "buildPlanData",
+        plan: null,
+        error:
+          "`tan build --plan` is deferred and not available in this build " +
+          "(see https://github.com/alplabai/tan-cli/issues/427).",
+      });
+      await settle();
+      const noPlan = (container.textContent || "").toLowerCase();
+      if (!noPlan.includes("cores") || !noPlan.includes("m55_hp")) {
+        problems.push(
+          "build-plan: the manifest vanished when no plan was available",
+        );
+      }
+      if (noPlan.includes("no build plan")) {
+        problems.push(
+          "build-plan: a deferred plan still collapses the page into the empty state",
+        );
+      }
+      if (!noPlan.includes("tan-cli/issues/427")) {
+        problems.push(
+          "build-plan: the plan's absence is not explained on screen",
+        );
+      }
+      // Put the plan back so the click sweep below sees the normal panel.
+      feedState();
+      await settle();
     }
     // The defect this panel exists to remove, asserted at the surface a customer
     // actually reads. Fed the tan-cli#103 report — `fail: 0`, `ninja` at `warn`,
@@ -767,6 +1291,9 @@ async function main() {
       if (!text.includes("falls back to the cpu silently")) {
         problems.push("models: silent-CPU-fallback caveat missing from the UI");
       }
+      if (!text.includes("runs here")) {
+        problems.push("models: zoo entry's runsHere badge not rendered (#699)");
+      }
     }
 
     const buttons = Array.from(container.querySelectorAll("button"));
@@ -814,6 +1341,7 @@ async function main() {
   // 1` is one character away from `>= 1`, and an older tan that sends no
   // category is exactly the case nobody re-runs by hand.
   {
+    const problemsBefore = problems.length;
     const CHIP_ROW = '[aria-label="Filter examples by domain"]';
     const example = (id: string, group?: string) => ({
       id,
@@ -926,7 +1454,7 @@ async function main() {
     }
 
     console.log(
-      `  ${problems.length === 0 ? "PASS" : "FAIL"}  example-filter-degrade: the filter row appears only when it can narrow`,
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  example-filter-degrade: the filter row appears only when it can narrow`,
     );
   }
 
@@ -939,6 +1467,7 @@ async function main() {
   // and assert the panel states it once, in the neutral style, with the actions
   // it cannot drive switched off.
   {
+    const problemsBefore = problems.length;
     const container = document.createElement("div");
     document.body.appendChild(container);
     const refusal = (sub: string) => ({
@@ -1020,7 +1549,131 @@ async function main() {
       problems.push("models-cli-gap: Refresh was disabled, but it still works");
     }
     console.log(
-      `  ${problems.length === 0 ? "PASS" : "FAIL"}  models-cli-gap: one notice, unusable actions disabled`,
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  models-cli-gap: one notice, unusable actions disabled`,
+    );
+  }
+
+  // ── at the 0.7.0 pin the gap is the EXTENSION's `models.panel-not-wired` ──
+  // Every subcommand exists there, so tan never sends `model.unknown-subcommand`;
+  // the panel's own synthesised code must get the same treatment: no red
+  // alarm, the four unwired actions disabled, and a notice that does NOT tell
+  // the customer to update a tan that is not the problem.
+  {
+    const problemsBefore = problems.length;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const notWired = (sub: string) => ({
+      code: "models.panel-not-wired",
+      severity: "info",
+      message: `\`tan model ${sub}\` is implemented, but this panel has no call for it`,
+    });
+    const root = createRoot(container);
+    root.render(
+      React.createElement(AppProvider, null, React.createElement(ModelsView)),
+    );
+    await settle();
+    feedState();
+    await settle();
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "modelsData",
+      ok: false,
+      models: [],
+      toolchains: [],
+      issues: [notWired("list"), notWired("doctor")],
+    });
+    await settle();
+
+    const text = container.textContent ?? "";
+    if (container.querySelectorAll('[data-ok="false"]').length !== 0) {
+      problems.push("models-not-wired: a red alarm rendered for an info gap");
+    }
+    if (!text.includes("not available here yet")) {
+      problems.push("models-not-wired: the not-wired notice was not rendered");
+    }
+    if (text.includes("need a newer CLI")) {
+      problems.push("models-not-wired: blamed the CLI for the panel's own gap");
+    }
+    for (const want of ["Prep model", "Run model", "A/B compare"]) {
+      const hit = [...container.querySelectorAll("button")].find(
+        (b) => (b.textContent ?? "").trim() === want,
+      ) as HTMLButtonElement | undefined;
+      if (!hit || !hit.disabled) {
+        problems.push(`models-not-wired: "${want}" missing or clickable`);
+      }
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  models-not-wired: info notice, unwired actions disabled`,
+    );
+  }
+
+  // ── a REAL zoo / add failure survives the panel-not-wired gap ──
+  // At rc1 `list`/`doctor` always carry `models.panel-not-wired`, yet `zoo` and
+  // `add` are really spawned. The gap must not swallow their failures: before
+  // the fix `cliUnsupported` (panel-wide) hid both banners, so a failed zoo
+  // listing read as "No zoo entries available." and a failed add said nothing.
+  {
+    const problemsBefore = problems.length;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    root.render(
+      React.createElement(AppProvider, null, React.createElement(ModelsView)),
+    );
+    await settle();
+    feedState();
+    await settle();
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "modelsData",
+      ok: false,
+      models: [],
+      toolchains: [],
+      issues: [
+        {
+          code: "models.panel-not-wired",
+          severity: "info",
+          message: "list is implemented, but this panel has no call for it",
+        },
+      ],
+    });
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "zooData",
+      ok: false,
+      entries: [],
+      issues: [
+        {
+          code: "zoo.cli-error",
+          severity: "error",
+          message: "zoo listing exploded",
+        },
+      ],
+    });
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "zooAddResult",
+      ok: false,
+      issues: [
+        {
+          code: "model.failed",
+          severity: "error",
+          message: "add exploded",
+        },
+      ],
+    });
+    await settle();
+
+    const text = container.textContent ?? "";
+    if (!text.includes("zoo listing exploded")) {
+      problems.push("models-zoo-failure: the zoo error banner was swallowed");
+    }
+    if (text.includes("No zoo entries available.")) {
+      problems.push(
+        "models-zoo-failure: a failed listing read as an empty zoo",
+      );
+    }
+    if (!text.includes("add exploded")) {
+      problems.push("models-zoo-failure: the add error banner was swallowed");
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  models-zoo-failure: zoo/add errors render beside the not-wired notice`,
     );
   }
 
@@ -1274,6 +1927,305 @@ async function main() {
     );
   }
 
+  // ── the per-core Toolchain field writes cores.<id>.toolchain (#314) ──
+  // Mounted through the REAL ConfiguratorView and host protocol, so deleting
+  // the field, its datalist or its mutate wiring reds here. Typing posts a
+  // `configuratorUpdate` whose board carries the key; blanking the field
+  // REMOVES it. A core still on the SoM default has no field — "Override"
+  // first creates `cores.<id>: {}` (as for App directory), and blanking the
+  // toolchain afterwards leaves that same `{}`, never an emptied core entry
+  // dropped from `cores` (board.schema.json `cores.minProperties: 1`).
+  {
+    const problemsBefore = problems.length;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    root.render(
+      React.createElement(
+        AppProvider,
+        null,
+        React.createElement(ConfiguratorView),
+      ),
+    );
+    await settle();
+
+    const corePanel = (id: string, inherited: boolean, app?: string) => ({
+      id,
+      inheritedFromTopology: inherited,
+      app,
+      peripherals: [],
+      libraries: [],
+      iot: { wifi: false, mqtt: false, ble: false, tls: false },
+      defaultToolchain: "arm-zephyr-eabi",
+      inTopology: true,
+      toolchainInvalid: false,
+      toolchainSuggestions: ["arm-zephyr-eabi", "llvm"],
+    });
+    const viewModel = (heInherited: boolean, supported = true) => ({
+      sdkConnected: true,
+      som: { selected: "E1M-AEN801", options: [] },
+      hardware: null,
+      accelerators: [],
+      boardMode: "preset",
+      carriers: { options: [] },
+      cores: [
+        corePanel("m55_hp", false, "./src"),
+        corePanel("m55_he", heInherited),
+      ],
+      libraries: [],
+      toolchainSupported: supported,
+      chips: [],
+      projectChips: [],
+      validation: { errors: [], warnings: [] },
+    });
+    const render = (
+      heInherited: boolean,
+      board?: unknown,
+      vmOverride?: (vm: ReturnType<typeof viewModel>) => unknown,
+    ) =>
+      g.__ALP_POST_TO_WEBVIEW__({
+        type: "configuratorRender",
+        viewModel: vmOverride
+          ? vmOverride(viewModel(heInherited))
+          : viewModel(heInherited),
+        board: board ?? {
+          som: { sku: "E1M-AEN801" },
+          cores: { m55_hp: { app: "./src" } },
+        },
+        boardPath: "/project/board.yaml",
+        sdkConnected: true,
+      });
+    render(true);
+    await settle();
+    const coresNav = Array.from(container.querySelectorAll("nav button")).find(
+      (b) => b.textContent === "Cores",
+    ) as HTMLButtonElement | undefined;
+    coresNav?.click();
+    await settle();
+
+    const setValue = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    // Type into the field, then outwait the 200 ms scalar debounce and return
+    // the board of the last `configuratorUpdate`.
+    const typeInto = async (input: HTMLInputElement, text: string) => {
+      const since = (g.__ALP_POSTED__ as unknown[]).length;
+      input.focus();
+      setValue?.call(input, text);
+      input.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 260));
+      await settle();
+      input.blur();
+      const updates = postedSince(since).filter(
+        (m) => m.type === "configuratorUpdate",
+      );
+      return updates[updates.length - 1]?.board as
+        | { cores: Record<string, Record<string, unknown>> }
+        | undefined;
+    };
+    const field = (id: string) =>
+      container.querySelector(
+        `input[aria-label="Toolchain for ${id}"]`,
+      ) as HTMLInputElement | null;
+
+    const hp = field("m55_hp");
+    if (!hp) {
+      problems.push("configurator-toolchain: no Toolchain input for m55_hp");
+    } else {
+      if (hp.placeholder !== "arm-zephyr-eabi (SoM default)") {
+        problems.push(
+          `configurator-toolchain: placeholder is "${hp.placeholder}", not the SoM default`,
+        );
+      }
+      const lists = container.querySelectorAll("datalist");
+      const options = Array.from(
+        document
+          .getElementById(hp.getAttribute("list") || "")
+          ?.querySelectorAll("option") ?? [],
+      ).map((o) => (o as HTMLOptionElement).value);
+      if (lists.length !== 1) {
+        problems.push(
+          `configurator-toolchain: expected one datalist for identical lists, got ${lists.length}`,
+        );
+      }
+      if (
+        JSON.stringify(options) !== JSON.stringify(["arm-zephyr-eabi", "llvm"])
+      ) {
+        problems.push(
+          `configurator-toolchain: suggestions ${JSON.stringify(options)} are not the core's toolchainSuggestions`,
+        );
+      }
+      const set = await typeInto(hp, "llvm");
+      if (
+        set?.cores?.m55_hp?.toolchain !== "llvm" ||
+        set.cores.m55_hp.app !== "./src"
+      ) {
+        problems.push(
+          `configurator-toolchain: typing posted ${JSON.stringify(set)}`,
+        );
+      }
+      const cleared = await typeInto(hp, "");
+      if (!cleared || "toolchain" in (cleared.cores?.m55_hp ?? {})) {
+        problems.push(
+          `configurator-toolchain: blanking did not remove the key: ${JSON.stringify(cleared)}`,
+        );
+      }
+      // Blur resyncs the box to what was committed (trimmed / empty).
+      await typeInto(hp, "  llvm ");
+      if (hp.value !== "llvm") {
+        problems.push(
+          `configurator-toolchain: box kept "${hp.value}" after blur, not the committed "llvm"`,
+        );
+      }
+      await typeInto(hp, "   ");
+      if (hp.value !== "") {
+        problems.push(
+          `configurator-toolchain: whitespace-only box kept "${hp.value}" after blur`,
+        );
+      }
+      await typeInto(hp, "");
+    }
+
+    // SDK without the key: field disabled with the hint; a key already in the
+    // file stays editable and is flagged; an invalid key is flagged.
+    render(true, undefined, (vm) => ({ ...vm, toolchainSupported: false }));
+    await settle();
+    if (!field("m55_hp")?.disabled) {
+      problems.push(
+        "configurator-toolchain: field is enabled although the schema lacks the key",
+      );
+    }
+    if (!container.textContent?.includes("alp-sdk >= 0.17.0")) {
+      problems.push(
+        "configurator-toolchain: no 'needs alp-sdk >= 0.17.0' hint",
+      );
+    }
+    render(
+      true,
+      { som: { sku: "E1M-AEN801" }, cores: { m55_hp: { toolchain: "llvm" } } },
+      (vm) => ({
+        ...vm,
+        toolchainSupported: false,
+        cores: [{ ...vm.cores[0], toolchain: "llvm" }, vm.cores[1]],
+      }),
+    );
+    await settle();
+    if (
+      field("m55_hp")?.disabled ||
+      !container.textContent?.includes("rejects")
+    ) {
+      problems.push(
+        "configurator-toolchain: an existing key on a rejecting schema is not surfaced/editable",
+      );
+    }
+    // Disabled while focused (the key was just cleared on a rejecting
+    // schema): the draft resyncs instead of staying stuck on focus.
+    {
+      const hpInput = field("m55_hp");
+      if (hpInput) {
+        hpInput.focus();
+        setValue?.call(hpInput, "stale");
+        hpInput.dispatchEvent(new window.Event("input", { bubbles: true }));
+        await settle();
+        render(true, undefined, (vm) => ({ ...vm, toolchainSupported: false }));
+        await settle();
+        const after = field("m55_hp");
+        if (!after?.disabled || after.value !== "") {
+          problems.push(
+            `configurator-toolchain: disabled-while-focused kept "${after?.value}" (disabled=${after?.disabled})`,
+          );
+        }
+      }
+    }
+    // The inherited card stops promising a toolchain override.
+    {
+      const buttons = Array.from(container.querySelectorAll("button")).map(
+        (b) => b.textContent,
+      );
+      if (
+        !buttons.includes("Override (app directory)") ||
+        buttons.includes("Override (app directory, toolchain)") ||
+        /toolchain\./.test(
+          container.querySelector('[class*="ghostNote"]')?.textContent ?? "",
+        )
+      ) {
+        problems.push(
+          `configurator-toolchain: inherited card on a rejecting schema still mentions the toolchain: ${JSON.stringify(buttons)}`,
+        );
+      }
+    }
+    render(true, undefined, (vm) => ({
+      ...vm,
+      cores: [{ ...vm.cores[0], toolchainInvalid: true }, vm.cores[1]],
+    }));
+    await settle();
+    if (!container.textContent?.includes("empty or non-string")) {
+      problems.push("configurator-toolchain: invalid key shows no warning");
+    }
+    // Two different suggestion lists get two datalists.
+    render(true, undefined, (vm) => ({
+      ...vm,
+      cores: [
+        vm.cores[0],
+        { ...vm.cores[1], toolchainSuggestions: ["poky-glibc"] },
+      ],
+    }));
+    await settle();
+    if (container.querySelectorAll("datalist").length !== 2) {
+      problems.push(
+        "configurator-toolchain: distinct suggestion lists did not get their own datalists",
+      );
+    }
+    render(true);
+    await settle();
+
+    // The inherited core: no field until Override, then the same round trip.
+    if (field("m55_he")) {
+      problems.push(
+        "configurator-toolchain: an inherited core rendered an editable field",
+      );
+    }
+    const override = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent === "Override (app directory, toolchain)",
+    ) as HTMLButtonElement | undefined;
+    if (!override) {
+      problems.push(
+        "configurator-toolchain: the inherited core's Override button does not mention the toolchain",
+      );
+    } else {
+      override.click();
+      await settle();
+      // The host's echo: the core is now declared, the local board is kept.
+      render(false);
+      await settle();
+      const he = field("m55_he");
+      if (!he) {
+        problems.push(
+          "configurator-toolchain: no Toolchain input after Override",
+        );
+      } else {
+        const set = await typeInto(he, "llvm");
+        if (set?.cores?.m55_he?.toolchain !== "llvm") {
+          problems.push(
+            `configurator-toolchain: the overridden core did not take the toolchain: ${JSON.stringify(set)}`,
+          );
+        }
+        const cleared = await typeInto(he, "");
+        if (JSON.stringify(cleared?.cores?.m55_he) !== "{}") {
+          problems.push(
+            `configurator-toolchain: blanking left ${JSON.stringify(cleared?.cores?.m55_he)}, not the {} App directory leaves`,
+          );
+        }
+      }
+    }
+    root.unmount();
+    container.remove();
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  configurator-toolchain: the field writes and removes cores.<id>.toolchain`,
+    );
+  }
+
   // ── the real ErrorBoundary, not the harness's own (#517) ──
   // Every view above is wrapped by `ErrorBoundary` in App.tsx. Without it a
   // throwing render unmounts the whole tree and leaves an EMPTY panel, which
@@ -1282,6 +2234,7 @@ async function main() {
   // a boundary rendering a bare "something went wrong" swaps a blank panel for
   // an uninformative one and no bug report survives it.
   {
+    const problemsBefore = problems.length;
     const container = document.createElement("div");
     document.body.appendChild(container);
     function Throws(): React.ReactElement {
@@ -1313,10 +2266,857 @@ async function main() {
       );
     }
     console.log(
-      `  ${problems.length === 0 ? "PASS" : "FAIL"}  error-boundary: caught a throwing render`,
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  error-boundary: caught a throwing render`,
     );
   }
 
+  // ── the memory strip over the real rpmsg-aen golden (#484) ──
+  // Six resolved regions (mcuboot / two image slots / reserved / storage /
+  // atoc) tile the window; mram_main does not resolve; the IPC link is
+  // blocked. The SoM DECLARES write authority here, so the bands carry a
+  // tier and the legend is on screen.
+  {
+    const problemsBefore = problems.length;
+    const container = await mountBuildPlan(parseSystemManifest(aenFixtureText));
+    const reach = reachableText(container);
+    for (const needle of [
+      "yours to write", // the legend — only drawn when authority is declared
+      "locked",
+      "not yours or not proven",
+      "mram_main", // the unresolved region, as a ghost
+      "alp_default_rpmsg", // the blocked carve-out, as a ghost
+    ]) {
+      if (!reach.includes(needle)) {
+        problems.push(`memory-aen: missing "${needle}"`);
+      }
+    }
+    const bands = Array.from(
+      container.querySelectorAll('[data-lane="regions"] button'),
+    );
+    const bandNames = bands.map(
+      (b) => (b.getAttribute("aria-label") || "").split(", ")[0],
+    );
+    for (const name of [
+      "mcuboot",
+      "he_slot0",
+      "hp_slot0",
+      "reserved",
+      "storage",
+      "atoc",
+    ]) {
+      if (!bandNames.includes(name)) {
+        problems.push(`memory-aen: no band for region ${name}`);
+      }
+    }
+    // Every band carries its tier mark (the CSS stub echoes class names, so
+    // `.tierMark` is literal here) — three tiers across the six.
+    const tiers = new Set(
+      Array.from(container.querySelectorAll('[data-lane="regions"] .tierMark'))
+        .map((m) => m.getAttribute("data-tier"))
+        .filter(Boolean),
+    );
+    if (tiers.size !== 3) {
+      problems.push(
+        `memory-aen: expected the three authority tiers on the bands, found [${[...tiers].join(", ")}]`,
+      );
+    }
+    // Selecting a band prints the region's exact figures and its authority
+    // in words — and the accessible name carries the exact CLASS, so a
+    // declared `customer_image` and a fail-closed `unstated` never announce
+    // the same thing.
+    const heSlot = stripItem(container, "he_slot0");
+    if (!heSlot) {
+      problems.push("memory-aen: he_slot0 is not selectable");
+    } else {
+      if (
+        !(heSlot.getAttribute("aria-label") || "").includes("customer_image")
+      ) {
+        problems.push(
+          "memory-aen: a band's accessible name does not carry its authority class",
+        );
+      }
+      heSlot.click();
+      await settle();
+      const detail = (container.textContent || "").toLowerCase();
+      for (const needle of [
+        "0x80010000 – 0x802affff",
+        "2.63 mib",
+        "0x2a0000",
+        "customer · written at flash time",
+        "used by", // nothing names it here, so this must NOT appear …
+      ]) {
+        const want = needle !== "used by";
+        if (detail.includes(needle) !== want) {
+          problems.push(
+            `memory-aen: selected-region detail ${want ? "missing" : "wrongly carries"} "${needle}"`,
+          );
+        }
+      }
+    }
+    // A ghost's detail carries the resolver's reason WHOLE, and the two
+    // host actions a blocked board.yaml entry gets.
+    const ghost = stripItem(container, "alp_default_rpmsg");
+    if (!ghost) {
+      problems.push("memory-aen: the blocked carve-out has no ghost");
+    } else {
+      ghost.click();
+      await settle();
+      const detail = (container.textContent || "").toLowerCase();
+      const aenReason =
+        "only match memory_map region(s) in som e1m-aen801 that are ineligible for an ipc carve-out";
+      if (!detail.includes(aenReason)) {
+        problems.push("memory-aen: the blocked reason is not shown in full");
+      }
+      const before = g.__ALP_POSTED__.length;
+      const buttons = Array.from(container.querySelectorAll("button"));
+      const open = buttons.find((b) =>
+        (b.textContent || "").startsWith("Open board config"),
+      );
+      const copy = buttons.find((b) => (b.textContent || "") === "Copy reason");
+      if (!open || !copy) {
+        problems.push(
+          "memory-aen: a blocked ghost lacks its Open/Copy actions",
+        );
+      } else {
+        open.click();
+        copy.click();
+        await settle();
+        const posted = postedSince(before);
+        if (!posted.some((m) => m.type === "openBoardYaml")) {
+          problems.push(
+            "memory-aen: Open board config posted no openBoardYaml",
+          );
+        }
+        const copied = posted.find((m) => m.type === "copyText");
+        if (
+          !copied ||
+          !String(copied.text).includes("ineligible for an IPC carve-out")
+        ) {
+          problems.push(
+            "memory-aen: Copy reason did not post the verbatim reason",
+          );
+        }
+      }
+    }
+    // The unresolved region's ghost: its reason, and NO board-config action
+    // (it is declared in the SoM preset, not board.yaml).
+    const mram = stripItem(container, "mram_main");
+    if (!mram) {
+      problems.push("memory-aen: the unresolved region has no ghost");
+    } else {
+      mram.click();
+      await settle();
+      const detail = (container.textContent || "").toLowerCase();
+      if (!detail.includes("declares `base: tbd`")) {
+        problems.push(
+          "memory-aen: the unresolved region's reason is not shown",
+        );
+      }
+      if (!detail.includes("5.50 mib")) {
+        problems.push(
+          "memory-aen: the unresolved region's resolved size is dropped",
+        );
+      }
+      // `.detailActions` is the strip detail's own action row (the CSS stub
+      // echoes class names); the Interconnect row's Open button is elsewhere.
+      if (container.querySelector(".detailActions")) {
+        problems.push(
+          "memory-aen: a SoM region's ghost offers to open the board config",
+        );
+      }
+    }
+    // The interconnect row carries the same reason behind its disclosure.
+    const show = Array.from(container.querySelectorAll("button")).find(
+      (b) => (b.textContent || "") === "Show reason",
+    );
+    if (!show) {
+      problems.push("memory-aen: the blocked link has no reason disclosure");
+    } else {
+      show.click();
+      await settle();
+      if (show.getAttribute("aria-expanded") !== "true") {
+        problems.push("memory-aen: Show reason did not announce expanded");
+      }
+    }
+    checkNoFractionalAddress(container, "memory-aen", problems);
+    checkHeadingOutline(container, "memory-aen", problems);
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-aen: bands, tiers, ghosts and verbatim reasons`,
+    );
+  }
+
+  // ── "Edit in Configurator" on the AEN ipc row: navigates, never writes (#484) ──
+  // The Interconnect row for the blocked `alp_default_rpmsg` link offers the
+  // link; clicking it posts exactly `openInConfigurator` with that name and
+  // nothing a host could write. With no provenance the verdict is not known
+  // to be the last build's, so the row says so; with a fresh one it does not.
+  {
+    const problemsBefore = problems.length;
+    const NOT_FRESH = "may not reflect the last build — rebuild after editing";
+    const FRESH = "rebuild after editing to see tan's verdict";
+    const manifest = parseSystemManifest(aenFixtureText);
+    const stale = await mountBuildPlan(manifest);
+    const link = stale.querySelector(
+      '[data-open-in-configurator="ipc:alp_default_rpmsg"]',
+    ) as HTMLButtonElement | null;
+    if (!link) {
+      problems.push(
+        "configurator-link: no Edit in Configurator on the ipc row",
+      );
+    } else {
+      if (!(stale.textContent || "").includes(NOT_FRESH)) {
+        problems.push(
+          "configurator-link: no last-build note without provenance",
+        );
+      }
+      const before = (g.__ALP_POSTED__ as unknown[]).length;
+      link.click();
+      await settle();
+      const posted = postedSince(before);
+      const open = posted.filter((m) => m.type === "openInConfigurator");
+      if (
+        open.length !== 1 ||
+        open[0].section !== "ipc" ||
+        open[0].name !== "alp_default_rpmsg" ||
+        Object.keys(open[0]).sort().join(",") !== "name,section,type"
+      ) {
+        problems.push(
+          `configurator-link: expected one bare openInConfigurator, got ${JSON.stringify(posted)}`,
+        );
+      }
+    }
+    stale.remove();
+    const fresh = await mountBuildPlan(manifest, [], {
+      writtenAt: new Date(0).toISOString(),
+      freshness: "fresh",
+      reason: null,
+    });
+    const freshText = fresh.textContent || "";
+    if (freshText.includes(NOT_FRESH) || !freshText.includes(FRESH)) {
+      problems.push(
+        "configurator-link: a fresh manifest must say only that a rebuild judges the edit",
+      );
+    }
+    fresh.remove();
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  configurator-link: ipc row navigates to the Configurator by name`,
+    );
+  }
+
+  // ── the Configurator lands on the entry it was sent to (#484) ──
+  // `focusEntry` opens the section, scrolls to and highlights the size field
+  // whose `data-focus-entry` matches — and does NOT focus it: a focused
+  // number input steps on ArrowUp/Down and the wheel, a silent resize. THE
+  // GUARD IS `document.activeElement`: this DOM shim does not step a number
+  // input on keys or wheel at all, so the key/wheel loop below is only a
+  // smoke check that no handler of ours reacts — it cannot prove the
+  // browser would not step a focused field. Nothing is posted either.
+  // An undeclared name shows a notice, creates nothing, and the notice
+  // survives a re-render with a new-but-equal board.
+  {
+    const problemsBefore = problems.length;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    let opened = 0;
+    let changes = 0;
+    const board = {
+      som: { sku: "E1M-AEN801" },
+      cores: {},
+      ipc: [{ name: "link0", kind: "rpmsg", endpoints: [] }],
+    };
+    const openSection = () => {
+      opened += 1;
+    };
+    function Probe({ board }: { board: unknown }) {
+      const notice = useFocusEntry(
+        board as never,
+        true,
+        openSection,
+        "advanced",
+      );
+      return React.createElement(
+        "div",
+        null,
+        notice && React.createElement("p", { "data-notice": "" }, notice),
+        React.createElement(NumberInput, {
+          label: "IPC carve-out KiB",
+          value: "16",
+          onChange: () => {
+            changes += 1;
+          },
+          focusKey: "ipc:link0",
+        }),
+      );
+    }
+    const root = createRoot(container);
+    root.render(React.createElement(Probe, { board }));
+    await settle();
+    const postedBefore = (g.__ALP_POSTED__ as unknown[]).length;
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "focusEntry",
+      section: "ipc",
+      name: "link0",
+    });
+    await settle();
+    const input = container.querySelector(
+      '[data-focus-entry="ipc:link0"]',
+    ) as HTMLInputElement | null;
+    if (opened !== 1) problems.push("configurator-focus: section not opened");
+    if (!input) {
+      problems.push("configurator-focus: the carve-out field is missing");
+    } else {
+      if (document.activeElement === input) {
+        problems.push(
+          "configurator-focus: the number field was focused — arrow keys and the wheel would resize it",
+        );
+      }
+      if (!input.hasAttribute("data-focus-flash")) {
+        problems.push(
+          "configurator-focus: the landed field is not highlighted",
+        );
+      }
+      // Smoke check only (see above): the shim never steps a number input.
+      for (const key of ["ArrowUp", "ArrowDown", "PageUp", "PageDown"]) {
+        pressKey(input, key);
+      }
+      input.dispatchEvent(
+        new (g.WheelEvent ?? Event)("wheel", {
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await settle();
+      if (input.value !== "16" || changes !== 0) {
+        problems.push(
+          `configurator-focus: landing let keys/wheel change the value (${changes} onChange, value "${input.value}")`,
+        );
+      }
+    }
+    if (postedSince(postedBefore).length !== 0) {
+      problems.push(
+        `configurator-focus: landing posted ${JSON.stringify(postedSince(postedBefore))}`,
+      );
+    }
+    const postedMid = (g.__ALP_POSTED__ as unknown[]).length;
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "focusEntry",
+      section: "storage",
+      name: "nvs",
+    });
+    await settle();
+    const notice = container.querySelector("[data-notice]")?.textContent || "";
+    if (!notice.includes('"nvs"') || !notice.includes("nothing was created")) {
+      problems.push(`configurator-focus: missing-entry notice was "${notice}"`);
+    }
+    if (postedSince(postedMid).length !== 0 || changes !== 0) {
+      problems.push(
+        "configurator-focus: a missing entry posted or changed something",
+      );
+    }
+    // Every `configuratorRender` hands over a NEW board object; an equal one
+    // must not wipe the notice.
+    root.render(React.createElement(Probe, { board: { ...board } }));
+    await settle();
+    if (!container.querySelector("[data-notice]")) {
+      problems.push(
+        "configurator-focus: an equal re-rendered board wiped the notice",
+      );
+    }
+    // Once the board declares the entry, the notice no longer holds.
+    root.render(
+      React.createElement(Probe, {
+        board: { ...board, storage: [{ name: "nvs", size_kib: 8 }] },
+      }),
+    );
+    await settle();
+    if (container.querySelector("[data-notice]")) {
+      problems.push(
+        "configurator-focus: the notice outlived the entry it said was missing",
+      );
+    }
+    container.remove();
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  configurator-focus: focusEntry highlights the field, never focuses, writes or creates`,
+    );
+  }
+
+  // ── the memory strip over the real rpmsg-v2n golden (#484) ──
+  // A 4 GiB ddr_main beside a 512 KiB ocram_low and a 128 KiB m33_tcm
+  // nested inside ddr_main; the resolved carve-out fills ocram_low. The
+  // SoM declares NO authority here, so no band is tinted and the page says
+  // so once rather than calling the reader's rows "not yours".
+  {
+    const problemsBefore = problems.length;
+    const container = await mountBuildPlan(parseSystemManifest(v2nFixtureText));
+    const reach = reachableText(container);
+    for (const needle of [
+      "ddr_main",
+      "ocram_low",
+      "m33_tcm",
+      "does not publish write authority",
+      "0x147ffffff", // the window's INCLUSIVE last byte, as a tick label
+      "0x00010000 – 0x0008ffff", // the carve-out, selected by default
+      "512 kib",
+      "0x80000",
+      "extent from region ocram_low",
+      "placed · 0x00010000 – 0x0008ffff in ocram_low", // the interconnect row
+    ]) {
+      if (!reach.includes(needle)) {
+        problems.push(`memory-v2n: missing "${needle}"`);
+      }
+    }
+    if (container.querySelector(".tierMark")) {
+      problems.push(
+        "memory-v2n: a band is tinted by a tier the SoM never declared",
+      );
+    }
+    if (reach.includes("not yours")) {
+      problems.push("memory-v2n: the reader's own rows are called 'not yours'");
+    }
+    // The 1.1 GiB run between ocram_low and ddr_main is compressed and says
+    // so with its exact size.
+    const gaps = Array.from(container.querySelectorAll('[data-segment="gap"]'));
+    if (
+      !gaps.some((gp) =>
+        (gp.getAttribute("title") || "").includes("0x47f70000"),
+      )
+    ) {
+      problems.push(
+        "memory-v2n: the run between ocram_low and ddr_main is not marked with its exact size",
+      );
+    }
+    // The nested region is drawn AFTER its container, so it wins the click.
+    const bands = Array.from(
+      container.querySelectorAll('[data-lane="regions"] button'),
+    ).map((b) => (b.getAttribute("aria-label") || "").split(", ")[0]);
+    if (bands.indexOf("m33_tcm") < bands.indexOf("ddr_main")) {
+      problems.push("memory-v2n: m33_tcm is drawn under ddr_main, not over it");
+    }
+    checkNoFractionalAddress(container, "memory-v2n", problems);
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-v2n: a 4 GiB region beside KiB ones, untinted`,
+    );
+  }
+
+  // ── an unrecognised kind, and outside_region's own wording (#484) ──
+  // No real golden exercises a `kind` this build has never seen, nor an
+  // outside_region violation; this plain object is fed straight to
+  // `buildMemoryView`, the way test/systemManifest.memoryView.test.js does.
+  {
+    const problemsBefore = problems.length;
+    const manifest = {
+      schema_version: 1,
+      generated_by: "scripts/alp_orchestrate.py",
+      hw_info: { sku: "E1M-AEN801", silicon: "alif:ensemble:e8" },
+      slices: [],
+      ipc: [
+        {
+          name: "alp_rpmsg",
+          kind: "rpmsg",
+          endpoints: ["m55_hp", "m55_he"],
+          carve_out_base: "0x80540000",
+          carve_out_size: "0x00040000",
+          carve_out_region: "odd_region",
+          cacheable: false,
+          rpmsg_endpoint_ids: { src: "0x000004e6", dst: "0x000004e7" },
+          mailbox_channel: 0,
+        },
+      ],
+      helper_mcus: [],
+      boot_order: [],
+      memory: [
+        {
+          name: "odd_region",
+          source: "som_preset",
+          kind: "sram_tcm", // never documented by the schema
+          status: "ok",
+          base: 0x80540000,
+          size_bytes: 0x00020000, // half the carve-out's own size — overruns it
+        },
+      ],
+    };
+    const container = await mountBuildPlan(manifest);
+    const odd = stripItem(container, "odd_region");
+    if (!odd) {
+      problems.push("memory-unrecognised: odd_region is not on the strip");
+    } else {
+      odd.click();
+      await settle();
+    }
+    const reach = reachableText(container);
+    for (const needle of [
+      "class not proven", // an open `kind` is never read as RAM
+      "lands outside the region it names", // the conflict, beside the picture
+      "alp_rpmsg and odd_region",
+    ]) {
+      if (!reach.includes(needle)) {
+        problems.push(`memory-unrecognised: missing "${needle}"`);
+      }
+    }
+    if (reach.includes("sram_tcm")) {
+      problems.push(
+        "memory-unrecognised: an undocumented kind is rendered as if it were a class",
+      );
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-unrecognised: an open kind and an outside_region conflict`,
+    );
+  }
+
+  // ── a resolved region with ZERO placed spans ──
+  // The one combination where the strip's window comes from regions alone.
+  {
+    const problemsBefore = problems.length;
+    const manifest = {
+      schema_version: 1,
+      generated_by: "scripts/alp_orchestrate.py",
+      hw_info: { sku: "E1M-AEN801", silicon: "alif:ensemble:e8" },
+      slices: [],
+      ipc: [],
+      helper_mcus: [],
+      boot_order: [],
+      memory: [
+        {
+          name: "mram_main",
+          source: "som_preset",
+          kind: "flash",
+          status: "ok",
+          base: 0x80000000,
+          size_bytes: 0x00100000,
+          write_authority: "vendor",
+        },
+      ],
+    };
+    const container = await mountBuildPlan(manifest);
+    if (!container.querySelector("[data-strip-width]")) {
+      problems.push("memory-region-only: no strip for a region-only manifest");
+    }
+    if (container.querySelector('[data-lane="placed"] button')) {
+      problems.push("memory-region-only: a placed image was invented");
+    }
+    const reach = reachableText(container);
+    for (const needle of ["mram_main", "0x80000000 – 0x800fffff", "1 mib"]) {
+      if (!reach.includes(needle)) {
+        problems.push(`memory-region-only: missing "${needle}"`);
+      }
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-region-only: a strip from regions alone`,
+    );
+  }
+
+  // ── duplicate region names refuse the selection join, everywhere ──
+  // Two rows sharing one name share one id; selecting either would light
+  // both, so neither is selectable — the same refusal `findOutsideRegion`
+  // applies in core and `duplicatedNames` applies in the webview.
+  {
+    const problemsBefore = problems.length;
+    const manifest = {
+      schema_version: 1,
+      generated_by: "scripts/alp_orchestrate.py",
+      hw_info: { sku: "E1M-AEN801", silicon: "alif:ensemble:e8" },
+      slices: [],
+      ipc: [],
+      helper_mcus: [],
+      boot_order: [],
+      memory: [
+        {
+          name: "dup_region",
+          source: "som_preset",
+          kind: "flash",
+          status: "ok",
+          base: 0x80600000,
+          size_bytes: 0x1000,
+        },
+        {
+          name: "dup_region",
+          source: "som_preset",
+          kind: "flash",
+          status: "ok",
+          base: 0x80610000,
+          size_bytes: 0x1000,
+        },
+      ],
+    };
+    const container = await mountBuildPlan(manifest);
+    const bands = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '[data-lane="regions"] button',
+      ),
+    );
+    if (bands.length !== 2) {
+      problems.push(`memory-duplicate: ${bands.length} bands drawn, want 2`);
+    }
+    for (const band of bands) {
+      if (
+        band.getAttribute("aria-disabled") !== "true" ||
+        band.hasAttribute("aria-pressed")
+      ) {
+        problems.push("memory-duplicate: a duplicated-name band is selectable");
+      }
+      if (
+        !(band.getAttribute("aria-label") || "").includes(
+          "name shared by 2 rows, not joined",
+        )
+      ) {
+        problems.push(
+          "memory-duplicate: the band does not say why it is inert",
+        );
+      }
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-duplicate: shared names are inert and say so`,
+    );
+  }
+
+  // ── a region table AND genuine uncovered runs, together (#484) ──
+  // Neither vendored fixture can prove this: rpmsg-aen's six regions tile
+  // its window end to end, and the "build-plan" manifest has no region
+  // table. `railBoundaries` builds `occupied` from THREE sources — a
+  // region's extent, a span's own size, a slot's tan-size budget — and
+  // deleting any one `occupied.push` alone used to produce 0 problems
+  // across the whole harness. So this fixture carries three islands, one
+  // per source, each the SOLE cover of its own run:
+  //
+  //   gap_region (region, resolved):        0x80000000 – 0x80010000  (64 KiB)
+  //   core_anchor (marker span):             0x80000000
+  //   [uncovered, always]                    0x80010000 – 0x80030000 (128 KiB)
+  //   carve_c (carve-out span, own extent):  0x80030000 – 0x80048000  (96 KiB)
+  //   [uncovered, always]                    0x80048000 – 0x80054000  (48 KiB)
+  //   core_budget (slot image, tan-size):    0x80054000 – 0x80068000  (80 KiB)
+  //   [uncovered, always]                    0x80068000 – 0x80072000  (40 KiB)
+  //   core_far (marker span):                                          0x80072000
+  //
+  // The three ALWAYS-uncovered runs are the control; each per-source check
+  // asserts one SPECIFIC byte size is absent from the gap set — the size
+  // that run would carry if its own source were dropped. `core_far` pushes
+  // the window's edge past core_budget's budget end so that address is
+  // strictly interior and cannot survive a deleted `boundaries.push` by
+  // coincidence; the invariant below holds that for EVERY declared address.
+  {
+    const problemsBefore = problems.length;
+    const manifest = {
+      schema_version: 1,
+      generated_by: "scripts/alp_orchestrate.py",
+      hw_info: { sku: "TEST-GAP-FIXTURE", silicon: "test:test:test" },
+      slices: [
+        {
+          core_id: "core_anchor",
+          os: "zephyr",
+          status: "ok",
+          flash_args: { slot0_load_address: "0x80000000" },
+        },
+        {
+          core_id: "core_budget",
+          os: "zephyr",
+          status: "ok",
+          flash_args: { slot0_load_address: "0x80054000" },
+        },
+        {
+          core_id: "core_far",
+          os: "zephyr",
+          status: "ok",
+          flash_args: { slot0_load_address: "0x80072000" },
+        },
+      ],
+      ipc: [
+        {
+          name: "carve_c",
+          kind: "raw_shmem",
+          endpoints: ["core_anchor"],
+          carve_out_base: "0x80030000",
+          carve_out_size: "0x00018000",
+          cacheable: false,
+          mailbox_channel: 0,
+        },
+      ],
+      helper_mcus: [],
+      boot_order: [],
+      memory: [
+        {
+          name: "gap_region",
+          source: "som_preset",
+          kind: "flash",
+          status: "ok",
+          base: 0x80000000,
+          size_bytes: 0x00010000,
+          write_authority: "customer_runtime",
+          accessible_from: ["core_anchor"],
+        },
+      ],
+    };
+    const container = await mountBuildPlan(manifest, [
+      {
+        core_id: "core_budget",
+        os: "zephyr",
+        status: "ok",
+        flash: { used: 40000, total: 0x00014000, pct: 48.8 },
+        ram: { used: null, total: null, pct: null },
+        source: "size-tool",
+      },
+    ]);
+    const gapTitles = Array.from(
+      container.querySelectorAll('[data-segment="gap"]'),
+    ).map((gp) => (gp.getAttribute("title") || "").toLowerCase());
+    if (gapTitles.length !== 3) {
+      problems.push(`memory-gaps: ${gapTitles.length} gaps marked, want 3`);
+    }
+    for (const control of ["128 kib", "48 kib", "40 kib"]) {
+      if (!gapTitles.some((t) => t.includes(control))) {
+        problems.push(
+          `memory-gaps: the always-uncovered ${control} run is not a gap`,
+        );
+      }
+    }
+    for (const [source, size] of [
+      ["a region's extent", "64 kib"],
+      ["a carve-out's own size", "96 kib"],
+      ["a slot's tan-size budget", "80 kib"],
+    ]) {
+      if (gapTitles.some((t) => t.includes(size))) {
+        problems.push(
+          `memory-gaps: the ${size} run covered by ${source} is drawn as a gap`,
+        );
+      }
+    }
+    // The invariant: every declared address strictly inside the window is
+    // some tick's own address.
+    const ticked = new Set(
+      Array.from(container.querySelectorAll("[data-address]")).map((t) =>
+        Number(t.getAttribute("data-address")),
+      ),
+    );
+    for (const declared of [
+      0x80010000, 0x80030000, 0x80048000, 0x80054000, 0x80068000,
+    ]) {
+      if (!ticked.has(declared)) {
+        problems.push(
+          `memory-gaps: declared address 0x${declared.toString(16)} is not a segment edge`,
+        );
+      }
+    }
+    // The marker spans (a base with no extent) are drawn as hairlines and
+    // are still selectable, with the base as their whole range.
+    const far = stripItem(container, "core_far");
+    if (!far || !far.hasAttribute("data-marker")) {
+      problems.push(
+        "memory-gaps: a base with no extent is not drawn as a marker",
+      );
+    } else {
+      far.click();
+      await settle();
+      if (
+        !(container.textContent || "").includes(
+          "size not pinned by this manifest",
+        )
+      ) {
+        problems.push(
+          "memory-gaps: a marker's detail does not say its size is unknown",
+        );
+      }
+    }
+    checkNoFractionalAddress(container, "memory-gaps", problems);
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-gaps: three islands, three gaps, every edge ticked`,
+    );
+  }
+
+  // ── the strip draws at a genuinely MEASURED, narrower width ──
+  // jsdom computes no text metrics, so glyph overlap is not provable here.
+  // What IS: the strip carries the MEASURED number (the measured code path
+  // ran, not the fallback), and every string the wide pass expects is still
+  // reachable — nothing was conditionally dropped.
+  {
+    const NARROW_WIDTH = 340;
+    const problemsBefore = problems.length;
+    g.__ALP_TEST_CHART_WIDTH__ = NARROW_WIDTH;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    createRoot(container).render(
+      React.createElement(
+        AppProvider,
+        null,
+        React.createElement(BuildPlanView),
+      ),
+    );
+    await settle();
+    feedState();
+    await settle();
+    feedState();
+    await settle();
+    const strip = container.querySelector("[data-strip-width]");
+    if (strip?.getAttribute("data-strip-width") !== String(NARROW_WIDTH)) {
+      problems.push(
+        `memory-narrow-width: data-strip-width="${strip?.getAttribute("data-strip-width")}", want "${NARROW_WIDTH}" — the measured width did not reach the strip`,
+      );
+    }
+    for (const toggle of Array.from(
+      container.querySelectorAll('button[aria-expanded="false"]'),
+    )) {
+      (toggle as HTMLButtonElement).click();
+    }
+    await settle();
+    const reach = reachableText(container);
+    for (const needle of BUILD_PLAN_NEEDLES) {
+      if (!reach.includes(needle)) {
+        problems.push(
+          `memory-narrow-width: missing "${needle}" at ${NARROW_WIDTH}px — present at the wide width, so the narrow width dropped it`,
+        );
+      }
+    }
+    checkNoFractionalAddress(container, "memory-narrow-width", problems);
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-narrow-width: ${NARROW_WIDTH}px, nothing dropped`,
+    );
+  }
+
+  // ── a measured width of 0 must still draw a real strip ──
+  // 0 is the production first paint (no ResizeObserver callback yet); the
+  // strip keeps its fallback width rather than laying out into nothing.
+  {
+    const problemsBefore = problems.length;
+    g.__ALP_TEST_CHART_WIDTH__ = 0;
+    const container = await mountBuildPlan(parseSystemManifest(aenFixtureText));
+    const strip = container.querySelector("[data-strip-width]");
+    const width = Number(strip?.getAttribute("data-strip-width"));
+    if (!(width > 0)) {
+      problems.push(
+        `memory-zero-width-fallback: data-strip-width="${strip?.getAttribute("data-strip-width")}" — a 0 measurement must fall back, never draw a 0-wide strip`,
+      );
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  memory-zero-width-fallback: ${width}px`,
+    );
+  }
+
+  // ── every IDREF target is unique across the whole document ──
+  // Measurable only now, with several Build Plan panels mounted at once: a
+  // hardcoded heading id or strip-item id looks correct inside any ONE
+  // pass. Section headings (`aria-labelledby`) and strip items (the roving
+  // focus target) both use `useId`, so this must hold.
+  const idBearing = Array.from(
+    document.querySelectorAll(
+      "section[aria-labelledby] h2[id], button[aria-pressed][id]",
+    ),
+  )
+    .map((el) => el.id)
+    .filter((id) => id !== "");
+  const duplicatedIds = Array.from(
+    new Set(idBearing.filter((id, i) => idBearing.indexOf(id) !== i)),
+  );
+  if (idBearing.length === 0) {
+    problems.push(
+      "id-uniqueness: no heading or strip item carried an id — this check measured nothing",
+    );
+  }
+  if (duplicatedIds.length > 0) {
+    problems.push(
+      `id-uniqueness: ${duplicatedIds.length} id(s) appear on more than one element — [${duplicatedIds.join(", ")}]`,
+    );
+  }
+  console.log(
+    `  ${duplicatedIds.length === 0 && idBearing.length > 0 ? "PASS" : "FAIL"}  id-uniqueness: ${idBearing.length} ids scanned, all distinct`,
+  );
   console.log(
     `\nwebview-ui: ${rendered}/${VIEWS.length} views rendered, ` +
       `${totalClicked}/${totalButtons} buttons clicked, ${problems.length} problem(s)`,

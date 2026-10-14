@@ -1,4 +1,13 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { deepxPathMissing, drpaiPathMissing } from "./drpaiInputs";
+import { focusKeyOf, useFocusEntry } from "./focusEntry";
 import { Icon } from "../../shared/ui";
 import type {
   BoardConfig,
@@ -6,10 +15,18 @@ import type {
   ConfiguratorViewModel,
   CorePanel,
   LibraryEntry,
-  ModelEntry,
   Ota,
 } from "../../types";
 import { consoleRecommendation } from "./consoleRecommendation";
+import {
+  applyToolchainOverride,
+  TOOLCHAIN_HINT,
+  TOOLCHAIN_INVALID_WARNING,
+  TOOLCHAIN_REJECTED_WARNING,
+  TOOLCHAIN_UNSUPPORTED_HINT,
+  toolchainListId,
+  toolchainPlaceholder,
+} from "./toolchainOverride";
 import { coreSiliconClass, runtimeOptions } from "../../shared/coreRuntime";
 import styles from "./ConfiguratorView.module.css";
 import {
@@ -100,17 +117,35 @@ export function TextInput({
   placeholder,
   onChange,
   label,
+  list,
+  disabled,
+  normalize,
 }: {
   value: string;
   placeholder?: string;
   onChange: (v: string) => void;
   label: string;
+  /** A `<datalist>` id: suggestions without restricting what can be typed. */
+  list?: string;
+  disabled?: boolean;
+  /** What the committed value looks like once `onChange`'s consumer has
+   *  cleaned it (e.g. trimmed). On blur the box shows that, so it never keeps
+   *  text the document does not hold. */
+  normalize?: (v: string) => string;
 }) {
   const [draft, setDraft] = useState(value);
   const focused = useRef(false);
   useEffect(() => {
     if (!focused.current) setDraft(value);
   }, [value]);
+  // A disabled input gets no blur, so a focus that ended by disabling would
+  // leave `focused` stuck and the draft frozen: release it and follow `value`.
+  useEffect(() => {
+    if (disabled) {
+      focused.current = false;
+      setDraft(value);
+    }
+  }, [disabled, value]);
   return (
     <input
       className={styles.control}
@@ -118,11 +153,14 @@ export function TextInput({
       value={draft}
       placeholder={placeholder}
       aria-label={label}
+      list={list}
+      disabled={disabled}
       onFocus={() => {
         focused.current = true;
       }}
       onBlur={() => {
         focused.current = false;
+        if (normalize) setDraft(normalize(draft));
       }}
       onChange={(e) => {
         setDraft(e.target.value);
@@ -140,11 +178,14 @@ export function NumberInput({
   placeholder,
   onChange,
   label,
+  focusKey,
 }: {
   value: string;
   placeholder?: string;
   onChange: (v: string) => void;
   label: string;
+  /** `data-focus-entry`, so "Edit in Configurator" can land here (#484). */
+  focusKey?: string;
 }) {
   const [draft, setDraft] = useState(value);
   const focused = useRef(false);
@@ -158,6 +199,7 @@ export function NumberInput({
       value={draft}
       placeholder={placeholder}
       aria-label={label}
+      data-focus-entry={focusKey}
       onFocus={() => {
         focused.current = true;
       }}
@@ -464,20 +506,6 @@ function ProjectSection({ cfg }: { cfg: UseConfigurator }) {
   );
 }
 
-/** DeepX NPU compile target enabled but missing its config/calibration path(s).
- *  A configurator-time gate so the user fixes it here instead of hitting a
- *  downstream `alp generate` file-not-found. */
-function deepxPathMissing(m: ModelEntry): boolean {
-  const d = m.compile?.deepx_dxm1;
-  return !!d && (!d.config.trim() || !d.calibration.trim());
-}
-
-/** DRP-AI NPU compile target enabled but missing its spec path. */
-function drpaiPathMissing(m: ModelEntry): boolean {
-  const d = m.compile?.drpai;
-  return !!d && !d.spec.trim();
-}
-
 /** The runtime a core naturally runs (its SoM-topology default). */
 function naturalRuntime(id: string): string | null {
   const cls = coreSiliconClass(id);
@@ -489,6 +517,28 @@ function naturalRuntime(id: string): string | null {
  * schemas/board.schema.json; kept in sync manually (webview doesn't depend
  * on @alp-sdk/core). Drift-guarded by test/configurator.peripheralCatalog.test.js --
  * a schema change fails that test until this array is updated to match. */
+// The `boot.swap_algorithm` values board.schema.json enumerates, plus the
+// unset state FIRST.
+//
+// There is no local default: alp-sdk v0.16.0 dropped the schema's
+// `"default": "scratch"` because the correct default belongs to the target,
+// not the schema -- the SDK derives it from the resolved slot layout
+// (scripts/alp_orchestrate/secure.py, alp-sdk#1413). This extension is given
+// the SKU and the cores but never the SoM's `memory_map:`, which is the half
+// of that derivation it would need, so the unset state is rendered AS unset
+// (the sibling Bootloader select does the same) rather than naming a mode
+// that may not be the one in force. `vendoredSchemas.ts` carries the full
+// rationale; #658 tracks offering only what the target accepts.
+//
+// Hand-synced to the schema enum, like PERIPHERAL_CHOICES below, and gated
+// the same way by test/configurator.swapAlgorithmDefault.test.js.
+const SWAP_ALGORITHM_CHOICES: [string, string][] = [
+  ["", "(SDK default)"],
+  ["scratch", "scratch"],
+  ["move", "move"],
+  ["overwrite", "overwrite"],
+];
+
 const PERIPHERAL_CHOICES = [
   "adc",
   "can",
@@ -588,6 +638,15 @@ function applyCoreLibrarySelection(
   return next;
 }
 
+/** One suggestion list per distinct content: cores of the same runtime class
+ *  share a `<datalist>`, a Zephyr core never sees a Linux toolchain. */
+function distinctToolchainLists(cores: CorePanel[]): string[][] {
+  const byId = new Map<string, string[]>();
+  for (const c of cores)
+    byId.set(toolchainListId(c.toolchainSuggestions), c.toolchainSuggestions);
+  return [...byId.values()];
+}
+
 function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
   const { mutate, vm } = cfg;
   const ensure = (d: BoardConfig) => {
@@ -595,6 +654,10 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
     d.cores[core.id] = d.cores[core.id] || {};
     return d.cores[core.id];
   };
+  // A key already in the file stays editable (so it can be cleared) even when
+  // the schema rejects it.
+  const hasKey = core.toolchain !== undefined || core.toolchainInvalid;
+  const toolchainOk = vm?.toolchainSupported !== false;
 
   if (core.inheritedFromTopology) {
     return (
@@ -613,14 +676,18 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
           <span className={styles.coreInherit}>inherits SoM default</span>
         </div>
         <div className={styles.ghostNote}>
-          Runs the SoM preset&apos;s default image. Override to set this
-          core&apos;s runtime and its own app directory.{" "}
+          Runs the SoM preset&apos;s default image
+          {core.defaultToolchain ? ` with ${core.defaultToolchain}` : ""}.
+          Override to set this core&apos;s runtime, its own app directory
+          {toolchainOk ? " or its toolchain" : ""}.{" "}
           <button
             type="button"
             className={styles.btn}
             onClick={() => mutate((d) => void ensure(d))}
           >
-            Override (set app directory)
+            {toolchainOk
+              ? "Override (app directory, toolchain)"
+              : "Override (app directory)"}
           </button>
         </div>
       </div>
@@ -715,6 +782,37 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
               />
             </Field>
           </Row>
+          <Field
+            label="Toolchain"
+            hint={
+              vm?.toolchainSupported === false && !hasKey
+                ? TOOLCHAIN_UNSUPPORTED_HINT
+                : TOOLCHAIN_HINT
+            }
+          >
+            <TextInput
+              label={`Toolchain for ${core.id}`}
+              value={core.toolchain || ""}
+              placeholder={toolchainPlaceholder(
+                core.defaultToolchain,
+                core.inTopology,
+              )}
+              list={toolchainListId(core.toolchainSuggestions)}
+              disabled={vm?.toolchainSupported === false && !hasKey}
+              normalize={(v) => v.trim()}
+              onChange={(v) =>
+                mutate((d) => applyToolchainOverride(ensure(d), v), {
+                  debounce: true,
+                })
+              }
+            />
+            {core.toolchainInvalid ? (
+              <div className={styles.warn}>{TOOLCHAIN_INVALID_WARNING}</div>
+            ) : null}
+            {vm?.toolchainSupported === false && hasKey ? (
+              <div className={styles.warn}>{TOOLCHAIN_REJECTED_WARNING}</div>
+            ) : null}
+          </Field>
           <Field label="Connectivity (IoT)">
             <div className={styles.chips}>
               {(["wifi", "mqtt", "ble", "tls"] as const).map((flag) => {
@@ -796,6 +894,13 @@ function CoresSection({ cfg }: { cfg: UseConfigurator }) {
       />
       {vm.cores.map((core) => (
         <CoreCard key={core.id} core={core} cfg={cfg} />
+      ))}
+      {distinctToolchainLists(vm.cores).map((ids) => (
+        <datalist key={toolchainListId(ids)} id={toolchainListId(ids)}>
+          {ids.map((id) => (
+            <option key={id} value={id} />
+          ))}
+        </datalist>
       ))}
     </div>
   );
@@ -1105,19 +1210,18 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
               </Field>
             </Row>
             <Row>
-              <Field label="Swap algorithm">
+              <Field
+                label="Swap algorithm"
+                hint="Leave unset to let the SDK derive this from the target's slot layout. A single-slot target has no slot1/scratch partition to swap into, so setting any value explicitly there is refused at build time."
+              >
                 <Select
                   label="Swap algorithm"
-                  value={boot.swap_algorithm || "scratch"}
-                  options={[
-                    ["scratch", "scratch"],
-                    ["move", "move"],
-                    ["overwrite", "overwrite"],
-                  ]}
+                  value={boot.swap_algorithm || ""}
+                  options={SWAP_ALGORITHM_CHOICES}
                   onChange={(v) =>
                     mutate((d) => {
                       d.boot = d.boot || {};
-                      if (v === "scratch") delete d.boot.swap_algorithm;
+                      if (!v) delete d.boot.swap_algorithm;
                       else d.boot.swap_algorithm = v as never;
                     })
                   }
@@ -1148,6 +1252,10 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
 
       {/* Storage */}
       <AdvCard title="Storage partitions">
+        <p className={styles.secHelp} data-resize-warning="">
+          Resizing a partition can move the partitions after it, and data
+          already on the device may be lost.
+        </p>
         <div className={styles.partList}>
           {storage.length === 0 ? (
             <span className={styles.selEmpty}>no partitions</span>
@@ -1169,6 +1277,7 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                 />
                 <NumberInput
                   label="Partition size KiB"
+                  focusKey={focusKeyOf("storage", p.name)}
                   value={p.size_kib != null ? String(p.size_kib) : ""}
                   placeholder="size KiB"
                   onChange={(v) =>
@@ -1459,6 +1568,7 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                 />
                 <NumberInput
                   label="IPC carve-out KiB"
+                  focusKey={focusKeyOf("ipc", e.name)}
                   value={e.carve_out_kb != null ? String(e.carve_out_kb) : ""}
                   placeholder="KiB"
                   onChange={(v) =>
@@ -1579,8 +1689,8 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                   }`}
                   title={
                     drpaiPathMissing(m)
-                      ? "DRP-AI is enabled but its spec path is empty — fill it in the YAML, or `alp generate` fails with file-not-found."
-                      : "Compile for the Renesas DRP-AI NPU — fill the spec path in YAML"
+                      ? "DRP-AI is enabled but input_shape, input_name or images is empty — fill them in the YAML, or `alp generate` fails with file-not-found."
+                      : "Compile for the Renesas DRP-AI NPU — fill input_shape, input_name and images in YAML"
                   }
                 >
                   <input
@@ -1591,8 +1701,12 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                         const mm = d.models![i];
                         mm.compile = mm.compile || {};
                         if (e.target.checked)
-                          // Schema requires the spec path; seed empty for the user to fill.
-                          mm.compile.drpai = mm.compile.drpai || { spec: "" };
+                          // Schema requires these three; seed empty for the user to fill.
+                          mm.compile.drpai = mm.compile.drpai || {
+                            input_shape: "",
+                            input_name: "",
+                            images: "",
+                          };
                         else {
                           delete mm.compile.drpai;
                           if (!mm.compile.deepx_dxm1) delete mm.compile;
@@ -1713,6 +1827,15 @@ function ReviewSection({ cfg }: { cfg: UseConfigurator }) {
 export function ConfiguratorView() {
   const cfg = useConfigurator();
   const [active, setActive] = useState<ConfiguratorSection>("project");
+  // #484: the Build Plan's "Edit in Configurator" lands in Advanced, where
+  // the IPC and storage entries are edited.
+  const openAdvanced = useCallback(() => setActive("advanced"), []);
+  const focusNotice = useFocusEntry(
+    cfg.board,
+    cfg.loaded,
+    openAdvanced,
+    active,
+  );
   const {
     sdkConnected,
     dirty,
@@ -1810,7 +1933,14 @@ export function ConfiguratorView() {
             </button>
           ))}
         </nav>
-        <main className={styles.main}>{renderSection()}</main>
+        <main className={styles.main}>
+          {focusNotice && (
+            <p className={styles.secHelp} role="status" data-focus-notice="">
+              {focusNotice}
+            </p>
+          )}
+          {renderSection()}
+        </main>
       </div>
 
       {validation.errors.length > 0 && (

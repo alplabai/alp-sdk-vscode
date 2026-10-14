@@ -133,8 +133,8 @@ export interface ZooEntryView {
   task: string;
   description: string;
   license: string;
-  validated_soms: string[];
-  runs_here: boolean | null;
+  validatedSoms: string[];
+  runsHere: boolean | null;
 }
 
 interface State {
@@ -444,10 +444,14 @@ export function useModels() {
   }
 
   // ONE capability gap, established once and stated once (#522). Every list is
-  // scanned because ANY of them can be the first call to reach a CLI that does
-  // not implement the surface — the panel fires `model list` and `model doctor`
-  // on open, but a customer who clicks straight through to the zoo gets the
-  // refusal there first.
+  // scanned because ANY of them can carry the refusal.
+  //
+  // The old reason given here — "the panel fires `model list` and `model
+  // doctor` on open" — has been false since #543: the host spawns none of the
+  // eight, and `unsupportedModelSubcommand` synthesises the refusal from the
+  // pin instead. Scanning every list is still right, and now for a different
+  // reason: which shaper the synthesised issue lands in follows the customer's
+  // click, not a fixed pair of calls on open.
   const cliModelSurfaceMissing =
     findUnsupportedSubcommand(state.issues) ??
     findUnsupportedSubcommand(state.coverageIssues) ??
@@ -462,8 +466,17 @@ export function useModels() {
   // `model.check-failed` is still a red banner, because hiding a genuine
   // failure behind the capability notice would trade four honest alarms for
   // none.
+  // Whether the gap covers the zoo / add sections THEMSELVES. The panel-wide
+  // flag above is true whenever ANY list carries a refusal, and at the rc1 pin
+  // the list/doctor pair always carries `models.panel-not-wired` while `zoo`
+  // and `add` are really spawned: a failure there is a real failure and must
+  // not be swallowed by a gap that is about other subcommands.
+  const zooUnsupported = Boolean(findUnsupportedSubcommand(state.zooIssues));
+  const addUnsupported = Boolean(findUnsupportedSubcommand(state.addIssues));
   return {
     ...state,
+    zooUnsupported,
+    addUnsupported,
     issues: withoutUnsupportedSubcommand(state.issues),
     coverageIssues: withoutUnsupportedSubcommand(state.coverageIssues),
     runIssues: withoutUnsupportedSubcommand(state.runIssues),

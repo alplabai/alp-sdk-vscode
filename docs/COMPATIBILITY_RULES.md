@@ -180,3 +180,160 @@ long as the consumed contracts hold. Record each assessed SDK release here.
       old diagnostics** until its next edit, save, or reopen. vscode-yaml
       consults the provider per validation pass and exposes no "revalidate now".
       Every other document picks up the new schema at once.
+
+- **alp-sdk v0.17.0 — compatible; both schemas re-vendored, `ownership` and
+  `memory` now in the vendored contract** (assessed 2026-10-13, GA tag). Tag
+  `v0.17.0`, commit `84132b98a`. `vendoredSchemas.ts` stays the single source
+  for the tag and both hashes (board `3a1770d9…`, system-manifest `581d3540…`).
+  The re-vendor began at `v0.17.0-rc2` (2026-10-11, commit `84a6e0d21`) so
+  #484's edit half had a contract to build on; the GA tag leaves both schemas
+  byte-identical to rc2 (its only schema change is
+  `on-module-links-v2.schema.json`, which this extension does not vendor), so
+  the hashes did not move. `SUPPORTED_CLI_VERSION` is **not** moved by this
+  entry.
+  - `system-manifest-v1.schema.json` (+120/-4). Root keys go **8 → 10**, still
+    `additionalProperties: false`: `schema_version, generated_by, hw_info,
+    slices, ipc, ownership, helper_mcus, boot_order, storage, memory`. The
+    read-only tripwire in `test/memoryRegions.readOnly.test.js` **fired as
+    designed** and now pins the ten keys.
+    - `memory[]` — the resolved region pane (alp-sdk#1365). Row is closed
+      (`additionalProperties: false`): required `name`, `source`
+      (`som_preset | soc_derived`), `kind` (`flash | ram | unclassified |
+      unresolved`), `status` (`ok | unresolved`); optional `base`,
+      `size_bytes`, `write_authority` (`customer_image | vendor_image |
+      customer_runtime | secure_enclave | none | composite`),
+      `accessible_from[]`, `reason`. An `unresolved` row must carry `reason`
+      and no `base`; an `ok` row must carry `base`. An ABSENT `memory:` means
+      an older producer or a pending layout, never "no regions". Already
+      parsed by #663; the field set matches `memoryView.ts`.
+    - `ownership` — **new**, `{<E1M instance>: "a55" | "m33"}`, omitted when
+      the SoM has no assignable resources (absent means "none", not "all
+      default"). Handled by a typed `ownership?: Record<string, string>` on
+      `SystemManifest` (core model + webview mirror), parsed by
+      `parseSystemManifest`; **no view renders it** (values are `string`, not
+      the two-core enum, so a core added upstream is tolerated).
+    - `slices[]` — `flash_method` / `flash_args` are no longer unconditionally
+      required: required unless `os: off` or the slice carries a `reason`.
+      Reserved `flash_method: none` = the flasher cannot flash it. New
+      optional `flash_method_resolved` (written by tan, never the emitter);
+      modelled on `ManifestSlice` in both copies.
+    - The root `description` now states that the closed root is a PRODUCER gate
+      and "tolerate unknown fields" is CONSUMER advice; do not relax one for
+      the other.
+  - `board.schema.json` (+191/-14). Top-level property set goes **21 → 24**,
+    still `additionalProperties: false`: new `camera_connectors`, `cameras`,
+    `ownership` (`{<instance>: a55|m33}` override of the SoM default). All three
+    were added to `BOARD_KEY_ORDER` and `BoardConfig` so the C1 round-trip
+    data-loss gate keeps them; the webview records them in `KNOWN_UNMIRRORED`
+    (preserved by the index signature, no UI). New `$defs.camera_connector`.
+    Other changes, in order of consequence:
+    - `models[].compile.drpai.spec` **removed**; `input_shape`, `input_name`,
+      `images` are now REQUIRED, `product` optional. `ModelEntry.compile.drpai`
+      is a new `DrpaiCompile` in both copies. The Configurator's DRP-AI toggle
+      now seeds the three required keys and its warning checks all three (the
+      only UI-adjacent edit; it kept the file compiling, no new affordance).
+    - `ota.server.tls_ca_bundle` **removed** (no emitter read it). Dropped
+      from `OtaServer` in both copies; `test/board.otaServer.schemaDrift.test.js`
+      (#589) did exactly the job it was written for.
+    - `som.sku` pattern drops `NX9...`: `E1M-NX9101` is no longer a valid SKU.
+    - `cores.<id>.link: auto | itcm` (AEN RAM-run), `cores.<id>.toolchain`
+      override, `app:` now optional (inherits the preset), `mux_select`
+      on route entries, `boot.modules` / `security.ps` / `ipc[].cacheable`
+      description edits. Not modelled; round-tripped by the index signatures.
+  - **Every `$ref` is still `#/$defs/...`**, so `schemaSafety.ts` still serves
+    an SDK's own copy.
+  - SoM catalogue — **11 → 13 SKUs**, forced by the submodule move (the
+    membership gate compares against `alp-sdk-upstream/metadata/e1m_modules`):
+    `E1M-NX9101` removed; `E1M-AEN803`, `E1M-V2N103`, `E1M-V2M103` added. The
+    two Renesas additions are same-PCB memory tiers, so they join the Renesas
+    tan-floor set in `test/alpCli.somCliFloor.test.js`.
+  - Kconfig catalogue — both artefacts regenerated: metadata 222 → 221
+    symbols, `alp-kconfig-symbols.txt` 350 → 383.
+  - Fixtures — `test/fixtures/system-manifest.aen801.yaml` still conforms
+    (`flash_method` present on its active slices); the conformance gate passed
+    unchanged.
+
+- **alp-sdk v0.16.0 — compatible; both schemas re-vendored, one product change
+  required** (assessed 2026-09-06). Tag `v0.16.0`, commit
+  `eb96112ba7d1cc3b4084c985962ea31772177d74`. Both vendored schemas now track
+  this release; `packages/alp-core/src/validation/vendoredSchemas.ts` stays the
+  single source for the tag and both hashes
+  (board `1549c708…`, system-manifest `abbe4a44…`).
+  - `system-manifest-v1.schema.json` — **the one change that needed code.**
+    `helper_mcus[]`'s `required` moves from `["name","chip"]` to
+    `["name","chip","flash_policy"]`, and gains `flash_policy`
+    (`enum ["customer","factory","recovery_only"]`) plus an unenumerated
+    `update_channel`. The schema is explicit that there is **no
+    absent-means-`customer` default**, and that the keys are independent — "a
+    consumer must not read one key's presence as excluding another's".
+    v0.16.0 ships 11 SoM presets; the 10 that declare a helper all declare
+    `flash_policy: recovery_only` (E1M-NX9101 declares `helper_firmware: []`).
+    Enforcement is tan's, and this extension **discloses without filtering**.
+    `packages/alp-core/src/flash/consent.ts` attaches the policy to the helper's
+    entry as a verbatim note and still lists it under "will be programmed";
+    only the `--core`/`--helper` scope ever moves an entry to `skipped`.
+    An unrecognised value is quoted as itself, never folded into the absent case.
+
+    **Why not filter — the divergence that makes it unsafe.** A first cut moved
+    every non-`customer` helper into "Skipped, NOT written", reasoning that tan
+    would decline it anyway. That is a PREDICTION of `helper_flash_gate`
+    (`python/tan/core/flash_plan.py`, tan-cli#611) and it is WRONG for the
+    absent case at the pinned tan (`SUPPORTED_CLI_VERSION = "0.6.0"`,
+    `src/alpCli/service.ts:98`): `if not policy:` returns a skip only when a
+    method AND a channel are both declared, else dispatch continues. Every
+    V2N/V2M manifest emitted by alp-sdk <= v0.15.0 is exactly that shape —
+    upstream's own v0.15.0 golden `rpmsg-v2n.system-manifest.snap` carries
+    `{name: gd32_bridge, chip: gd32g553, flash_method: swd_probe,
+    flash_args: {interface: cmsis-dap, target: gd32g553, base: '0x08000000'}}`
+    with no `flash_policy` and no `update_channel`. The consent screen would
+    have printed "Skipped, NOT written" over a real SWD write to `0x08000000`,
+    which is `consent.ts`'s own rule (a) inverted: over-listing costs a line,
+    under-listing is a device programmed without consent.
+    The **root** property set is unchanged (the same eight keys), so the
+    read-only Memory-tab tripwire in `test/memoryRegions.readOnly.test.js` still
+    passes: alp-sdk's schema-only `memory` root key is on an unmerged branch,
+    not on this tag.
+  - `board.schema.json` — six edits, five of them description text. The
+    structural one: `boot.swap_algorithm` **loses its `"default": "scratch"`**.
+    There is now no fixed schema default (the SDK derives it from the target's
+    real slot layout), and on a single-slot target — E1M-AEN801, whose
+    disjoint-slot0 `memory_map:` has no slot1/scratch region (alp-sdk#1069 /
+    #1413) — setting any of the three values explicitly is a build-time
+    `OrchestratorError`. The Configurator's own `|| "scratch"` default was
+    **deliberately NOT fixed in the re-vendor** — different file, different test
+    surface, no coupling to the schema hashes — and was removed separately in
+    #658: `SWAP_ALGORITHM_CHOICES` now offers `(SDK default)` first and the
+    absent key renders as absent, gated by
+    `test/configurator.swapAlgorithmDefault.test.js`. Still open on #658:
+    offering only the values the resolved target accepts. That needs the
+    single-slot fact on the wire, and neither `alp presets` nor
+    `metadata/catalog.json` carries it — the count the issue asked for is
+    all six of `E1M-AEN301` / `E1M-AEN401` / `E1M-AEN501` / `E1M-AEN601` /
+    `E1M-AEN701` / `E1M-AEN801`, each declaring the same disjoint-slot0
+    `memory_map:` (`he_slot0` at `0x80010000`, `hp_slot0` at `0x802b0000`,
+    no `slot1`, no `scratch`).
+  - **Top-level property set UNCHANGED** — the same 21 keys, still
+    `additionalProperties: false` — so `BOARD_KEY_ORDER`
+    (`packages/alp-core/src/board/models.ts`) needed no change and the C1
+    round-trip data-loss gate is unaffected.
+  - **Every `$ref` is still `#/$defs/...`** (board.schema.json; the manifest
+    schema carries none), so `schemaSafety.ts`'s `^#`-only acceptance keeps
+    serving an SDK's own copy instead of silently falling every customer back to
+    the bundled one.
+  - SoM catalogue — **unchanged at 11 SKUs**, same list as v0.15.0.
+  - Kconfig catalogue — both vendored artefacts regenerated; the symbol sets did
+    **not** move (`src/lsp/generated/kconfig-metadata.json` stays 222 symbols and
+    changed only its `submoduleRev`; `test/fixtures/alp-kconfig-symbols.txt`
+    stays 350 and is byte-identical).
+  - Fixtures — `test/fixtures/system-manifest.aen801.yaml` was replaced with a
+    byte-exact copy of upstream's own governed golden
+    `tests/fixtures/emit-snapshots/rpmsg-aen.system-manifest.snap`. The file it
+    replaced was **not** a real emit despite three tests calling it one: a
+    v0.7.0 E1M-AEN701 emit with `sku`/`silicon` string-substituted (`eb2d77d6`),
+    still carrying `machine: e1m-aen701-a32`.
+  - New gate — `test/systemManifest.fixtures.schemaConformance.test.js`. Nothing
+    previously validated a fixture against the vendored schema, which is why a
+    fixture missing a REQUIRED key stayed green through the whole suite. It is a
+    required-key presence check only (no types, enums, or
+    `additionalProperties`); verified to fail on the pre-v0.16.0 fixture and
+    pass on the replacement.

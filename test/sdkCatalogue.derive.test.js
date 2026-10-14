@@ -28,7 +28,7 @@ const catalogue = {
     {
       name: "e1m-evk",
       displayName: "",
-      hostsSomFamilies: ["alif-ensemble", "nxp-imx9"],
+      hostsSomFamilies: ["alif-ensemble"],
       populated: { lsm6dso: true },
     },
     {
@@ -92,11 +92,14 @@ const {
 
 test("chipFamilyForSku maps SKU prefixes to chip family tokens", () => {
   assert.equal(chipFamilyForSku("E1M-AEN801"), "aen");
-  assert.equal(chipFamilyForSku("E1M-NX9101"), "imx93");
+  // E1M-NX9101 left the SKU list in alp-sdk v0.17.0.
+  assert.equal(chipFamilyForSku("E1M-NX9101"), undefined);
   assert.equal(chipFamilyForSku("E1M-V2N101"), "v2n");
   assert.equal(chipFamilyForSku("E1M-V2M101"), "v2n-m1");
   assert.equal(chipFamilyForSku("E1M-NOPE"), undefined);
   assert.equal(chipFamilyForSku(""), undefined);
+  // E1M-NX9101 was never produced and alp-sdk removed it (#700).
+  assert.equal(chipFamilyForSku("E1M-NX9101"), undefined);
 });
 
 test("chipsForSom filters chips by the SKU's family token", () => {
@@ -112,7 +115,6 @@ test("chipsForSom filters chips by the SKU's family token", () => {
         families: ["aen", "v2n", "v2n-m1"],
       },
       { chipId: "deepx_dxm1", displayName: "", families: ["v2n-m1"] },
-      { chipId: "imx_only", displayName: "", families: ["imx93"] },
     ],
   };
   assert.deepEqual(
@@ -123,30 +125,21 @@ test("chipsForSom filters chips by the SKU's family token", () => {
     chipsForSom(cat, "E1M-V2M101").map((c) => c.chipId),
     ["lsm6dso", "deepx_dxm1"],
   );
-  assert.deepEqual(
-    chipsForSom(cat, "E1M-NX9101").map((c) => c.chipId),
-    ["imx_only"],
-  );
+  assert.deepEqual(chipsForSom(cat, "E1M-NX9101"), []);
   assert.deepEqual(chipsForSom(cat, "E1M-NOPE"), []);
 });
 
-test("chipsForSom accepts the vendor family alias (nxp-imx9) for i.MX 9", () => {
+test("chipsForSom matches the family token exactly — no vendor alias survives NX9's retirement", () => {
   const cat = {
     soms: [],
     boards: [],
     libraries: [],
     socs: [],
     chips: [
-      { chipId: "imx_only", displayName: "", families: ["imx93"] },
-      {
-        chipId: "murata_lbee5pl2dl",
-        displayName: "",
-        families: ["nxp-imx9"],
-      },
+      { chipId: "murata_lbee5pl2dl", displayName: "", families: ["nxp-imx9"] },
     ],
   };
-  assert.deepEqual(
-    chipsForSom(cat, "E1M-NX9101").map((c) => c.chipId),
-    ["imx_only", "murata_lbee5pl2dl"],
-  );
+  for (const sku of ["E1M-AEN801", "E1M-V2N101", "E1M-V2M101", "E1M-NX9101"]) {
+    assert.deepEqual(chipsForSom(cat, sku), [], sku);
+  }
 });

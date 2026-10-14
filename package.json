@@ -3,7 +3,7 @@
   "displayName": "Alp IDE",
   "packageManager": "pnpm@11.1.0",
   "description": "First-class IDE support for Alp SDK projects: board.yaml schema-aware editing, alp_project.py loader commands, per-OS dependency bootstrap, and west build/flash/run workflows.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "publisher": "AlpLabAI",
   "license": "Apache-2.0",
   "repository": {
@@ -191,6 +191,11 @@
         "category": "Alp"
       },
       {
+        "command": "alp.openSerialMonitor",
+        "title": "Alp: Open serial monitor",
+        "category": "Alp"
+      },
+      {
         "command": "alp.westAlpImage",
         "title": "Alp: Build image (assemble image bundle)",
         "category": "Alp"
@@ -232,6 +237,24 @@
         "title": "Alp: Preview build plan",
         "category": "Alp",
         "icon": "$(list-tree)"
+      },
+      {
+        "command": "alp.buildPlan.refresh",
+        "title": "Refresh build plan",
+        "category": "Alp",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "alp.buildPlan.build",
+        "title": "Build (tan build)",
+        "category": "Alp",
+        "icon": "$(play)"
+      },
+      {
+        "command": "alp.buildPlan.materialise",
+        "title": "Materialise build plan",
+        "category": "Alp",
+        "icon": "$(save-all)"
       },
       {
         "command": "alp.openModelsPanel",
@@ -429,6 +452,18 @@
           "when": "false"
         },
         {
+          "command": "alp.buildPlan.refresh",
+          "when": "activeWebviewPanelId == 'alp-ide.buildPlan'"
+        },
+        {
+          "command": "alp.buildPlan.build",
+          "when": "activeWebviewPanelId == 'alp-ide.buildPlan'"
+        },
+        {
+          "command": "alp.buildPlan.materialise",
+          "when": "activeWebviewPanelId == 'alp-ide.buildPlan'"
+        },
+        {
           "command": "alp.openModelsPanel",
           "when": "false"
         },
@@ -442,6 +477,21 @@
           "command": "alp.openConfigurator",
           "when": "resourceFilename == board.yaml && activeEditor == 'workbench.editors.files.textFileEditor'",
           "group": "navigation"
+        },
+        {
+          "command": "alp.buildPlan.build",
+          "when": "activeWebviewPanelId == 'alp-ide.buildPlan'",
+          "group": "navigation@1"
+        },
+        {
+          "command": "alp.buildPlan.materialise",
+          "when": "activeWebviewPanelId == 'alp-ide.buildPlan'",
+          "group": "navigation@2"
+        },
+        {
+          "command": "alp.buildPlan.refresh",
+          "when": "activeWebviewPanelId == 'alp-ide.buildPlan'",
+          "group": "navigation@3"
         }
       ],
       "explorer/context": [

@@ -613,6 +613,67 @@ function parseSdkVersionYaml(text: string): string | null {
   return null;
 }
 
+/**
+ * Does this directory name itself name a release?
+ *
+ * MIRRORED, deliberately: `packages/alp-webview/src/shared/sdkRows.ts` carries
+ * the same predicate under the same name, because the webview mirrors this
+ * package by hand rather than importing it. `test/sdk.identity.test.js` pins
+ * the two in agreement over a shared corpus, the way the other hand-mirrors in
+ * `types.ts` are pinned.
+ */
+export function looksLikeVersionDir(name: string): boolean {
+  return /^v?\d+\.\d+\.\d+(?:[-+].+)?$/.test(name);
+}
+
+/**
+ * Which release IS the SDK at `sdkPath`?
+ *
+ * ── Why the declared version is not the answer ─────────────────────────────
+ *
+ * An RC's `metadata/sdk_version.yaml` names the release it is a CANDIDATE for,
+ * not itself. Measured on a real install:
+ *
+ *   ~/.alp/sdk/v0.16.0-rc1  git describe --tags  ->  v0.16.0-rc1
+ *                           sdk_version.yaml     ->  0.16.0
+ *
+ * and it is systematic, not one bad tag -- `v0.15.0-rc1` declares `0.15.0` too,
+ * so an rc and its GA declare the SAME string. Filed upstream as alp-sdk#1902.
+ *
+ * This repo has already been bitten by it once, one surface over: #593, where
+ * the `v0.16.0` release row bound to the `v0.16.0-rc1` install, both rows
+ * showed Active off one entry, and Remove on a row labelled `v0.16.0` would
+ * have deleted `v0.16.0-rc1`. `sdkRows.ts` fixed that and wrote the rule down:
+ * "the directory name is the AUTHORITATIVE answer to 'which release is this?'
+ * and the version-metadata fallback must not override it."
+ *
+ * The rule was never applied to the Hub's SDK badge, which read the declared
+ * version directly and so disagreed with the SDK Manager panel about which SDK
+ * was active. Same order of authority as `installedFor`, so the two surfaces
+ * answer the same question the same way:
+ *
+ *   1. the directory names a release  -> that is the answer, exactly
+ *   2. otherwise                      -> what the SDK declares about itself
+ *
+ * Rule 2 is what a sibling checkout (`../alp-sdk`) or a hand-made cache needs:
+ * its directory name says nothing, and the declared version is all there is.
+ *
+ * Returned WITHOUT a leading `v`, matching `checkSdkReadiness`'s shape so
+ * callers that render `v${version}` keep working.
+ */
+export function sdkIdentityVersion(
+  sdkPath: string,
+  declaredVersion: string | null,
+): string | null {
+  const tail =
+    sdkPath
+      .replace(/[\\/]+$/, "")
+      .split(/[\\/]/)
+      .pop() ?? "";
+  if (looksLikeVersionDir(tail)) return tail.replace(/^v/, "");
+  return declaredVersion;
+}
+
 export function checkSdkReadiness(
   sdkPath: string,
   pathExists: PathExists,

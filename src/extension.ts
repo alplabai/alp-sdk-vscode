@@ -56,6 +56,7 @@ import {
 } from "./util";
 import { registerTreeViews } from "./views";
 import { StateManager } from "./views/stateManager";
+import { registerMonitorCommands } from "./monitor";
 import { registerWestCommands } from "./west";
 import { installShellCompletion } from "./completion";
 import {
@@ -340,6 +341,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     ...registerLoaderCommands(context),
     ...registerWestCommands(context),
+    ...registerMonitorCommands(context),
     ...registerBootstrapCommand(context),
     // Backs the `preLaunchTask` labels tan's generated launch.json profiles
     // reference (e.g. "alp: build active target") — without this VS Code has
@@ -423,6 +425,18 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.commands.registerCommand("alp.showBuildPlan", () =>
       BuildPlanPanel.open(context),
+    ),
+    // The Build Plan panel's editor-title toolbar (package.json
+    // `menus.editor/title`, gated on `activeWebviewPanelId`): the actions
+    // live in VS Code's own toolbar rather than as buttons in the page.
+    vscode.commands.registerCommand("alp.buildPlan.refresh", () =>
+      BuildPlanPanel.refresh(context),
+    ),
+    vscode.commands.registerCommand("alp.buildPlan.build", () =>
+      BuildPlanPanel.build(context),
+    ),
+    vscode.commands.registerCommand("alp.buildPlan.materialise", () =>
+      BuildPlanPanel.materialise(context),
     ),
     vscode.commands.registerCommand("alp.openModelsPanel", () =>
       showModelsPanel(context),
