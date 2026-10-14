@@ -163,16 +163,18 @@ async function alpFlash(context: vscode.ExtensionContext): Promise<void> {
     "flash this device",
   );
   if (!target) return;
-  // No confirm flag here on purpose, and the reason is not the one tan's
-  // `--help` gives. `tan flash --help` says a bare run "previews, writes
-  // nothing, exits non-zero"; measured against tan v0.6.0 that holds for only
-  // three of the six backends (tan-cli#796), and a Zephyr slice is programmed
-  // by this argv exactly as written. What stands between this line and the
-  // write is `gateFlashDispatch` (`src/flash/gate.ts`), which shows the
-  // customer what the manifest says is about to be programmed and spawns
-  // nothing until they accept. `--confirm` here would additionally arm the
-  // three backends that DO honour it — an irreversible write nobody asked for
-  // — and `test/flash.dispatch.test.js` fails the build if anyone writes it.
+  // No confirm flag here on purpose: this site does not know which backend tan
+  // will route each slice to. At tan 0.7.0 `--confirm` is a no-op for
+  // `zephyr_west_flash`/`baremetal_cmake_flash` (they write on a bare run),
+  // turns a `yocto_wic*` preview into a real `bmaptool`/`dd` to a HOST block
+  // device, hard-refuses `xspi_flashwriter`, and is the only thing that makes
+  // Flow D (`alif_mram_jlink` — where tan routes every AEN Zephyr slice, whatever
+  // the manifest's `flash_method` says) write at all. So the decision is made
+  // by `gateFlashDispatch` (`src/flash/gate.ts`), which asks tan for a
+  // `--dry-run` preview, arms `--confirm` only when every gated entry is Flow
+  // D, and asks a second question before the boot table is replaced.
+  // `test/flash.dispatch.test.js` fails the build if a call site writes
+  // `--confirm` itself.
   if (!(await confirmFlashReadiness(context, target.cwd))) return;
   await runAlpStreamed(context, ["flash", ...target.appArg], {
     name: FLASH_RUN_NAME,

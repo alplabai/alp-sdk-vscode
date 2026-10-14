@@ -5,20 +5,21 @@
 // `child_process`. The screen itself is `src/flash/gate.ts`; the shape
 // precedent is `../deps/consent.ts` (#467).
 //
-// ── WHY THE MANIFEST AND NOT `--dry-run` (a deliberate deviation from #540) ─
+// ── WHY THE TARGET LIST COMES FROM THE MANIFEST, AND THE PREVIEW ONLY ADDS ─
 //
-// #540 recommends "preview with `tan flash --dry-run`, then a modal". This
-// module deviates, for two measured reasons:
+// The list of what a run may write is read from the manifest, not from
+// `tan flash --dry-run`, because the manifest is the one source that lists an
+// entry tan would NOT act on, and rule (a) below needs those. `tan flash` also
+// still has no entry in the vendored envelope corpus, so its JSON shape is
+// measured (test/fixtures/tan-flash/) rather than declared.
 //
-//   1. `tan flash` HAS NO ENTRY in the vendored envelope corpus
-//      (`test/golden/tan-contract/envelope-contract.json` records 18
-//      envelopes; flash is not among them). Its JSON shape is neither frozen
-//      nor measurable in this repo, so a parser written against it would be
-//      inventing a contract rather than consuming one.
-//   2. `--dry-run`'s own help at the 0.6.0 pin says it "also bypasses the
-//      required-tool PATH gate". A green dry-run therefore does NOT prove the
-//      flashing tools are installed, and rendering it as a preview would put
-//      a reassurance on screen that the run does not support.
+// What the manifest cannot say is which backend tan RESOLVES: on AEN it names
+// `zephyr_west_flash` for slices tan routes to Flow D. That half is supplied by
+// the preview (`./envelope`, `./arming`) and joined to this plan by
+// `describeFlashPreview`. The preview's own limit still holds: `--dry-run`
+// "also bypasses the required-tool PATH gate" (its help), so a green preview
+// does not prove the flashing tools are installed and is never shown as if it
+// did.
 //
 // The system manifest is already parsed and modelled here (`../systemManifest`),
 // is already covered by tests, and carries the fields the dialog must name

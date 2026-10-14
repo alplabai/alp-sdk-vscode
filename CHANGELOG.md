@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+- **Write to Device arms the AEN write (#540) — not yet verified on hardware.**
+  tan routes every AEN Zephyr slice to Flow D (`alif_mram_jlink`), which only
+  previews without `--confirm`, so the button used to write nothing. Flash now
+  asks tan for a
+  `--dry-run` preview, arms `--confirm` only when every gated entry resolves
+  to Flow D, and never arms a `yocto_wic*` or `xspi_flashwriter` entry; a scope
+  that mixes them with Flow D is refused with nothing written.
+  - A Flow D flash asks a second, separate question, "Replace boot table",
+    showing tan's own warning that the write replaces the whole ATOC and
+    delists every resident entry it does not name. `--atoc-unqueryable` is
+    added only after it; there is no "don't ask again".
+  - A per-core Flash that would delist a sibling's boot entry is refused; use
+    the whole-board Flash.
+  - Signing uses a SETOOLS install YOU name: `SETOOLS_DIR` in the extension
+    host's environment (passed as `--setools-dir`), or exported by your login
+    profile. One named only by the manifest is refused by tan. The run goes
+    through your login shell, which reads `.zprofile`/`.zlogin` for zsh and
+    `.bash_profile`/`.profile` for bash — not `.zshrc`/`.bashrc`. A profile that
+    prints is tolerated: Alp reads tan's JSON line even with output before it.
+  - On the real AEN801 manifest, which also holds the yocto `a32_cluster`
+    slice, the whole-board Flash and every per-core Flash are refused with
+    nothing written, and the message says it cannot be done from the IDE yet
+    (tan can select one slice, not several).
+  - tan's `flash.internal-failure` is reported as "may be partly programmed",
+    never "nothing was written": it can be raised after the write.
+  - An armed AEN write is read from tan's JSON envelope rather than its exit
+    status: previewed, refused before writing, failed during the write (with
+    the partial-write warning) and written are different messages. Its live
+    text stream is replaced by tan's entries and issues, printed to the Alp SDK
+    log when the run ends; other flashes keep streaming as before.
+  - A flash is refused when the manifest already carries `flash_args.confirm`
+    or `flash_args.atoc_unqueryable`, or when the argv has any option outside a
+    short allow-list (`--raw`, `--ram`, `--replace-atoc`, `--no-reset`, an
+    abbreviation, `--core --confirm`, a `--` before the command, …).
+  - `ALP_FLASH_FORCE` is removed from a flash's environment after the login
+    shell's profile has run (`env -u`), so a profile `export` cannot arm tan.
+
 - **Pick a core's toolchain in the Board Configurator (#314).** Each core
   has an optional Toolchain field that writes `cores.<core>.toolchain` to
   board.yaml, suggests the ids the SDK catalogue gives cores of the same

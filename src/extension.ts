@@ -311,15 +311,20 @@ export function activate(context: vscode.ExtensionContext): void {
         // action that opens nothing is worse than no action, so the reveal is
         // picked from the mode the run actually used.
         // A flash does NOT get "failed." (#540). A non-zero exit from `tan
-        // flash` is not evidence that a write was attempted and lost: at the
-        // 0.6.0 pin an UNARMED confirm gate exits non-zero for a run that
+        // flash` is not evidence that a write was attempted and lost: at tan
+        // 0.7.0 an UNARMED confirm gate exits non-zero for a run that
         // deliberately did nothing, a missing backend tool exits before any
         // slice is touched, and a multi-slice run can exit non-zero having
         // already programmed the slices ahead of the one that failed.
         // Nothing here can tell those apart — the exit status is one number —
-        // so this sentence says what is known and stops at it. Inventing a
-        // classification is what put "flash failed" on screen for a preview
-        // that wrote nothing; the log, not the toast, carries the reason.
+        // so this sentence says what is known and stops at it.
+        //
+        // An ARMED Flow D flash, and an unarmed one that leaves a yocto/xspi
+        // entry unwritten, do not arrive here with an exit code: the runner
+        // reads their `--format json` envelope and raises the verdict itself
+        // (`src/flash/outcome.ts`). A flash that only runs backends that write
+        // unasked (west, cmake) keeps the text-mode run and lands here, as does
+        // any flash that reaches the finish event some other way.
         notifyAsync(
           planFailure({
             operation: name,
