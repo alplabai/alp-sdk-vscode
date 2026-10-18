@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Every release goes to the stable channel.** `release-vsix.yml` no longer
+  derives the Marketplace / Open VSX channel from the minor digit, so an odd
+  minor is no longer published as a pre-release and the GitHub Release is
+  never flagged prerelease. The parity rule hid `0.5.x` and `0.7.0` from
+  default installs: users got the previous stable build, and its first-run
+  dialog offered the previous tan. `scripts/resolve-vsix-channel.mjs` is
+  deleted, and so is the `package:dev` script that packaged a `--pre-release`
+  VSIX.
+
 ## 0.7.0
 
 **Pre-release.** An odd minor, so `release-vsix.yml` publishes this build to
