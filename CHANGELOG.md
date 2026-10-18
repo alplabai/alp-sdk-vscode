@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.1
+
+**Stable.** The first stable release since `0.6.0`: the same code as the
+`0.7.0` pre-release, so default installs now get tan `0.7.0` and the alp-sdk
+`v0.17.0` schemas. tan `0.7.0` needs alp-sdk `v0.17.0` or newer to build any
+Zephyr board, so upgrade the SDK with the extension. Everything listed under
+`0.7.0` reaches stable users here for the first time.
+
+- **Every release goes to the stable channel.** `release-vsix.yml` no longer
+  derives the Marketplace / Open VSX channel from the minor digit, so an odd
+  minor is no longer published as a pre-release and the GitHub Release is
+  never flagged prerelease. The parity rule hid `0.5.x` and `0.7.0` from
+  default installs: users got the previous stable build, and its first-run
+  dialog offered the previous tan. `scripts/resolve-vsix-channel.mjs` is
+  deleted, and so is the `package:dev` script that packaged a `--pre-release`
+  VSIX.
+
 ## 0.7.0
 
 **Pre-release.** An odd minor, so `release-vsix.yml` publishes this build to

@@ -46,15 +46,14 @@ test("package scripts let vsce run vscode:prepublish exactly once", () => {
   );
 
   assert.equal(pkg.scripts.package, "vsce package --no-dependencies");
-  assert.equal(
-    pkg.scripts["package:dev"],
-    "vsce package --no-dependencies --pre-release",
-  );
+  // No pre-release packaging script: every release is stable
+  // (test/vsixPublishChannel.test.js), so `package:dev` was retired.
+  assert.equal(pkg.scripts["package:dev"], undefined);
   // prepublish still does the real build work (webview + tsc + esbuild bundle).
   assert.match(pkg.scripts["vscode:prepublish"], /bundle:ext/);
   // No packaging script may explicitly chain prepublish -- vsce runs it itself,
   // so an explicit call would build everything twice.
-  for (const name of ["package", "package:dev", "publish:vsix"]) {
+  for (const name of ["package", "publish:vsix"]) {
     assert.doesNotMatch(
       pkg.scripts[name],
       /vscode:prepublish/,

@@ -3,7 +3,7 @@
   "displayName": "Alp IDE",
   "packageManager": "pnpm@11.1.0",
   "description": "First-class IDE support for Alp SDK projects: board.yaml schema-aware editing, alp_project.py loader commands, per-OS dependency bootstrap, and west build/flash/run workflows.",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "publisher": "AlpLabAI",
   "license": "Apache-2.0",
   "repository": {
@@ -616,7 +616,6 @@
     "watch": "tsc --build --watch",
     "vscode:prepublish": "pnpm --filter ./packages/alp-webview run build && tsc --build && pnpm run bundle:ext",
     "package": "vsce package --no-dependencies",
-    "package:dev": "vsce package --no-dependencies --pre-release",
     "publish:vsix": "vsce publish --no-dependencies",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
