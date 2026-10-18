@@ -616,7 +616,6 @@
     "watch": "tsc --build --watch",
     "vscode:prepublish": "pnpm --filter ./packages/alp-webview run build && tsc --build && pnpm run bundle:ext",
     "package": "vsce package --no-dependencies",
-    "package:dev": "vsce package --no-dependencies --pre-release",
     "publish:vsix": "vsce publish --no-dependencies",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
