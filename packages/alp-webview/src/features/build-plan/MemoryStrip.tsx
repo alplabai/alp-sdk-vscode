@@ -54,11 +54,21 @@ const CONFLICT_TITLE: Record<MemoryConflict["kind"], string> = {
   outside_region: "lands outside the region it names",
 };
 
-/** The narrowest box that still holds its name, and the narrowest that
- *  holds its figure beneath the name; anything narrower keeps the text in
- *  its title and in the detail line instead of clipping it mid-glyph. */
+/** The narrowest placed-image box that holds its name, and the narrowest
+ *  that holds its figure beneath the name; anything narrower keeps the text
+ *  in its title and in the detail line instead of clipping it mid-glyph.
+ *  (A region cell never goes unnamed: see stripLabels.ts.) */
 const NAME_MIN_PX = 56;
 const FIGURE_MIN_PX = 150;
+
+/** Height of one axis-label row and of one callout row, in CSS pixels —
+ *  `.tickLabel` / `.callout` line boxes in MemoryStrip.module.css. */
+const AXIS_ROW_PX = 16;
+const AXIS_BASE_PX = 26;
+const CALLOUT_ROW_PX = 18;
+
+const LOCK_TITLE =
+  "Not an edit target: no IPC carve-out or storage partition can be placed here (separate from write authority)";
 
 /** The strip's own live width, and the ref that measures it. 0 — no
  *  `ResizeObserver`, or one that has not fired yet — keeps the fallback, so
@@ -101,12 +111,20 @@ function selectableOrder(
   const byLeft = (a: { left: number }, b: { left: number }) => a.left - b.left;
   const spans = model ? [...model.spans].sort(byLeft).map((s) => s.id) : [];
   const regions = model
-    ? [...model.regions]
-        .filter((r) => r.selectable)
-        .sort(byLeft)
-        .map((r) => r.id)
+    ? [
+        ...model.parents.filter((r) => r.selectable).map((r) => r.id),
+        ...[...model.regions]
+          .filter((r) => r.selectable)
+          .sort(byLeft)
+          .map((r) => r.id),
+      ]
     : [];
   return [...spans, ...regions, ...partitionIds, ...ghosts.map((g) => g.id)];
+}
+
+/** The distinct container depths, outermost first. */
+function depthsOf(parents: StripModel["parents"]): number[] {
+  return [...new Set(parents.map((p) => p.depth))].sort((a, b) => a - b);
 }
 
 function conflictText(c: MemoryConflict): string {
@@ -330,7 +348,13 @@ function CellField({ cells }: { cells: CellFill }) {
   );
 }
 
-function Legend({ tiers }: { tiers: AuthorityTier[] }) {
+function Legend({
+  tiers,
+  anyLocked,
+}: {
+  tiers: AuthorityTier[];
+  anyLocked: boolean;
+}) {
   return (
     <ul className={styles.legend} aria-label="Write authority">
       {tiers.map((tier) => (
@@ -344,6 +368,12 @@ function Legend({ tiers }: { tiers: AuthorityTier[] }) {
           {TIER_LABEL[tier]}
         </li>
       ))}
+      {anyLocked && (
+        <li title={LOCK_TITLE}>
+          <Icon name="lock" size={10} className={styles.lockIcon} />
+          Not an edit target
+        </li>
+      )}
     </ul>
   );
 }
@@ -437,10 +467,11 @@ export function MemoryStrip({
     onClick: () => setPicked(id),
     onKeyDown: onKeyDown(id),
   });
+  const anyLocked = model ? model.regions.some((r) => r.locked) : false;
   const tiersDrawn = model
-    ? ([...new Set(model.regions.map((r) => r.tier))].filter(
-        (t): t is AuthorityTier => t !== null,
-      ) as AuthorityTier[])
+    ? ([
+        ...new Set([...model.parents, ...model.regions].map((r) => r.tier)),
+      ].filter((t): t is AuthorityTier => t !== null) as AuthorityTier[])
     : [];
   const note =
     regions.length === 0
@@ -452,6 +483,18 @@ export function MemoryStrip({
   // address strip; they sit with the ghosts, solid-edged, selectable.
   const partitions = rows.filter((r) => r.origin === "span" && r.base === null);
   const headingId = `${uid}-heading`;
+  const calloutRows = model
+    ? Math.max(
+        0,
+        ...model.regions
+          .filter((r) => r.label.mode === "callout")
+          .map((r) => r.label.row + 1),
+      )
+    : 0;
+  const axisRows = model
+    ? Math.max(1, ...model.ticks.map((t) => (t.row ?? 0) + 1))
+    : 1;
+  const ticksHeight = AXIS_BASE_PX + (axisRows - 1) * AXIS_ROW_PX;
   return (
     <section className={styles.section} aria-labelledby={headingId}>
       <div className={styles.sectionHead}>
@@ -459,12 +502,18 @@ export function MemoryStrip({
           Memory
         </h2>
         {note && <span className={styles.sectionNote}>{note}</span>}
-        {tiersDrawn.length > 0 && <Legend tiers={tiersDrawn} />}
+        {(tiersDrawn.length > 0 || anyLocked) && (
+          <Legend tiers={tiersDrawn} anyLocked={anyLocked} />
+        )}
       </div>
       {model ? (
         <div className={styles.strip} ref={stripRef} data-strip-width={width}>
           <div className={styles.lanes}>
-            <div className={styles.axis} aria-hidden={true}>
+            <div
+              className={styles.axis}
+              aria-hidden={true}
+              style={{ bottom: ticksHeight }}
+            >
               {model.segments.map((seg) => (
                 <span
                   key={seg.lo}
@@ -475,6 +524,47 @@ export function MemoryStrip({
                 />
               ))}
             </div>
+            {depthsOf(model.parents).map((depth) => (
+              <div
+                key={depth}
+                className={styles.parentLane}
+                data-lane="containers"
+                data-depth={depth}
+                role="group"
+                aria-label="Containing regions"
+              >
+                {model.parents
+                  .filter((p) => p.depth === depth)
+                  .map((p, i) => {
+                    const row = rows.find((x) => x.id === p.id);
+                    return (
+                      <button
+                        key={`${p.id}:${i}`}
+                        className={styles.parent}
+                        data-tier={p.tier ?? undefined}
+                        title={p.title}
+                        style={{ left: p.left, width: p.width }}
+                        {...(p.selectable
+                          ? itemProps(p.id, row?.accessibleName ?? p.title)
+                          : {
+                              type: "button" as const,
+                              "aria-label": row?.accessibleName ?? p.title,
+                              "aria-disabled": true,
+                              tabIndex: -1,
+                            })}
+                      >
+                        {p.label}
+                        {p.tier && (
+                          <span
+                            className={styles.tierMark}
+                            data-tier={p.tier}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+              </div>
+            ))}
             {model.regions.length > 0 && (
               <div
                 className={styles.lane}
@@ -491,6 +581,7 @@ export function MemoryStrip({
                       key={`${r.id}:${i}`}
                       className={styles.region}
                       data-tier={r.tier ?? undefined}
+                      data-label={r.label.mode}
                       title={r.title}
                       style={{ left: r.left, width: r.width }}
                       {...(r.selectable
@@ -502,13 +593,13 @@ export function MemoryStrip({
                             tabIndex: -1,
                           })}
                     >
-                      {r.width >= NAME_MIN_PX && r.name}
-                      {row?.fullyLocked && r.width >= NAME_MIN_PX && (
+                      {r.label.mode !== "callout" && r.label.text}
+                      {r.locked && r.label.mode !== "callout" && (
                         <Icon
                           name="lock"
                           size={10}
                           className={styles.lockIcon}
-                          aria-label="locked: not an edit target"
+                          aria-label={LOCK_TITLE}
                         />
                       )}
                       {r.tier && (
@@ -517,6 +608,37 @@ export function MemoryStrip({
                     </button>
                   );
                 })}
+              </div>
+            )}
+            {calloutRows > 0 && (
+              <div
+                className={styles.callouts}
+                aria-hidden="true"
+                style={{ height: calloutRows * CALLOUT_ROW_PX }}
+              >
+                {model.regions
+                  .filter((r) => r.label.mode === "callout")
+                  .map((r, i) => (
+                    <span
+                      key={`${r.id}:${i}`}
+                      className={styles.callout}
+                      data-callout={r.name}
+                      title={r.title}
+                      style={{
+                        left: r.label.x0,
+                        top: r.label.row * CALLOUT_ROW_PX,
+                      }}
+                    >
+                      {r.locked && (
+                        <Icon
+                          name="lock"
+                          size={10}
+                          className={styles.lockIcon}
+                        />
+                      )}
+                      {r.label.text}
+                    </span>
+                  ))}
               </div>
             )}
             <div
@@ -569,7 +691,11 @@ export function MemoryStrip({
                 );
               })}
             </div>
-            <div className={styles.ticks} aria-hidden="true">
+            <div
+              className={styles.ticks}
+              aria-hidden="true"
+              style={{ height: ticksHeight }}
+            >
               {model.ticks.map((t) => (
                 // `data-address` names the declared edge each tick stands
                 // on, so a test can prove every declared address reached
@@ -577,7 +703,19 @@ export function MemoryStrip({
                 <span key={t.address} data-address={t.address}>
                   <span className={styles.tick} style={{ left: t.lineX }} />
                   {t.labelled && (
-                    <span className={styles.tickLabel} style={{ left: t.x }}>
+                    <span
+                      className={styles.tickLabel}
+                      data-edge={t.isEnd ? "end" : undefined}
+                      title={
+                        t.isEnd
+                          ? "Last byte of the window (inclusive); every other label is the first byte of the region starting there"
+                          : undefined
+                      }
+                      style={{
+                        left: t.x,
+                        top: 8 + (t.row ?? 0) * AXIS_ROW_PX,
+                      }}
+                    >
                       {t.label}
                     </span>
                   )}

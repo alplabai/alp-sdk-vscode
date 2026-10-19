@@ -23,7 +23,7 @@ import type {
 import { tierOf, type AuthorityTier } from "./authorityTier";
 import { formatAddress, formatBytes, formatRange } from "./format";
 import { authorityDeclared } from "./memoryRows";
-import { railBoundaries, thinEdgeLabels } from "./railGeometry";
+import { railBoundaries, stackEdgeLabels } from "./railGeometry";
 import { layoutRail } from "./railScale";
 import {
   budgetEnd,
@@ -32,8 +32,11 @@ import {
   endOf,
   regionsLargestFirst,
   resolvedRegions,
+  splitContainers,
   type Window,
 } from "./regionWindow";
+import { locksOf } from "./targetLock";
+import { cellLabelOf, placeCallouts, type CellLabel } from "./stripLabels";
 import {
   type CellFill,
   cellFill,
@@ -84,6 +87,28 @@ export interface StripRegion {
   /** A duplicated region name is never selectable (see `Row.inert`). */
   selectable: boolean;
   title: string;
+  /** How the cell names itself: in the cell, ellipsized, or as a callout
+   *  under it (see stripLabels.ts). Never blank. */
+  label: CellLabel;
+  /** Both target-lock verdicts say locked: the cell is not an edit target
+   *  (NOT the write-authority tier — that is `tier`). */
+  locked: boolean;
+}
+
+/** A region that contains other regions: a thin bar above the cells, across
+ *  its whole extent, instead of a cell its children would paint over. */
+export interface StripParent {
+  id: string;
+  name: string;
+  left: number;
+  width: number;
+  tier: AuthorityTier | null;
+  selectable: boolean;
+  title: string;
+  /** `mram_main · 5.50 MiB · composite`. */
+  label: string;
+  /** 0 = outermost; a deeper bar is stacked beneath its container. */
+  depth: number;
 }
 
 export interface StripSpan {
@@ -117,9 +142,17 @@ export interface StripTick {
   x: number;
   lineX: number;
   label: string;
-  /** Printed only for the edges `thinEdgeLabels` kept; every edge keeps its
-   *  line. */
+  /** Printed unless the label collided on every axis row; every edge keeps
+   *  its line. */
   labelled: boolean;
+  /** Axis row of the label (0 nearest the lines); null when not labelled. */
+  row: number | null;
+  /** The label's horizontal extent, in strip pixels. */
+  x0: number;
+  x1: number;
+  /** The window's last edge: its label is the INCLUSIVE last byte, where
+   *  every other label is the first byte of the segment starting there. */
+  isEnd: boolean;
 }
 
 export interface StripModel {
@@ -127,6 +160,7 @@ export interface StripModel {
   window: Window;
   segments: StripSegment[];
   regions: StripRegion[];
+  parents: StripParent[];
   spans: StripSpan[];
   ticks: StripTick[];
   /** Whether any band carries a tier at all. */
@@ -186,20 +220,49 @@ export function buildStrip(
 
   const dupes = duplicatedNames(regions);
   const tiered = authorityDeclared(regions);
-  // Largest first, so a region nested in another (V2N's `m33_tcm` inside
-  // `ddr_main`) is drawn after its container and wins the click.
-  const stripRegions: StripRegion[] = regionsLargestFirst(resolved).map((r) => {
+  const tierFor = (r: MemoryRegion): AuthorityTier | null =>
+    tiered ? tierOf(r.authorityClass) : null;
+  const { containers, cells } = splitContainers(resolved);
+  const parents: StripParent[] = [...containers]
+    .sort((a, b) => a.depth - b.depth || a.lo - b.lo)
+    .map((r) => {
+      const left = xOf(r.lo);
+      const size = formatBytes(r.hi - r.lo);
+      return {
+        id: r.region.id,
+        name: r.region.name,
+        left,
+        width: xOf(r.hi) - left,
+        tier: tierFor(r.region),
+        selectable: !dupes.has(r.region.name),
+        title: `${r.region.name} · ${formatRange(r.lo, r.hi)} · ${size}`,
+        label: `${r.region.name} · ${size}${tiered ? ` · ${r.region.authorityClass}` : ""}`,
+        depth: r.depth,
+      };
+    });
+  // Largest first, so a region nested in another is drawn after it.
+  const drafts = regionsLargestFirst(cells).map((r) => {
     const left = xOf(r.lo);
+    const width = xOf(r.hi) - left;
+    const locks = locksOf(r.region);
+    const locked = locks.ipc.locked && locks.storage.locked;
     return {
       id: r.region.id,
       name: r.region.name,
       left,
-      width: xOf(r.hi) - left,
-      tier: tiered ? tierOf(r.region.authorityClass) : null,
+      width,
+      tier: tierFor(r.region),
       selectable: !dupes.has(r.region.name),
       title: `${r.region.name} · ${formatRange(r.lo, r.hi)} · ${formatBytes(r.hi - r.lo)}`,
+      label: cellLabelOf(r.region.name, left, width, locked),
+      locked,
     };
   });
+  const placedLabels = placeCallouts(drafts, width);
+  const stripRegions: StripRegion[] = drafts.map((d, i) => ({
+    ...d,
+    label: placedLabels[i],
+  }));
 
   const series = seriesByLabel(memory.spans);
   const stripSpans: StripSpan[] = [];
@@ -240,6 +303,7 @@ export function buildStrip(
     window: win,
     segments,
     regions: stripRegions,
+    parents,
     spans: stripSpans,
     ticks,
     tiered,
@@ -267,12 +331,21 @@ function buildTicks(
   const labelWidth = longest * TICK_GLYPH_PX;
   const centreOf = (a: number): number =>
     clamp(xOf(a), labelWidth / 2, width - labelWidth / 2);
-  const labelled = thinEdgeLabels(edges, centreOf, labelWidth + TICK_GAP_PX);
-  return edges.map((address) => ({
-    address,
-    x: centreOf(address),
-    lineX: xOf(address),
-    label: labelOf(address),
-    labelled: labelled.has(address),
-  }));
+  const rowOf = stackEdgeLabels(edges, centreOf, labelWidth + TICK_GAP_PX);
+  return edges.map((address) => {
+    const row = rowOf.get(address) ?? null;
+    const label = labelOf(address);
+    const w = label.length * TICK_GLYPH_PX;
+    return {
+      address,
+      x: centreOf(address),
+      lineX: xOf(address),
+      label,
+      labelled: row !== null,
+      row,
+      x0: centreOf(address) - w / 2,
+      x1: centreOf(address) + w / 2,
+      isEnd: address === win.hi,
+    };
+  });
 }

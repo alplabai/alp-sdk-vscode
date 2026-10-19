@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- **The Memory strip draws a container region as its own bar.** A region that
+  fully contains another (`mram_main`, now resolved by tan `0.7.0`, spans every
+  flash slot on E1M-AEN801) leaves the cell lane for a thin bar above it,
+  labelled like `mram_main · 5.50 MiB · composite`, selectable with the same
+  keyboard and screen-reader behaviour as a cell. It used to sit under its own
+  children and print through them as `mcabomain`.
+- **No Memory cell is ever unnamed.** A name that does not fit is shortened
+  with an ellipsis, and one too narrow even for that (`atoc`, 32 KiB) is
+  printed under its cell with its lock mark. Callouts stack on separate rows
+  so no two labels overprint.
+- **Every Memory axis edge keeps its address label.** Neighbouring labels
+  stagger onto a second row instead of being dropped; only a label that
+  collides on both rows is omitted. The last label, which is the inclusive
+  last byte, is dotted-underlined and says so in its tooltip.
+- **The padlock on a Memory cell now says what it means.** It marks a region
+  that is not a Configurator edit target (no IPC carve-out or storage
+  partition can go there), which is separate from the write-authority legend.
+  The legend gains a "Not an edit target" entry and the icon a tooltip.
+
 ## 0.7.1
 
 **Stable.** The first stable release since `0.6.0`: the same code as the

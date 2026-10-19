@@ -120,6 +120,50 @@ export function regionsLargestFirst(
   return [...regions].sort((a, b) => b.hi - b.lo - (a.hi - a.lo));
 }
 
+/** A resolved region that fully contains at least one other, with how many
+ *  regions contain IT (0 = outermost). */
+export interface ContainerRegion extends ResolvedRegion {
+  depth: number;
+}
+
+/** Strict containment: `inner` lies inside `outer` and is smaller. Equal
+ *  extents are NOT containment — neither is the container of the other. */
+function contains(outer: ResolvedRegion, inner: ResolvedRegion): boolean {
+  return (
+    outer !== inner &&
+    outer.lo <= inner.lo &&
+    inner.hi <= outer.hi &&
+    outer.hi - outer.lo > inner.hi - inner.lo
+  );
+}
+
+/**
+ * Split resolved regions into CONTAINERS (each fully contains at least one
+ * other resolved region — tan 0.7.0's `mram_main` over every flash slot,
+ * V2N's `ddr_main` over `m33_tcm`) and the rest, which are the cells. A
+ * container drawn as a cell would sit under its own children at the same x
+ * and print its name through theirs. Partially overlapping regions are
+ * neither: they stay cells. Containers carry their nesting depth.
+ */
+export function splitContainers(regions: readonly ResolvedRegion[]): {
+  containers: ContainerRegion[];
+  cells: ResolvedRegion[];
+} {
+  const containers: ContainerRegion[] = [];
+  const cells: ResolvedRegion[] = [];
+  for (const r of regions) {
+    if (regions.some((o) => contains(r, o))) {
+      containers.push({
+        ...r,
+        depth: regions.filter((o) => contains(o, r)).length,
+      });
+    } else {
+      cells.push(r);
+    }
+  }
+  return { containers, cells };
+}
+
 /** Names shared by two or more rows. Selecting a region sets `selected`
  *  to its id (`memory:<name>`) — for a duplicated name that id belongs to
  *  every row sharing it, so a click could highlight all of them at once

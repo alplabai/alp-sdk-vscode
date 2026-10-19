@@ -340,3 +340,27 @@ test("the top pixel reads the window's last byte, never one past it", async () =
   assert.equal(layout.addressAt(18), win.hi - 1); // 0x8057ffff
   assert.equal(layout.addressAt(0), win.hi - 1); // clamped above the plot
 });
+
+test("stackEdgeLabels staggers neighbours onto a second row and drops only what collides on both", async () => {
+  const { stackEdgeLabels } = await (
+    await import("./webview/esbuildImport.mjs")
+  ).importWebviewModule("features/build-plan/railGeometry.ts");
+  const at = (a) => a;
+  // 0, 50, 100 with spacing 80: 0 -> row 0, 50 -> row 1, 100 -> row 0.
+  const rows = stackEdgeLabels([0, 50, 100], at, 80);
+  assert.deepEqual(
+    [...rows],
+    [
+      [0, 0],
+      [100, 0],
+      [50, 1],
+    ],
+  );
+  // 0, 10, 20 cannot fit two rows: the ends win, the middle drops.
+  const tight = stackEdgeLabels([0, 10, 20], at, 80);
+  assert.deepEqual(
+    [...tight.keys()].sort((a, b) => a - b),
+    [0, 20],
+  );
+  assert.equal(stackEdgeLabels([], at, 80).size, 0);
+});

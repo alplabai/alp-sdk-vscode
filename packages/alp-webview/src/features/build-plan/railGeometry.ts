@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The strip's pure geometry: which addresses a piecewise scale must land on,
-// and which edge labels fit beside each other.
+// and which row each edge label sits on.
 //
 // Both functions are arithmetic over the manifest's own numbers with no React
 // and no DOM in them, for the same reason `memoryRows.ts` is separate from the
@@ -62,33 +62,44 @@ export function railBoundaries(
   return { boundaries, occupied };
 }
 
+/** How many staggered rows the axis labels may use. */
+export const AXIS_ROWS = 2;
+
 /**
- * Which edge labels to print. Every edge keeps its tick LINE; a LABEL is
- * omitted when it would sit closer than `minSpacing` to one already kept,
- * so 0x80550000 / 0x80560000 / 0x80578000 / 0x80580000 never overprint into
- * one unreadable smear. The window's own two ends are kept first — they
- * bound the drawing — then every other edge in address order.
+ * Which row each edge label sits on. Every edge keeps its tick LINE; its
+ * LABEL goes on the first row where it clears every label already on that
+ * row by `minSpacing`, so neighbours that would collide on one row stagger
+ * onto the next instead of vanishing. Only a label that collides on EVERY
+ * row is dropped (absent from the result), so 0x80550000 / 0x80560000 /
+ * 0x80578000 / 0x8057ffff never overprint into one unreadable smear.
+ * The window's own two ends are placed first — they bound the drawing —
+ * then every other edge in address order.
  *
  * `positionOf` is whatever axis the caller lays the edges along; the strip
  * passes its clamped label centre so two labels pinned to the same end of
  * the strip are measured where they are actually drawn.
+ *
+ * Returns address -> row (0 = nearest the tick lines).
  */
-export function thinEdgeLabels(
+export function stackEdgeLabels(
   addrs: readonly number[],
   positionOf: (address: number) => number,
   minSpacing: number,
-): Set<number> {
-  if (addrs.length === 0) return new Set();
+  rows: number = AXIS_ROWS,
+): Map<number, number> {
+  const rowOf = new Map<number, number>();
+  if (addrs.length === 0) return rowOf;
+  const taken: number[][] = Array.from({ length: rows }, () => []);
   const ends = [addrs[0], addrs[addrs.length - 1]];
-  const kept: number[] = [];
-  const keptAddrs = new Set<number>();
   for (const a of [...ends, ...addrs]) {
-    if (keptAddrs.has(a)) continue;
+    if (rowOf.has(a)) continue;
     const p = positionOf(a);
-    if (kept.every((k) => Math.abs(k - p) >= minSpacing)) {
-      keptAddrs.add(a);
-      kept.push(p);
-    }
+    const row = taken.findIndex((xs) =>
+      xs.every((x) => Math.abs(x - p) >= minSpacing),
+    );
+    if (row < 0) continue;
+    taken[row].push(p);
+    rowOf.set(a, row);
   }
-  return keptAddrs;
+  return rowOf;
 }
