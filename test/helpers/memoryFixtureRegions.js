@@ -44,10 +44,19 @@ const AEN_REGIONS = [
  *  RESOLVED — base 2147483648 (0x80000000), 5767168 B (5.5 MiB), composite,
  *  a container spanning every other region. Values copied from a real
  *  `system-manifest.yaml` `memory:` list. */
+const AEN801_WRITE_AUTHORITY = {
+  mcuboot: "vendor_image",
+  he_slot0: "customer_image",
+  hp_slot0: "customer_image",
+  reserved: "none",
+  storage: "customer_runtime",
+  atoc: "secure_enclave",
+  mram_main: "composite",
+};
 const AEN801_REGIONS = [
   ...AEN_REGIONS,
   region("mram_main", 2147483648, 5767168, "composite"),
-];
+].map((r) => ({ ...r, writeAuthority: AEN801_WRITE_AUTHORITY[r.name] }));
 
 /** rpmsg-v2n: ddr_main (4 GiB) CONTAINS m33_tcm; ocram_low sits far below.
  *  All three are `source: soc_derived`, `kind: unresolved` in the fixture. */

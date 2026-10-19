@@ -36,6 +36,7 @@ import {
   type Window,
 } from "./regionWindow";
 import { locksOf } from "./targetLock";
+import { layoutRegionCards, type RegionCard } from "./stripCards";
 import {
   layoutCellLabels,
   metricsOf,
@@ -168,6 +169,8 @@ export interface StripModel {
   segments: StripSegment[];
   regions: StripRegion[];
   parents: StripParent[];
+  /** Waffle cards for the regions no slot image already cards. */
+  cards: RegionCard[];
   /** The "+N more" marker for cells past the callout cap, or null. */
   overflow: OverflowMarker | null;
   /** The font-dependent lengths this strip was laid out with. */
@@ -262,6 +265,9 @@ export function buildStrip(
     const locks = locksOf(r.region);
     const locked = locks.ipc.locked && locks.storage.locked;
     return {
+      region: r.region,
+      lo: r.lo,
+      hi: r.hi,
       id: r.region.id,
       name: r.region.name,
       left,
@@ -273,10 +279,12 @@ export function buildStrip(
     };
   });
   const placedLabels = layoutCellLabels(drafts, width, metrics.glyph);
-  const stripRegions: StripRegion[] = drafts.map((d, i) => ({
-    ...d,
-    label: placedLabels[i],
-  }));
+  const stripRegions: StripRegion[] = drafts.map(
+    ({ region: _region, lo: _lo, hi: _hi, ...d }, i) => ({
+      ...d,
+      label: placedLabels[i],
+    }),
+  );
 
   const series = seriesByLabel(memory.spans);
   const stripSpans: StripSpan[] = [];
@@ -311,6 +319,21 @@ export function buildStrip(
     });
   }
 
+  const slotExtents: Array<[number, number]> = memory.spans.flatMap((sp) => {
+    if (sp.kind !== "slot_image" || sp.base === null) return [];
+    const end = endOf(sp) ?? budgetEnd(sp, budgets.get(sp.label));
+    return end === null ? [] : [[sp.base, end] as [number, number]];
+  });
+  const cards = layoutRegionCards(
+    drafts,
+    stripSpans
+      .filter((sp) => sp.width > 0 || sp.marker)
+      .map((sp) => [sp.left, sp.left + Math.max(sp.width, 2)]),
+    slotExtents,
+    width,
+    metrics.glyph,
+  );
+
   const ticks = buildTicks(segments, win, width, xOf, metrics.glyph);
   return {
     width,
@@ -318,6 +341,7 @@ export function buildStrip(
     segments,
     regions: stripRegions,
     parents,
+    cards,
     overflow: overflowMarker(stripRegions),
     metrics,
     spans: stripSpans,

@@ -208,6 +208,21 @@
   --chart-6: var(--vscode-charts-red, #f14c4c);
 }
 
+/* The fill of a LOCKED region's squares on the memory strip (stripCards.ts):
+ * amber, from the editor's own warning ink so it follows the theme, with a
+ * fallback for a theme that defines none. Mixed 35% toward the text colour:
+ * Light+'s editorWarning (#BF8803) alone is 2.8:1 on its panel ground, under
+ * the 3:1 non-text floor, and the mix clears it in every covered theme
+ * (test/buildPlan.lockedFill.test.js). It is not --status-err: red is kept
+ * for real warnings, and a locked region is not one. */
+:root {
+  --fill-locked: color-mix(
+    in srgb,
+    var(--vscode-editorWarning-foreground, #cca700) 65%,
+    var(--text-primary)
+  );
+}
+
 /* ── Motion ─────────────────────────────────────────────────────────────── */
 :root {
   --duration-fast: 100ms;

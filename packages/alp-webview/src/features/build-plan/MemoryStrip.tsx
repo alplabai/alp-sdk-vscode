@@ -46,6 +46,7 @@ import {
   type StripModel,
 } from "./stripLayout";
 import { DEFAULT_FONT_PX } from "./stripLabels";
+import { cardLaneHeight, RegionCards } from "./RegionCards";
 import {
   AxisTicks,
   axisHeight,
@@ -366,9 +367,11 @@ function CellField({ cells }: { cells: CellFill }) {
 function Legend({
   tiers,
   anyLocked,
+  lockedCards,
 }: {
   tiers: AuthorityTier[];
   anyLocked: boolean;
+  lockedCards: boolean;
 }) {
   return (
     <ul className={styles.legend} aria-label="Write authority">
@@ -383,6 +386,12 @@ function Legend({
           {TIER_LABEL[tier]}
         </li>
       ))}
+      {lockedCards && (
+        <li title="Every square amber: nothing in this region is yours to fill">
+          <span className={styles.lockedSwatch} aria-hidden="true" />
+          Locked area
+        </li>
+      )}
       {anyLocked && (
         <li>
           <LockMark />
@@ -482,6 +491,7 @@ export function MemoryStrip({
     onClick: () => setPicked(id),
     onKeyDown: onKeyDown(id),
   });
+  const lockedCards = model?.cards.some((c) => c.kind === "locked") ?? false;
   const anyLocked = model
     ? [...model.parents, ...model.regions].some((r) => r.locked)
     : false;
@@ -507,8 +517,12 @@ export function MemoryStrip({
           Memory
         </h2>
         {note && <span className={styles.sectionNote}>{note}</span>}
-        {(tiersDrawn.length > 0 || anyLocked) && (
-          <Legend tiers={tiersDrawn} anyLocked={anyLocked} />
+        {(tiersDrawn.length > 0 || anyLocked || lockedCards) && (
+          <Legend
+            tiers={tiersDrawn}
+            anyLocked={anyLocked}
+            lockedCards={lockedCards}
+          />
         )}
       </div>
       {model ? (
@@ -582,7 +596,13 @@ export function MemoryStrip({
               data-lane="placed"
               role="group"
               aria-label="Placed images"
+              style={{ height: cardLaneHeight(model.cards) }}
             >
+              <RegionCards
+                cards={model.cards}
+                selected={selected ?? null}
+                onPick={setPicked}
+              />
               {model.spans.map((s) => {
                 const row = rows.find((x) => x.id === s.id);
                 return (
