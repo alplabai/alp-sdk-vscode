@@ -36,7 +36,7 @@ import {
   type Window,
 } from "./regionWindow";
 import { locksOf } from "./targetLock";
-import { layoutRegionCards, type RegionCard } from "./stripCards";
+import { cardHeightPx, layoutRegionCards, type RegionCard } from "./stripCards";
 import {
   layoutCellLabels,
   metricsOf,
@@ -171,6 +171,8 @@ export interface StripModel {
   parents: StripParent[];
   /** Waffle cards for the regions no slot image already cards. */
   cards: RegionCard[];
+  /** Height of every card in the placed lane, slot cards included. */
+  cardHeight: number;
   /** The "+N more" marker for cells past the callout cap, or null. */
   overflow: OverflowMarker | null;
   /** The font-dependent lengths this strip was laid out with. */
@@ -342,6 +344,7 @@ export function buildStrip(
     regions: stripRegions,
     parents,
     cards,
+    cardHeight: cardHeightPx(metrics.fontPx),
     overflow: overflowMarker(stripRegions),
     metrics,
     spans: stripSpans,

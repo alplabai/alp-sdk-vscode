@@ -8,22 +8,27 @@
 // selection, and shows it. READ-ONLY like the rest of the feature.
 
 import { Icon } from "../../shared/ui";
-import { CARD_HEIGHT_PX, CARD_ROW_GAP_PX, type RegionCard } from "./stripCards";
+import { CARD_ROW_GAP_PX, type RegionCard } from "./stripCards";
 import { CELL_PITCH_PX, CELL_ROWS } from "./slotUsage";
 import styles from "./MemoryStrip.module.css";
 
 /** Lane height needed for slot cards (row 0) plus `rows` rows of cards. */
-export function cardLaneHeight(cards: readonly RegionCard[]): number {
+export function cardLaneHeight(
+  cards: readonly RegionCard[],
+  cardHeight: number,
+): number {
   const rows = Math.max(1, ...cards.map((c) => c.row + 1));
-  return rows * CARD_HEIGHT_PX + (rows - 1) * CARD_ROW_GAP_PX;
+  return rows * cardHeight + (rows - 1) * CARD_ROW_GAP_PX;
 }
 
 export function RegionCards({
   cards,
+  cardHeight,
   selected,
   onPick,
 }: {
   cards: readonly RegionCard[];
+  cardHeight: number;
   selected: string | null;
   onPick: (id: string) => void;
 }) {
@@ -44,16 +49,19 @@ export function RegionCards({
           style={{
             left: c.left,
             width: c.width,
-            top: c.row * (CARD_HEIGHT_PX + CARD_ROW_GAP_PX),
+            top: c.row * (cardHeight + CARD_ROW_GAP_PX),
           }}
           onClick={c.selectable ? () => onPick(c.id) : undefined}
         >
-          <span className={styles.cardLabel}>
+          <span className={styles.cardHeading}>
             {c.padlock && (
               <Icon name="lock" size={10} className={styles.lockIcon} />
             )}
-            {c.text}
+            {c.heading}
           </span>
+          {c.subtitle && (
+            <span className={styles.cardSubtitle}>{c.subtitle}</span>
+          )}
           <span
             className={styles.waffle}
             data-kind={c.kind}

@@ -164,11 +164,11 @@
   box-shadow: inset 0 0 0 2px var(--text-primary);
 }
 
-/* Yours: solid. Locked: half-tone — 71% is the lowest whole percentage
- * that clears 3:1 against the panel ground in every covered theme
- * (test/buildPlan.tierContrast.test.js). Not yours or not proven: a hatch,
- * so the difference survives a greyscale display and does not rest on
- * lightness alone. */
+/* Yours: solid. Locked: a dashed rule in the amber the locked region cards
+ * are filled with (--fill-locked; contrast in test/buildPlan.lockedFill and
+ * buildPlan.tierContrast). Not yours or not proven: a diagonal hatch. Three
+ * SHAPES — solid, dashed, hatched — so the difference survives a greyscale
+ * display and does not rest on colour or lightness alone. */
 .tierMark {
   position: absolute;
   left: 0;
@@ -183,7 +183,11 @@
 }
 
 .tierMark[data-tier="locked"] {
-  background: color-mix(in srgb, var(--text-primary) 71%, transparent);
+  background: repeating-linear-gradient(
+    90deg,
+    var(--fill-locked) 0 6px,
+    transparent 6px 8px
+  );
 }
 
 .tierMark[data-tier="unproven"] {
@@ -387,11 +391,22 @@
   box-shadow: inset 0 0 0 2px var(--text-primary);
 }
 
-.cardLabel {
+/* A card titles itself with its region's name, in the mono face of a slot
+ * card's name, with the status beneath it in the secondary colour. */
+.cardHeading,
+.cardSubtitle {
   display: block;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.cardHeading {
+  font-family: var(--text-mono);
+  color: var(--text-primary);
+}
+
+.cardSubtitle {
   color: var(--text-secondary);
 }
 
@@ -411,15 +426,6 @@
     var(--text-primary) 0 2px,
     transparent 2px 4px
   );
-}
-
-/* The legend's amber swatch. */
-.lockedSwatch {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-inline-end: 4px;
-  background: var(--fill-locked);
 }
 
 /* Lit cells: full columns from the left, then the next column from the

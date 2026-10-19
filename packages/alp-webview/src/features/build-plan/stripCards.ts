@@ -33,10 +33,14 @@ const CARD_INSET_PX = 8;
  *  columns of cells. */
 export const MIN_CARD_PX = 80;
 
-/** The same floor at a larger font: padlock + padding + "locked" in glyphs. */
+/** The same floor at a larger font: padlock + padding + the kept characters
+ *  of a name and its ellipsis, in glyphs. */
 function minCardPx(glyph: number): number {
-  return Math.max(MIN_CARD_PX, Math.ceil(30 + 6 * glyph));
+  return Math.max(MIN_CARD_PX, Math.ceil(30 + (MIN_NAME_KEPT + 1) * glyph));
 }
+
+/** An ellipsized card name keeps at least this many characters. */
+export const MIN_NAME_KEPT = 5;
 
 /** Card padding + border, both sides, and the padlock's width. */
 const CARD_PAD_PX = 14;
@@ -45,6 +49,13 @@ const CARD_LOCK_PX = 16;
 /** A card's height, the slot cards' 84px (`.lane[data-lane="placed"]`), and
  *  the air between two card rows. */
 export const CARD_HEIGHT_PX = 84;
+
+/** The card height at `fontPx`: the 84px of the 13px panel, grown so two
+ *  text lines (name, status) still clear the 4-row waffle beneath them. */
+export function cardHeightPx(fontPx: number): number {
+  const line = Math.round(fontPx * 1.25);
+  return Math.max(CARD_HEIGHT_PX, 4 + 2 * line + 8 + 4 * 8 + 8);
+}
 export const CARD_ROW_GAP_PX = 8;
 
 /** Clearance two cards in one row keep: none, like the slot cards. */
@@ -68,11 +79,14 @@ export interface RegionCard {
   filled: number;
   /** The padlock on the card: tier `locked` only. */
   padlock: boolean;
-  /** `locked · 64 KiB · vendor image`, `no usage data`, `reserved · 64 KiB`. */
+  /** `locked · 64 KiB · vendor image`, `no usage data · 96 KiB`, `reserved · 64 KiB`. */
   label: string;
-  /** What the card prints: `label` when it fits, else `short`, else nothing
-   *  (the padlock and squares stay; `title` has the whole sentence). */
-  text: string;
+  /** The first line: the region's name (as `.spanName` is a slot card's),
+   *  whole, or ellipsized keeping at least MIN_NAME_KEPT characters, or ""
+   *  at the floor — the padlock and squares stay then. */
+  heading: string;
+  /** The second line: `label` when it fits, else `short`, else "". */
+  subtitle: string;
   title: string;
   selectable: boolean;
 }
@@ -118,14 +132,14 @@ function fillOf(
     const word = UNPROVEN_WORD[region.authorityClass] ?? "not proven";
     return {
       kind: "hatched",
-      label: region.authorityClass === "unstated" ? word : `${word} · ${size}`,
+      label: `${word} · ${size}`,
       short: region.authorityClass === "unstated" ? "not proven" : word,
       padlock: false,
     };
   }
   return {
     kind: "empty",
-    label: "no usage data",
+    label: `no usage data · ${size}`,
     short: "no data",
     padlock: false,
   };
@@ -172,12 +186,21 @@ export function layoutRegionCards(
     const room = Math.floor(
       (width - CARD_PAD_PX - (fill.padlock ? CARD_LOCK_PX : 0)) / glyph,
     );
-    const text =
-      fill.label.length <= room
-        ? fill.label
-        : fill.short.length <= room
-          ? fill.short
+    const name = r.region.name;
+    const heading =
+      name.length <= room
+        ? name
+        : room - 1 >= MIN_NAME_KEPT
+          ? `${name.slice(0, room - 1)}…`
           : "";
+    const subtitle =
+      heading !== name
+        ? ""
+        : fill.label.length <= room
+          ? fill.label
+          : fill.short.length <= room
+            ? fill.short
+            : "";
     const cols = Math.floor((width - 2 * CARD_INSET_PX) / CELL_PITCH_PX);
     const total = cols * CELL_ROWS;
     out.push({
@@ -193,7 +216,8 @@ export function layoutRegionCards(
       filled: fill.kind === "locked" ? total : 0,
       padlock: fill.padlock,
       label: fill.label,
-      text,
+      heading,
+      subtitle,
       title: `${r.title} · ${fill.label}`,
       selectable: r.selectable,
     });

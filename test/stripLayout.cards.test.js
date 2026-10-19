@@ -96,25 +96,74 @@ test("locked regions are fully amber with the padlock and say who owns them", as
   );
 });
 
-test("a locked card always prints at least the word locked, even the narrowest, at any width or font size", async () => {
+test("a card titles itself with its region name: whole, ellipsized to >= 5 characters, or only the padlock at the floor", async () => {
   const { buildStrip } = await load();
   for (const w of WIDTHS) {
     for (const fontPx of [13, 16]) {
       const model = buildStrip(view(AEN801_REGIONS), new Map(), w, fontPx);
-      for (const name of ["mcuboot", "atoc"]) {
-        const c = model.cards.find((x) => x.name === name);
-        assert.ok(
-          c.text.startsWith("locked"),
-          `${name}@${w}/fs${fontPx}: "${c.text}"`,
-        );
+      for (const c of model.cards) {
+        const tag = `${c.name}@${w}/fs${fontPx}: "${c.heading}"`;
+        if (c.heading === c.name) continue;
+        // Not whole: an ellipsis keeps at least 5 characters of the name...
+        assert.ok(c.heading.endsWith("…"), tag);
+        const kept = c.heading.slice(0, -1);
+        assert.ok(kept.length >= 5 && c.name.startsWith(kept), tag);
+        // ...and has no room left for a subtitle.
+        assert.equal(c.subtitle, "", tag);
       }
-      for (const c of model.cards)
+      // The guarantee at the width floor: every card in this fixture prints
+      // its name (whole or kept >= 5), and a locked one also its padlock.
+      for (const c of model.cards) {
         assert.ok(
-          c.text === "" || c.label.includes(c.text.split(" ")[0]),
-          c.name,
+          c.heading.length >= Math.min(c.name.length, 5),
+          `${c.name}@${w}`,
         );
+        if (c.kind === "locked") assert.equal(c.padlock, true);
+      }
     }
   }
+});
+
+test("a card's subtitle falls back from the full status to the short one, and the tooltip keeps the whole sentence", async () => {
+  const { buildStrip } = await load();
+  const wide = buildStrip(view(AEN801_REGIONS), new Map(), 1400);
+  const big = buildStrip(
+    view([
+      {
+        ...region("vendor_fw", 0x1000, 0x100000, "locked"),
+        writeAuthority: "vendor_image",
+      },
+      region("store_big", 0x101000, 0x100000, "customer_runtime"),
+      region("rsv_big", 0x201000, 0x100000, "reserved"),
+    ]),
+    new Map(),
+    1000,
+  );
+  const fw = big.cards.find((x) => x.name === "vendor_fw");
+  assert.equal(fw.heading, "vendor_fw");
+  assert.equal(fw.subtitle, "locked · 1 MiB · vendor image");
+  // One step narrower: the short status.
+  const mcuboot = wide.cards.find((x) => x.name === "mcuboot");
+  assert.equal(mcuboot.heading, "mcuboot");
+  assert.equal(mcuboot.subtitle, "locked");
+  const narrow = buildStrip(view(AEN801_REGIONS), new Map(), 360);
+  for (const c of narrow.cards) {
+    assert.ok(
+      c.subtitle === "" ||
+        c.subtitle === c.label ||
+        ["locked", "no data", "reserved"].includes(c.subtitle),
+      `${c.name}: "${c.subtitle}"`,
+    );
+    assert.ok(c.title.includes(c.name) && c.title.endsWith(c.label), c.name);
+  }
+  assert.equal(
+    big.cards.find((x) => x.name === "store_big").subtitle,
+    "no usage data · 1 MiB",
+  );
+  assert.equal(
+    big.cards.find((x) => x.name === "rsv_big").subtitle,
+    "reserved · 1 MiB",
+  );
 });
 
 test("storage has no usage data: zero filled squares, never a fake fill", async () => {
@@ -123,7 +172,7 @@ test("storage has no usage data: zero filled squares, never a fake fill", async 
   const c = model.cards.find((x) => x.name === "storage");
   assert.equal(c.kind, "empty");
   assert.equal(c.filled, 0);
-  assert.equal(c.label, "no usage data");
+  assert.equal(c.label, "no usage data · 96 KiB");
   assert.equal(c.padlock, false);
 });
 
@@ -273,4 +322,13 @@ test("slot cards' used/free numbers are unchanged by region cards", async () => 
       `width ${w}`,
     );
   }
+});
+
+test("the card height grows with the font so two text lines clear the waffle", async () => {
+  const { buildStrip } = await load();
+  const h13 = buildStrip(view(AEN801_REGIONS), new Map(), 640, 13).cardHeight;
+  const h16 = buildStrip(view(AEN801_REGIONS), new Map(), 640, 16).cardHeight;
+  assert.equal(h13, 84, "the 13px card is the slot card's 84px");
+  // name + status lines (1.25 x font each) + 4 waffle rows + insets.
+  assert.ok(h16 >= 4 + 2 * 20 + 8 + 32 + 8, `fs16 card height ${h16}`);
 });

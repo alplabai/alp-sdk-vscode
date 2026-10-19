@@ -14,11 +14,10 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   THEMES,
-  VSCODE_DEFAULTS,
   resolvedOpaqueRgb,
   contrast,
-  parseColor,
 } = require("./helpers/vscodeThemes");
+const { lockedFill } = require("./helpers/lockedFill");
 
 const SRC = path.join(__dirname, "..", "packages", "alp-webview", "src");
 const TOKENS = fs.readFileSync(path.join(SRC, "styles", "tokens.css"), "utf8");
@@ -27,38 +26,20 @@ const STRIP = fs.readFileSync(
   "utf8",
 );
 
-/** `[r,g,b]` of --fill-locked in `theme`, parsed from its declaration:
- *  color-mix(in srgb, var(--vscode-X, fallback) P%, var(--text-primary)). */
-function lockedFill(theme) {
-  const m =
-    /--fill-locked:\s*color-mix\(\s*in srgb,\s*var\(\s*(--vscode-[\w-]+)\s*,\s*(#[0-9a-fA-F]+)\s*\)\s*(\d+)%,\s*var\(\s*(--[\w-]+)\s*\)\s*\)/.exec(
-      TOKENS,
-    );
-  assert.ok(
-    m,
-    "--fill-locked is no longer color-mix(var(--vscode-*, #fb) P%, var(--ink))",
-  );
-  const ground = resolvedOpaqueRgb(theme, "--surface-bg", null);
-  const warn = VSCODE_DEFAULTS[theme][m[1]]
-    ? parseColor(VSCODE_DEFAULTS[theme][m[1]]).slice(0, 3)
-    : parseColor(m[2]).slice(0, 3);
-  const ink = resolvedOpaqueRgb(theme, m[4], ground);
-  const p = Number(m[3]) / 100;
-  return warn.map((c, i) => c * p + ink[i] * (1 - p));
-}
-
-/** The card's own background: `.regionCard`'s text-secondary tint over the
- *  ground (the tint is the first color-mix in its background stack). */
-function cardBackground(theme) {
-  const rule = /\.regionCard\s*\{[^}]*\}/.exec(STRIP);
-  assert.ok(rule, ".regionCard rule not found");
+/** A box's own background in `theme`: the text-secondary tint of its rule
+ *  (the first color-mix against transparent) over the panel ground. */
+function boxBackground(selector, theme) {
+  const rule = new RegExp(
+    `${selector.replace(".", "\\.")}\\s*\\{[^}]*\\}`,
+  ).exec(STRIP);
+  assert.ok(rule, `${selector} rule not found`);
   const m =
     /color-mix\(in srgb,\s*var\((--[\w-]+)\)\s*(\d+)%,\s*transparent\)/.exec(
       rule[0],
     );
   assert.ok(
     m,
-    ".regionCard no longer tints with color-mix(var(--x) P%, transparent)",
+    `${selector} no longer tints with color-mix(var(--x) P%, transparent)`,
   );
   const ground = resolvedOpaqueRgb(theme, "--surface-bg", null);
   const ink = resolvedOpaqueRgb(theme, m[1], ground);
@@ -81,15 +62,18 @@ function hue([r, g, b]) {
   return h < 0 ? h + 360 : h;
 }
 
-test("the locked fill clears 3:1 on the panel ground and on the card in every covered theme", () => {
+test("the locked fill clears 3:1 on the panel ground and on a cell, a container bar and a card, in every covered theme", () => {
   for (const theme of THEMES) {
     const fill = lockedFill(theme);
     const ground = resolvedOpaqueRgb(theme, "--surface-bg", null);
-    const card = cardBackground(theme);
-    for (const [what, bg] of [
+    const grounds = [
       ["panel ground", ground],
-      ["card", card],
-    ]) {
+      ...[".region", ".parent", ".regionCard"].map((sel) => [
+        sel,
+        boxBackground(sel, theme),
+      ]),
+    ];
+    for (const [what, bg] of grounds) {
       const ratio = contrast(fill, bg);
       assert.ok(
         ratio >= 3,
@@ -97,6 +81,13 @@ test("the locked fill clears 3:1 on the panel ground and on the card in every co
       );
     }
   }
+});
+
+test("the locked tier mark on cells and container bars paints the same --fill-locked amber", () => {
+  assert.match(
+    STRIP,
+    /\.tierMark\[data-tier="locked"\]\s*\{[^}]*var\(--fill-locked\)/,
+  );
 });
 
 test("the locked fill stays amber: a warm hue, well away from error red", () => {
@@ -116,7 +107,7 @@ test("the locked cards paint --fill-locked, and nothing in the card rules uses t
   );
   const cardRules = STRIP.slice(
     STRIP.indexOf(".regionCard {"),
-    STRIP.indexOf(".lockedSwatch"),
+    STRIP.indexOf("/* Lit cells"),
   );
   assert.ok(
     !/status-err|chart-6|charts-red/.test(cardRules),

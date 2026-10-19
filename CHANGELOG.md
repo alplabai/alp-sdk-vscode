@@ -3,14 +3,16 @@
 ## Unreleased
 
 - **Every Memory region gets a waffle card.** Each resolved region now has a
-  card of squares like the image-slot cards, under its own cell, packed onto a
-  second row where a narrow region would touch a neighbour. Locked regions
-  (vendor image, Secure Enclave) are all amber with a padlock and read
-  `locked · 64 KiB · vendor image`; regions with no usage data, such as
-  `storage`, show empty squares and say `no usage data` instead of inventing a
-  fill; reserved and unproven regions are hatched. A region an image slot
-  already fills keeps that slot's own used/free card, and container bars get no
-  card. Clicking a card selects its region.
+  card of squares like the image-slot cards, titled with the region's name and
+  placed under its own cell, on a second row where a narrow region would touch
+  a neighbour. Locked regions (vendor image, Secure Enclave) are all amber with
+  a padlock and read `locked · 64 KiB · vendor image`; regions with no usage
+  data, such as `storage`, show empty squares and say `no usage data · 96 KiB`
+  instead of inventing a fill; reserved and unproven regions are hatched. A
+  region an image slot already fills keeps that slot's own used/free card, and
+  container bars get no card. Clicking a card selects its region. The locked
+  mark on cells and container bars is now the same amber, as a dashed rule,
+  and the legend has one "Locked" entry for both.
 
 - **The Memory strip draws a container region as its own bar.** A region that
   fully contains another (`mram_main`, now resolved by tan `0.7.0`, spans every
