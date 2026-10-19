@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Every Memory region gets a waffle card.** Each resolved region that holds
+  no image now has a card of squares like the image-slot cards, titled with
+  the region's name and placed under its own cell. A region an image or IPC
+  carve-out touches keeps that item's own card. Locked regions (vendor image,
+  Secure Enclave) are all amber with a padlock and the word `locked`, plus the
+  size and owner when the card is wide enough; regions with no usage data,
+  such as `storage`, show empty squares and say `no data` or `no usage data ·
+  96 KiB` instead of inventing a fill; reserved and unproven regions are
+  hatched. A card that would touch its neighbour slides to the nearest gap,
+  then a narrow or locked one shrinks to a padlock and squares (its cell's
+  callout names it), and only then does a new row open. Clicking a card
+  selects its region. The locked mark on cells and container bars is the same
+  amber, as a dashed rule, with one "Locked" legend entry. The amber is now
+  kept apart from the chart series, so series colour 5 is magenta instead of
+  yellow.
+
 - **The Memory strip draws a container region as its own bar.** A region that
   fully contains another (`mram_main`, now resolved by tan `0.7.0`, spans every
   flash slot on E1M-AEN801) leaves the cell lane for a thin bar above it,

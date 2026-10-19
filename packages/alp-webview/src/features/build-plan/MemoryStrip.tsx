@@ -46,6 +46,7 @@ import {
   type StripModel,
 } from "./stripLayout";
 import { DEFAULT_FONT_PX } from "./stripLabels";
+import { cardLaneHeight, RegionCards } from "./RegionCards";
 import {
   AxisTicks,
   axisHeight,
@@ -582,7 +583,17 @@ export function MemoryStrip({
               data-lane="placed"
               role="group"
               aria-label="Placed images"
+              style={{
+                height: cardLaneHeight(model.cards, model.cardHeight),
+                ["--card-h" as string]: `${model.cardHeight}px`,
+              }}
             >
+              <RegionCards
+                cards={model.cards}
+                cardHeight={model.cardHeight}
+                selected={selected ?? null}
+                onPick={setPicked}
+              />
               {model.spans.map((s) => {
                 const row = rows.find((x) => x.id === s.id);
                 return (

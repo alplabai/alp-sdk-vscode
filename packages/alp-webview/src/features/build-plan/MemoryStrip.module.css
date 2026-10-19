@@ -46,9 +46,13 @@
 }
 
 /* Tall enough for the name, the figure beneath it, and four rows of cells
- * (CELL_ROWS × CELL_PITCH_PX in slotUsage.ts) under both. */
+ * (CELL_ROWS × CELL_PITCH_PX in slotUsage.ts) under both. The height and the
+ * card height (--card-h) are set inline from the layout model — `cardHeightPx`
+ * and `cardLaneHeight` in stripCards.ts / RegionCards.tsx, which grow with the
+ * font — so this rule carries only the 13px default of the card height and the
+ * margin. */
 .lane[data-lane="placed"] {
-  height: 84px;
+  --card-h: 84px;
   margin-top: var(--space-2);
 }
 
@@ -163,11 +167,11 @@
   box-shadow: inset 0 0 0 2px var(--text-primary);
 }
 
-/* Yours: solid. Locked: half-tone — 71% is the lowest whole percentage
- * that clears 3:1 against the panel ground in every covered theme
- * (test/buildPlan.tierContrast.test.js). Not yours or not proven: a hatch,
- * so the difference survives a greyscale display and does not rest on
- * lightness alone. */
+/* Yours: solid. Locked: a dashed rule in the amber the locked region cards
+ * are filled with (--fill-locked; contrast in test/buildPlan.lockedFill and
+ * buildPlan.tierContrast). Not yours or not proven: a diagonal hatch. Three
+ * SHAPES — solid, dashed, hatched — so the difference survives a greyscale
+ * display and does not rest on colour or lightness alone. */
 .tierMark {
   position: absolute;
   left: 0;
@@ -182,7 +186,11 @@
 }
 
 .tierMark[data-tier="locked"] {
-  background: color-mix(in srgb, var(--text-primary) 71%, transparent);
+  background: repeating-linear-gradient(
+    90deg,
+    var(--fill-locked) 0 6px,
+    transparent 6px 8px
+  );
 }
 
 .tierMark[data-tier="unproven"] {
@@ -208,7 +216,7 @@
 .span {
   position: absolute;
   top: 0;
-  height: 100%;
+  height: var(--card-h);
   box-sizing: border-box;
   padding: var(--space-2) var(--space-3) var(--space-3);
   border: 1px solid var(--border-chart);
@@ -334,7 +342,8 @@
  * mask cuts a 1px gap after every 7px square, at the same 8px pitch the
  * field is sized in (CELL_PITCH_PX), so free cells show as faint squares and
  * lit ones as solid squares of the core's series colour. */
-.cells {
+.cells,
+.waffle {
   position: absolute;
   left: var(--space-4);
   bottom: var(--space-4);
@@ -350,6 +359,76 @@
     linear-gradient(to bottom, currentColor 7px, transparent 7px);
   mask-size: 8px 8px;
   mask-composite: intersect;
+}
+
+/* A region card (stripCards.ts): the slot card's quiet box and waffle of
+ * squares, with what the squares say set by the card's kind. Locked: every
+ * square amber (--fill-locked), beside a padlock and the word "locked" —
+ * colour is never the only cue, and red stays for real warnings. Unmeasured:
+ * faint empty squares. Not yours or not proven: the strip's hatch. */
+.regionCard {
+  position: absolute;
+  height: var(--card-h);
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-chart);
+  border-radius: var(--radius-md);
+  /* The quiet tint over the panel ground, opaque: a card in the lane the
+   * axis's gap hatch runs behind must not show it through. */
+  background:
+    linear-gradient(
+      color-mix(in srgb, var(--text-secondary) 12%, transparent),
+      color-mix(in srgb, var(--text-secondary) 12%, transparent)
+    ),
+    var(--surface-bg);
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  overflow: hidden;
+}
+
+.regionCard[data-pickable] {
+  cursor: pointer;
+}
+
+.regionCard[data-selected] {
+  box-shadow: inset 0 0 0 2px var(--text-primary);
+}
+
+/* A card titles itself with its region's name, in the mono face of a slot
+ * card's name, with the status beneath it in the secondary colour. */
+.cardHeading,
+.cardSubtitle {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardHeading {
+  font-family: var(--text-mono);
+  color: var(--text-primary);
+}
+
+.cardSubtitle {
+  color: var(--text-secondary);
+}
+
+.waffle {
+  left: var(--space-4);
+  bottom: var(--space-4);
+  background: color-mix(in srgb, var(--text-secondary) 26%, transparent);
+}
+
+.waffle[data-kind="locked"] {
+  background: var(--fill-locked);
+}
+
+.waffle[data-kind="hatched"] {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--text-primary) 0 2px,
+    transparent 2px 4px
+  );
 }
 
 /* Lit cells: full columns from the left, then the next column from the

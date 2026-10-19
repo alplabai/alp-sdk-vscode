@@ -132,6 +132,7 @@ const VSCODE_DEFAULTS = {
     // with real numbers, not a missing-lookup error.
     "--vscode-gitDecoration-modifiedResourceForeground": "#E2C08D",
     "--vscode-terminal-ansiCyan": "#11a8cd",
+    "--vscode-terminal-ansiMagenta": "#bc3fbc",
     "--vscode-terminal-ansiBlack": "#000000",
     "--vscode-tab-activeForeground": "#FFFFFF",
   },
@@ -152,6 +153,7 @@ const VSCODE_DEFAULTS = {
     "--vscode-charts-orange": "#EA5C0055",
     "--vscode-gitDecoration-modifiedResourceForeground": "#895503",
     "--vscode-terminal-ansiCyan": "#0598bc",
+    "--vscode-terminal-ansiMagenta": "#bc05bc",
     "--vscode-terminal-ansiBlack": "#000000",
     "--vscode-tab-activeForeground": "#333333",
   },
@@ -170,6 +172,7 @@ const VSCODE_DEFAULTS = {
     "--vscode-charts-red": "#F48771",
     "--vscode-charts-purple": "#B180D7",
     "--vscode-terminal-ansiCyan": "#00cdcd",
+    "--vscode-terminal-ansiMagenta": "#cd00cd",
     "--vscode-terminal-ansiBlack": "#000000",
     "--vscode-tab-activeForeground": "#FFFFFF",
   },
@@ -188,6 +191,7 @@ const VSCODE_DEFAULTS = {
     "--vscode-charts-red": "#B5200D",
     "--vscode-charts-purple": "#652D90",
     "--vscode-terminal-ansiCyan": "#0598bc",
+    "--vscode-terminal-ansiMagenta": "#cd00cd",
     // ansiBlack's own hcLight default is a dark grey, not black — HC
     // Light's own chrome is black-on-white everywhere else, and VS Code did
     // not chase pure #000000 for the terminal palette in this one theme.
@@ -225,6 +229,7 @@ const VSCODE_DEFAULTS = {
     "--vscode-charts-purple": "#AD80D7",
     "--vscode-charts-orange": "#CD861A", // opaque override — see tokens.css's corrected comment
     "--vscode-terminal-ansiCyan": "#11a8cd", // inherited core default
+    "--vscode-terminal-ansiMagenta": "#bc3fbc",
     "--vscode-terminal-ansiBlack": "#000000", // inherited core default
     "--vscode-tab-activeForeground": "#bfbfbf",
   },

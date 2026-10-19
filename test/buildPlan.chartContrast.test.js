@@ -593,11 +593,15 @@ test("an unsafe pairing is still caught (the gate is not vacuously true)", () =>
   );
 });
 
-test("the superseded chart-3 value still collides with chart-5 under the hue-delta arm", () => {
+// chart-5 moved from charts.yellow to terminal.ansiMagenta so the locked
+// regions' amber (--fill-locked, from the same editor-warning yellow) is not
+// also a series colour (buildPlan.lockedFill.test.js). The superseded chart-3
+// collided with the YELLOW chart-5, so that is what it is measured against.
+test("the superseded chart-3 value still collides with the old (yellow) chart-5 under the hue-delta arm", () => {
   const oldChart3 = { dark: "#E2C08D", light: "#895503" };
   for (const theme of ["dark", "light"]) {
     const oldC3 = parseColor(oldChart3[theme]).slice(0, 3);
-    const c5 = resolvedOpaqueRgb(theme, "--chart-5", null);
+    const c5 = resolvedOpaqueRgb(theme, "--vscode-charts-yellow", null);
     const delta = hueDelta(hueDegrees(oldC3), hueDegrees(c5));
     assert.ok(
       delta < 19,
