@@ -124,6 +124,10 @@
 
 .callout {
   position: absolute;
+  z-index: 1;
+  /* Opaque, in the panel ground, so the axis's gap hatch (which runs the
+   * lane's full height) never strikes through a name. */
+  background: var(--surface-bg);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
