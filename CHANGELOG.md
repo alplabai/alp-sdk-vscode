@@ -7,19 +7,25 @@
   flash slot on E1M-AEN801) leaves the cell lane for a thin bar above it,
   labelled like `mram_main · 5.50 MiB · composite`, selectable with the same
   keyboard and screen-reader behaviour as a cell. It used to sit under its own
-  children and print through them as `mcabomain`.
+  children and print through them as `mcabomain`. Containers whose extents
+  overlap, equal extents included, get separate bar rows.
 - **No Memory cell is ever unnamed.** A name that does not fit is shortened
-  with an ellipsis, and one too narrow even for that (`atoc`, 32 KiB) is
-  printed under its cell with its lock mark. Callouts stack on separate rows
-  so no two labels overprint.
-- **Every Memory axis edge keeps its address label.** Neighbouring labels
-  stagger onto a second row instead of being dropped; only a label that
-  collides on both rows is omitted. The last label, which is the inclusive
-  last byte, is dotted-underlined and says so in its tooltip.
+  with an ellipsis only when that keeps most of it; otherwise the whole name
+  is printed under its cell with its lock mark, and clicking it selects the
+  cell. Callouts stack on up to three rows, past which one "+N more" line
+  names the rest. Cells that overlap each other no longer print through one
+  another, and label widths follow the editor font size.
+- **The Memory axis keeps its address labels.** Neighbouring labels anchor to
+  their tick and stagger over up to three rows instead of being dropped, so all
+  seven AEN801 edges are labelled from 640 px up. Below that the labels that
+  still collide on every row are omitted (at 360 px, `0x80578000`). The last
+  label, the inclusive last byte, is dotted-underlined and says so in its
+  tooltip.
 - **The padlock on a Memory cell now says what it means.** It marks a region
   that is not a Configurator edit target (no IPC carve-out or storage
   partition can go there), which is separate from the write-authority legend.
-  The legend gains a "Not an edit target" entry and the icon a tooltip.
+  The legend gains a "Not an edit target" entry, and hovering the padlock
+  explains it.
 
 ## 0.7.1
 

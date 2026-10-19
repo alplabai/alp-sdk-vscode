@@ -341,26 +341,26 @@ test("the top pixel reads the window's last byte, never one past it", async () =
   assert.equal(layout.addressAt(0), win.hi - 1); // clamped above the plot
 });
 
-test("stackEdgeLabels staggers neighbours onto a second row and drops only what collides on both", async () => {
+test("stackEdgeLabels anchors, staggers and drops only what cannot fit on any row", async () => {
   const { stackEdgeLabels } = await (
     await import("./webview/esbuildImport.mjs")
   ).importWebviewModule("features/build-plan/railGeometry.ts");
-  const at = (a) => a;
-  // 0, 50, 100 with spacing 80: 0 -> row 0, 50 -> row 1, 100 -> row 0.
-  const rows = stackEdgeLabels([0, 50, 100], at, 80);
-  assert.deepEqual(
-    [...rows],
-    [
-      [0, 0],
-      [100, 0],
-      [50, 1],
-    ],
-  );
-  // 0, 10, 20 cannot fit two rows: the ends win, the middle drops.
-  const tight = stackEdgeLabels([0, 10, 20], at, 80);
-  assert.deepEqual(
-    [...tight.keys()].sort((a, b) => a - b),
-    [0, 20],
-  );
-  assert.equal(stackEdgeLabels([], at, 80).size, 0);
+  // Labels 40 wide, gap 4, strip 0..200, two rows, ticks at x.
+  const cand = (x) => (a, w) => [
+    { x0: x - w / 2, x1: x + w / 2 },
+    { x0: x, x1: x + w },
+    { x0: x - w, x1: x },
+  ];
+  const place = (xs, rows = 2) =>
+    stackEdgeLabels(xs, (a) => cand(a)(a, 40), 4, rows);
+  // 0, 30, 60: the middle label cannot share row 0 with either neighbour.
+  const three = place([0, 30, 60]);
+  assert.equal(three.get(0).row, 0);
+  assert.equal(three.get(60).row, 0);
+  assert.equal(three.get(30).row, 1);
+  // Four ticks inside 10px cannot all fit two rows of 40px labels.
+  const tight = place([0, 3, 6, 9]);
+  assert.ok(tight.size < 4);
+  assert.ok(tight.has(0) && tight.has(9), "the ends win");
+  assert.equal(stackEdgeLabels([], () => [], 4).size, 0);
 });

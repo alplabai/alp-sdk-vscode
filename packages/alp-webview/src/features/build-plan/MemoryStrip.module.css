@@ -82,7 +82,7 @@
  * authority tier mark runs along its bottom edge as on a cell. */
 .parentLane {
   position: relative;
-  height: 20px;
+  height: calc(var(--font-size-base) + 10px);
   margin-bottom: var(--space-2);
 }
 
@@ -90,6 +90,8 @@
   position: absolute;
   top: 0;
   height: 100%;
+  display: flex;
+  align-items: center;
   box-sizing: border-box;
   padding: 0 var(--space-3);
   border: 1px solid var(--border-chart);
@@ -123,10 +125,22 @@
 .callout {
   position: absolute;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-family: var(--text-mono);
   font-size: var(--font-size-base);
   line-height: 1.1;
   color: var(--text-primary);
+}
+
+.callout[data-pickable] {
+  cursor: pointer;
+}
+
+/* The padlock's hover text lives on this wrapper (Icon is aria-hidden). */
+.lockMark {
+  display: inline-block;
+  cursor: help;
 }
 
 .region:hover {
@@ -363,7 +377,6 @@
 .tickLabel {
   position: absolute;
   top: 8px;
-  transform: translateX(-50%);
   font-family: var(--text-mono);
   font-size: var(--font-size-base);
   line-height: 1.1;

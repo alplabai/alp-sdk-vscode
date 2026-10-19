@@ -120,10 +120,10 @@ export function regionsLargestFirst(
   return [...regions].sort((a, b) => b.hi - b.lo - (a.hi - a.lo));
 }
 
-/** A resolved region that fully contains at least one other, with how many
- *  regions contain IT (0 = outermost). */
+/** A resolved region that fully contains at least one other, with the
+ *  parent-bar row it is drawn on (0 = top). */
 export interface ContainerRegion extends ResolvedRegion {
-  depth: number;
+  row: number;
 }
 
 /** Strict containment: `inner` lies inside `outer` and is smaller. Equal
@@ -143,23 +143,36 @@ function contains(outer: ResolvedRegion, inner: ResolvedRegion): boolean {
  * V2N's `ddr_main` over `m33_tcm`) and the rest, which are the cells. A
  * container drawn as a cell would sit under its own children at the same x
  * and print its name through theirs. Partially overlapping regions are
- * neither: they stay cells. Containers carry their nesting depth.
+ * neither: they stay cells.
+ *
+ * Containers are packed into bar ROWS: a bar sits below every container that
+ * strictly contains it, and two bars whose extents overlap (equal extents, or
+ * a partial overlap) never share a row, so no bar prints through another.
  */
 export function splitContainers(regions: readonly ResolvedRegion[]): {
   containers: ContainerRegion[];
   cells: ResolvedRegion[];
 } {
+  const isContainer = (r: ResolvedRegion): boolean =>
+    regions.some((o) => contains(r, o));
+  const cells = regions.filter((r) => !isContainer(r));
+  const ordered = regions
+    .filter(isContainer)
+    .sort((a, b) => b.hi - b.lo - (a.hi - a.lo) || a.lo - b.lo);
   const containers: ContainerRegion[] = [];
-  const cells: ResolvedRegion[] = [];
-  for (const r of regions) {
-    if (regions.some((o) => contains(r, o))) {
-      containers.push({
-        ...r,
-        depth: regions.filter((o) => contains(o, r)).length,
-      });
-    } else {
-      cells.push(r);
+  for (const r of ordered) {
+    // Largest first: every container of `r` is already placed.
+    let row = Math.max(
+      -1,
+      ...containers.filter((c) => contains(c, r)).map((c) => c.row),
+    );
+    row += 1;
+    while (
+      containers.some((c) => c.row === row && c.lo < r.hi && r.lo < c.hi)
+    ) {
+      row += 1;
     }
+    containers.push({ ...r, row });
   }
   return { containers, cells };
 }

@@ -23,7 +23,7 @@ import type {
 import { tierOf, type AuthorityTier } from "./authorityTier";
 import { formatAddress, formatBytes, formatRange } from "./format";
 import { authorityDeclared } from "./memoryRows";
-import { railBoundaries, stackEdgeLabels } from "./railGeometry";
+import { railBoundaries, stackEdgeLabels, type LabelBox } from "./railGeometry";
 import { layoutRail } from "./railScale";
 import {
   budgetEnd,
@@ -36,7 +36,14 @@ import {
   type Window,
 } from "./regionWindow";
 import { locksOf } from "./targetLock";
-import { cellLabelOf, placeCallouts, type CellLabel } from "./stripLabels";
+import {
+  layoutCellLabels,
+  metricsOf,
+  overflowMarker,
+  type CellLabel,
+  type OverflowMarker,
+  type StripMetrics,
+} from "./stripLabels";
 import {
   type CellFill,
   cellFill,
@@ -58,12 +65,9 @@ export const FALLBACK_STRIP_WIDTH = 640;
  *  (`--chart-1` … `--chart-6` in tokens.css). */
 export const SERIES_COUNT = 6;
 
-/** Glyph width of the strip's monospace tick labels at the panel's reading
- *  size, plus the clearance two neighbouring labels keep. A tick label is
- *  at least ten glyphs (`0x80010000`); the longest one the strip prints
- *  decides the spacing, so no two labels ever overprint. */
-const TICK_GLYPH_PX = 7.8;
-const TICK_GAP_PX = 10;
+/** Clearance two neighbouring axis labels keep. A tick label is at least ten
+ *  glyphs (`0x80010000`), measured from the font size (stripLabels.ts). */
+const TICK_GAP_PX = 8;
 
 export interface StripSegment {
   lo: number;
@@ -107,8 +111,11 @@ export interface StripParent {
   title: string;
   /** `mram_main · 5.50 MiB · composite`. */
   label: string;
-  /** 0 = outermost; a deeper bar is stacked beneath its container. */
-  depth: number;
+  /** Bar row, 0 = top: a bar sits below the bars that contain it, and bars
+   *  that overlap never share a row (see `splitContainers`). */
+  row: number;
+  /** Both target-lock verdicts say locked (see `StripRegion.locked`). */
+  locked: boolean;
 }
 
 export interface StripSpan {
@@ -161,6 +168,10 @@ export interface StripModel {
   segments: StripSegment[];
   regions: StripRegion[];
   parents: StripParent[];
+  /** The "+N more" marker for cells past the callout cap, or null. */
+  overflow: OverflowMarker | null;
+  /** The font-dependent lengths this strip was laid out with. */
+  metrics: StripMetrics;
   spans: StripSpan[];
   ticks: StripTick[];
   /** Whether any band carries a tier at all. */
@@ -190,7 +201,9 @@ export function buildStrip(
   memory: MemoryView,
   budgets: Map<string, SliceSize>,
   width: number,
+  fontPx?: number,
 ): StripModel | null {
+  const metrics = metricsOf(fontPx);
   const regions: MemoryRegion[] = memory.regions ?? [];
   const win = chartWindowOf(memory.spans, budgets, regions);
   if (win === null) return null;
@@ -224,8 +237,9 @@ export function buildStrip(
     tiered ? tierOf(r.authorityClass) : null;
   const { containers, cells } = splitContainers(resolved);
   const parents: StripParent[] = [...containers]
-    .sort((a, b) => a.depth - b.depth || a.lo - b.lo)
+    .sort((a, b) => a.row - b.row || a.lo - b.lo)
     .map((r) => {
+      const locks = locksOf(r.region);
       const left = xOf(r.lo);
       const size = formatBytes(r.hi - r.lo);
       return {
@@ -237,7 +251,8 @@ export function buildStrip(
         selectable: !dupes.has(r.region.name),
         title: `${r.region.name} · ${formatRange(r.lo, r.hi)} · ${size}`,
         label: `${r.region.name} · ${size}${tiered ? ` · ${r.region.authorityClass}` : ""}`,
-        depth: r.depth,
+        row: r.row,
+        locked: locks.ipc.locked && locks.storage.locked,
       };
     });
   // Largest first, so a region nested in another is drawn after it.
@@ -254,11 +269,10 @@ export function buildStrip(
       tier: tierFor(r.region),
       selectable: !dupes.has(r.region.name),
       title: `${r.region.name} · ${formatRange(r.lo, r.hi)} · ${formatBytes(r.hi - r.lo)}`,
-      label: cellLabelOf(r.region.name, left, width, locked),
       locked,
     };
   });
-  const placedLabels = placeCallouts(drafts, width);
+  const placedLabels = layoutCellLabels(drafts, width, metrics.glyph);
   const stripRegions: StripRegion[] = drafts.map((d, i) => ({
     ...d,
     label: placedLabels[i],
@@ -297,13 +311,15 @@ export function buildStrip(
     });
   }
 
-  const ticks = buildTicks(segments, win, width, xOf);
+  const ticks = buildTicks(segments, win, width, xOf, metrics.glyph);
   return {
     width,
     window: win,
     segments,
     regions: stripRegions,
     parents,
+    overflow: overflowMarker(stripRegions),
+    metrics,
     spans: stripSpans,
     ticks,
     tiered,
@@ -321,30 +337,46 @@ function buildTicks(
   win: Window,
   width: number,
   xOf: (address: number) => number,
+  glyph: number,
 ): StripTick[] {
   const edges = [...new Set(segments.flatMap((s) => [s.lo, s.hi]))].sort(
     (a, b) => a - b,
   );
   const labelOf = (a: number): string =>
     formatAddress(a === win.hi ? win.hi - 1 : a);
-  const longest = Math.max(...edges.map((a) => labelOf(a).length));
-  const labelWidth = longest * TICK_GLYPH_PX;
-  const centreOf = (a: number): number =>
-    clamp(xOf(a), labelWidth / 2, width - labelWidth / 2);
-  const rowOf = stackEdgeLabels(edges, centreOf, labelWidth + TICK_GAP_PX);
+  const first = edges[0];
+  const last = edges[edges.length - 1];
+  // Best placement first: the window's first label starts at its tick and its
+  // last ends at it (so neither is dragged off its line by clamping); an
+  // interior label is centred, then starts at its tick, then ends at it.
+  const candidatesOf = (a: number): LabelBox[] => {
+    const w = labelOf(a).length * glyph;
+    const x = xOf(a);
+    const inside = (x0: number): LabelBox => {
+      const c = clamp(x0, 0, Math.max(width - w, 0));
+      return { x0: c, x1: c + w };
+    };
+    const centred = inside(x - w / 2);
+    const starts = inside(x);
+    const ends = inside(x - w);
+    if (a === first) return [starts, centred];
+    if (a === last) return [ends, centred];
+    return [centred, starts, ends];
+  };
+  const placed = stackEdgeLabels(edges, candidatesOf, TICK_GAP_PX);
   return edges.map((address) => {
-    const row = rowOf.get(address) ?? null;
-    const label = labelOf(address);
-    const w = label.length * TICK_GLYPH_PX;
+    const at = placed.get(address);
+    const fallback = candidatesOf(address)[0];
+    const box = at?.box ?? fallback;
     return {
       address,
-      x: centreOf(address),
+      x: (box.x0 + box.x1) / 2,
       lineX: xOf(address),
-      label,
-      labelled: row !== null,
-      row,
-      x0: centreOf(address) - w / 2,
-      x1: centreOf(address) + w / 2,
+      label: labelOf(address),
+      labelled: at !== undefined,
+      row: at?.row ?? null,
+      x0: box.x0,
+      x1: box.x1,
       isEnd: address === win.hi,
     };
   });
