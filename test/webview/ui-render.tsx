@@ -2640,6 +2640,76 @@ async function main() {
     );
   }
 
+  // ── region cards (waffle cards under each region's cell) ──
+  // Every resolved non-container region without an image in it has a card;
+  // clicking one selects the REGION (the cell's aria-pressed, the card's own
+  // data-selected, the detail line), and the placed lane is exactly as tall
+  // as its card rows say. Reverting the card lane fails this block.
+  {
+    const problemsBefore = problems.length;
+    const container = await mountBuildPlan(parseSystemManifest(aenFixtureText));
+    const cards = Array.from(
+      container.querySelectorAll<HTMLElement>("[data-region-card]"),
+    );
+    const cardNames = cards.map((c) => c.getAttribute("data-region-card"));
+    for (const name of ["mcuboot", "reserved", "storage", "atoc"]) {
+      if (!cardNames.includes(name)) {
+        problems.push(`region-cards: no card for ${name}`);
+      }
+    }
+    if (cardNames.includes("mram_main")) {
+      problems.push("region-cards: the unresolved container drew a card");
+    }
+    const storageCard = container.querySelector<HTMLElement>(
+      '[data-region-card="storage"]',
+    );
+    if (!storageCard) {
+      problems.push("region-cards: storage card missing");
+    } else {
+      storageCard.click();
+      await settle();
+      const cell = stripItem(container, "storage");
+      if (cell?.getAttribute("aria-pressed") !== "true") {
+        problems.push(
+          "region-cards: clicking the card did not select the cell",
+        );
+      }
+      const after = container.querySelector<HTMLElement>(
+        '[data-region-card="storage"]',
+      );
+      if (after?.getAttribute("data-selected") === null) {
+        problems.push("region-cards: the card does not show it is selected");
+      }
+      const detail = container.querySelector("dl")?.textContent ?? "";
+      if (!detail.startsWith("Region")) {
+        problems.push(`region-cards: detail line is "${detail.slice(0, 30)}"`);
+      }
+      if (!detail.includes("storage")) {
+        problems.push("region-cards: the detail line is not for storage");
+      }
+    }
+    const lane = container.querySelector<HTMLElement>('[data-lane="placed"]');
+    const cardH = Number(
+      lane?.style.getPropertyValue("--card-h").replace("px", ""),
+    );
+    const laneH = Number((lane?.style.height ?? "").replace("px", ""));
+    const GAP = 8;
+    const rows = Math.max(
+      1,
+      ...cards.map(
+        (c) => Math.round(parseFloat(c.style.top) / (cardH + GAP)) + 1,
+      ),
+    );
+    if (!(cardH > 0) || laneH !== rows * cardH + (rows - 1) * GAP) {
+      problems.push(
+        `region-cards: lane height ${laneH} != ${rows} rows of ${cardH}px + gaps`,
+      );
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  region-cards: ${cards.length} cards, click selects the region, lane height holds`,
+    );
+  }
+
   // ── the memory strip over the real rpmsg-v2n golden (#484) ──
   // A 4 GiB ddr_main beside a 512 KiB ocram_low and a 128 KiB m33_tcm
   // nested inside ddr_main; the resolved carve-out fills ocram_low. The

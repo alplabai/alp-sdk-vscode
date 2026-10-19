@@ -114,3 +114,36 @@ test("the locked cards paint --fill-locked, and nothing in the card rules uses t
     "red is reserved for real warnings",
   );
 });
+
+// The floor: 30 deg was the target, but High Contrast Light supplies its own
+// pair — editorWarning #895503 (36.7 deg, mixing toward a black ink keeps the
+// hue) against charts.red #B5200D (6.8 deg) — at 29.9. 25 keeps every real
+// pair clear of the palette's own 19 deg floor (buildPlan.chartContrast) with
+// room to spare, and the yellow it replaced as chart-5 sat at ~0 deg.
+const LOCKED_HUE_FLOOR = 25;
+
+test("the locked amber is >= 25 degrees of hue from every chart series colour in every covered theme", () => {
+  for (const theme of THEMES) {
+    const locked = hue(lockedFill(theme));
+    for (let n = 1; n <= 6; n++) {
+      const series = hue(resolvedOpaqueRgb(theme, `--chart-${n}`, null));
+      const d = Math.abs(locked - series);
+      const delta = Math.min(d, 360 - d);
+      assert.ok(
+        delta >= LOCKED_HUE_FLOOR,
+        `locked amber vs --chart-${n} in ${theme}: ${delta.toFixed(1)} deg, need >= ${LOCKED_HUE_FLOOR}`,
+      );
+    }
+  }
+});
+
+test("the gate is not vacuous: the old yellow chart-5 sat inside the hue floor of the amber", () => {
+  for (const theme of THEMES) {
+    const locked = hue(lockedFill(theme));
+    const yellow = hue(
+      resolvedOpaqueRgb(theme, "--vscode-charts-yellow", null),
+    );
+    const d = Math.abs(locked - yellow);
+    assert.ok(Math.min(d, 360 - d) < LOCKED_HUE_FLOOR, theme);
+  }
+});

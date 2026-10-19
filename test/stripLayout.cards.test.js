@@ -96,29 +96,30 @@ test("locked regions are fully amber with the padlock and say who owns them", as
   );
 });
 
-test("a card titles itself with its region name: whole, ellipsized to >= 5 characters, or only the padlock at the floor", async () => {
+test("a card titles itself with its region name, whole or ellipsized to >= 5 characters; a locked one always says locked", async () => {
   const { buildStrip } = await load();
   for (const w of WIDTHS) {
     for (const fontPx of [13, 16]) {
       const model = buildStrip(view(AEN801_REGIONS), new Map(), w, fontPx);
       for (const c of model.cards) {
-        const tag = `${c.name}@${w}/fs${fontPx}: "${c.heading}"`;
-        if (c.heading === c.name) continue;
-        // Not whole: an ellipsis keeps at least 5 characters of the name...
-        assert.ok(c.heading.endsWith("…"), tag);
-        const kept = c.heading.slice(0, -1);
-        assert.ok(kept.length >= 5 && c.name.startsWith(kept), tag);
-        // ...and has no room left for a subtitle.
-        assert.equal(c.subtitle, "", tag);
-      }
-      // The guarantee at the width floor: every card in this fixture prints
-      // its name (whole or kept >= 5), and a locked one also its padlock.
-      for (const c of model.cards) {
-        assert.ok(
-          c.heading.length >= Math.min(c.name.length, 5),
-          `${c.name}@${w}`,
-        );
-        if (c.kind === "locked") assert.equal(c.padlock, true);
+        const tag = `${c.name}@${w}/fs${fontPx}: "${c.heading}" / "${c.subtitle}"`;
+        if (c.shrunk) {
+          // Squeezed to stay on its row: padlock and squares only.
+          assert.equal(c.heading, "", tag);
+          assert.equal(c.subtitle, "", tag);
+          assert.ok(c.cols >= 4, tag);
+          continue;
+        }
+        if (c.heading !== c.name) {
+          assert.ok(c.heading.endsWith("…"), tag);
+          const kept = c.heading.slice(0, -1);
+          assert.ok(kept.length >= 5 && c.name.startsWith(kept), tag);
+        }
+        // The status word is chosen on its own: an ellipsized name keeps it.
+        if (c.kind === "locked") {
+          assert.equal(c.padlock, true, tag);
+          assert.ok(c.subtitle.startsWith("locked"), tag);
+        }
       }
     }
   }
@@ -151,7 +152,7 @@ test("a card's subtitle falls back from the full status to the short one, and th
     assert.ok(
       c.subtitle === "" ||
         c.subtitle === c.label ||
-        ["locked", "no data", "reserved"].includes(c.subtitle),
+        ["locked", "no data", "no writer"].includes(c.subtitle),
       `${c.name}: "${c.subtitle}"`,
     );
     assert.ok(c.title.includes(c.name) && c.title.endsWith(c.label), c.name);
@@ -162,7 +163,7 @@ test("a card's subtitle falls back from the full status to the short one, and th
   );
   assert.equal(
     big.cards.find((x) => x.name === "rsv_big").subtitle,
-    "reserved · 1 MiB",
+    "no writer · 1 MiB",
   );
 });
 
@@ -182,7 +183,7 @@ test("reserved and other unproven tiers are hatched", async () => {
   const c = model.cards.find((x) => x.name === "reserved");
   assert.equal(c.kind, "hatched");
   assert.equal(c.filled, 0);
-  assert.match(c.label, /^reserved/);
+  assert.match(c.label, /^no writer/);
 });
 
 test("a SoM that declares no authority gets neutral empty cards", async () => {
@@ -321,6 +322,23 @@ test("slot cards' used/free numbers are unchanged by region cards", async () => 
       want[w],
       `width ${w}`,
     );
+    // The slot cards sit exactly under their regions' cells, and the region
+    // cards are laid out AROUND them, never over.
+    for (const [span, name] of [
+      [model.spans[0], "he_slot0"],
+      [model.spans[1], "hp_slot0"],
+    ]) {
+      const cell = model.regions.find((r) => r.name === name);
+      assert.ok(Math.abs(span.left - cell.left) < 1e-6, `${name}@${w}`);
+      assert.ok(Math.abs(span.width - cell.width) < 1e-6, `${name}@${w}`);
+      for (const c of model.cards)
+        if (c.row === 0)
+          assert.ok(
+            c.left + c.width <= span.left + 1e-6 ||
+              span.left + span.width <= c.left + 1e-6,
+            `${c.name} overlaps ${span.name}@${w}`,
+          );
+    }
   }
 });
 
@@ -331,4 +349,120 @@ test("the card height grows with the font so two text lines clear the waffle", a
   assert.equal(h13, 84, "the 13px card is the slot card's 84px");
   // name + status lines (1.25 x font each) + 4 waffle rows + insets.
   assert.ok(h16 >= 4 + 2 * 20 + 8 + 32 + 8, `fs16 card height ${h16}`);
+});
+
+const wideSlot = (label, base, size) =>
+  span({ label, base, sizeBytes: size, cores: [label] });
+
+test("a region that holds an image never also gets a 'no usage data' card: budget differs, no budget, one core, two slots in a region, one slot across regions, an IPC carve-out", async () => {
+  const { buildStrip } = await load();
+  const names = (model) => model.cards.map((c) => c.name).sort();
+  const base = ["atoc", "mcuboot", "reserved", "storage"];
+  // Budget differs from the region (2 MiB slot in a 2.63 MiB region).
+  const small = new Map([budget("m55_he", 98304), budget("m55_hp", 1468006)]);
+  small.get("m55_he").flash.total = 2097152;
+  assert.deepEqual(
+    names(buildStrip(view(AEN801_REGIONS, slots()), small, 1000)),
+    base,
+  );
+  // No budgets at all: the slot is only a marker, the region is still taken.
+  assert.deepEqual(
+    names(buildStrip(view(AEN801_REGIONS, slots()), new Map(), 1000)),
+    base,
+  );
+  // One core built.
+  assert.deepEqual(
+    names(
+      buildStrip(
+        view(AEN801_REGIONS, slots()),
+        new Map([budget("m55_hp", 1468006)]),
+        1000,
+      ),
+    ),
+    base,
+  );
+  // Two slots inside one region (he_slot0 holds both halves).
+  assert.deepEqual(
+    names(
+      buildStrip(
+        view(AEN801_REGIONS, [
+          wideSlot("m55_he", 0x80010000, 0x40000),
+          wideSlot("m55_hp", 0x80080000, 0x40000),
+          wideSlot("m55_x", 0x802b0000, 0x1000),
+        ]),
+        new Map(),
+        1000,
+      ),
+    ),
+    base,
+  );
+  // One slot straddling two regions (he_slot0 and hp_slot0).
+  assert.deepEqual(
+    names(
+      buildStrip(
+        view(AEN801_REGIONS, [wideSlot("m55_he", 0x80200000, 0x200000)]),
+        new Map(),
+        1000,
+      ),
+    ),
+    ["atoc", "mcuboot", "reserved", "storage"],
+  );
+  // An IPC carve-out over a region.
+  const ipc = {
+    ...wideSlot("ipc", 0x80560000, 0x18000),
+    kind: "carve_out",
+    id: "carve_out:ipc",
+  };
+  assert.deepEqual(
+    names(buildStrip(view(AEN801_REGIONS, [ipc]), new Map(), 1000)),
+    ["atoc", "he_slot0", "hp_slot0", "mcuboot", "reserved"],
+  );
+});
+
+test("AEN801 fits one card row at 1000 px, locked cards stay on it by shrinking, and nothing overlaps", async () => {
+  const { buildStrip } = await load();
+  for (const spans of [[], slots()]) {
+    const model = buildStrip(
+      view(AEN801_REGIONS, spans),
+      spans.length ? budgets() : new Map(),
+      1000,
+    );
+    assert.equal(Math.max(...model.cards.map((c) => c.row)), 0);
+  }
+  const model = buildStrip(view(AEN801_REGIONS), new Map(), 1000);
+  const shrunk = model.cards.filter((c) => c.shrunk);
+  assert.ok(shrunk.every((c) => c.padlock || c.kind !== "locked"));
+});
+
+test("a card that would overlap its neighbour shrinks to the floor on its own row rather than open a new one", async () => {
+  const { buildStrip } = await load();
+  const model = buildStrip(view(AEN801_REGIONS), new Map(), 1000);
+  const atoc = model.cards.find((c) => c.name === "atoc");
+  assert.equal(atoc.row, 0);
+  assert.ok(atoc.shrunk, "atoc (80 px) overlaps storage, so it squeezes");
+  assert.equal(atoc.width, 48);
+  assert.ok(atoc.padlock, "still carries the padlock");
+  // Its cell's callout names it; the card never claims a heading it lacks room for.
+  assert.equal(atoc.heading, "");
+  // And it stayed under (or beside) its own cell: its centre is within
+  // half a card of the cell's centre.
+  const cell = model.regions.find((r) => r.name === "atoc");
+  assert.ok(
+    Math.abs(atoc.left + atoc.width / 2 - (cell.left + cell.width / 2)) <=
+      24 + 1e-6,
+  );
+});
+
+test("a hatched card whose word would only repeat the region's name shows its size instead", async () => {
+  const { buildStrip } = await load();
+  const model = buildStrip(
+    view([
+      region("composite", 0x1000, 0x100000, "composite"),
+      region("other", 0x101000, 0x100000, "customer_runtime"),
+    ]),
+    new Map(),
+    1000,
+  );
+  const c = model.cards.find((x) => x.name === "composite");
+  assert.equal(c.label, "1 MiB");
 });

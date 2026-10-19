@@ -39,6 +39,11 @@ function minCardPx(glyph: number): number {
   return Math.max(MIN_CARD_PX, Math.ceil(30 + (MIN_NAME_KEPT + 1) * glyph));
 }
 
+/** The floor a narrow or locked card may SHRINK to, before it opens a new
+ *  row: the padlock, 4 columns of squares, nothing else (its callout above
+ *  names it). */
+export const SHRUNK_CARD_PX = 48;
+
 /** An ellipsized card name keeps at least this many characters. */
 export const MIN_NAME_KEPT = 5;
 
@@ -70,6 +75,9 @@ export interface RegionCard {
   width: number;
   /** 0 is the slot cards' row; a card that cannot sit there moves down. */
   row: number;
+  /** Squeezed to SHRUNK_CARD_PX to stay on its row: padlock and squares
+   *  only, no heading or subtitle. */
+  shrunk: boolean;
   kind: CardKind;
   tier: AuthorityTier | null;
   /** Squares across and in all (`cols * CELL_ROWS`), and how many are lit:
@@ -85,7 +93,8 @@ export interface RegionCard {
    *  whole, or ellipsized keeping at least MIN_NAME_KEPT characters, or ""
    *  at the floor — the padlock and squares stay then. */
   heading: string;
-  /** The second line: `label` when it fits, else `short`, else "". */
+  /** The second line: `label` when it fits, else `short`, else "" — chosen
+   *  on its own, so an ellipsized name still carries its status word. */
   subtitle: string;
   title: string;
   selectable: boolean;
@@ -97,7 +106,9 @@ const OWNER: Record<string, string> = {
 };
 
 const UNPROVEN_WORD: Record<string, string> = {
-  reserved: "reserved",
+  // The cell's own accessible name says "no writer · reserved"; the card says
+  // the part the name does not.
+  reserved: "no writer",
   composite: "composite",
   unstated: "authority not declared",
 };
@@ -129,11 +140,13 @@ function fillOf(
     };
   }
   if (tier === "unproven") {
-    const word = UNPROVEN_WORD[region.authorityClass] ?? "not proven";
+    const raw = UNPROVEN_WORD[region.authorityClass] ?? "not proven";
+    // A word that only repeats the region's own name says nothing.
+    const word = raw === region.name ? "" : raw;
     return {
       kind: "hatched",
-      label: `${word} · ${size}`,
-      short: region.authorityClass === "unstated" ? "not proven" : word,
+      label: word ? `${word} · ${size}` : size,
+      short: region.authorityClass === "unstated" ? "not proven" : word || size,
       padlock: false,
     };
   }
@@ -145,42 +158,99 @@ function fillOf(
   };
 }
 
+/** The nearest `left` for a card of `width` that fits a free gap of `taken`'s
+ *  row and keeps its centre within ±width/2 of `ideal`'s, or null. */
+function slideInto(
+  taken: ReadonlyArray<[number, number]>,
+  width: number,
+  ideal: number,
+  stripWidth: number,
+): number | null {
+  const sorted = [...taken].sort((a, b) => a[0] - b[0]);
+  const gaps: Array<[number, number]> = [];
+  let cursor = 0;
+  for (const [a, b] of sorted) {
+    if (a > cursor) gaps.push([cursor, a]);
+    cursor = Math.max(cursor, b + CARD_GAP_PX);
+  }
+  if (cursor < stripWidth) gaps.push([cursor, stripWidth]);
+  let best: { left: number; away: number } | null = null;
+  for (const [g0, g1] of gaps) {
+    if (g1 - g0 < width - 1e-6) continue;
+    const left = Math.min(Math.max(ideal, g0), g1 - width);
+    const away = Math.abs(left - ideal);
+    if (away <= width / 2 + 1e-6 && (best === null || away < best.away)) {
+      best = { left, away };
+    }
+  }
+  return best === null ? null : best.left;
+}
+
 /**
  * The cards for `regions` (cells, containers already removed), in address
  * order. `occupied` are the slot cards' [x0, x1] extents in row 0, which a
- * card must not overlap; `slotExtents` are the regions' address extents that
- * a slot image fills exactly, and which therefore get no card of their own.
+ * card must not overlap. `imageSpans` are the address extents of placed slot
+ * images and IPC carve-outs: a region any of them touches is carded by that
+ * span (its own marker or used/free cells), never by a second, contradicting
+ * "no usage data" card.
+ *
+ * A card sits under its cell; one that would touch another slides to the
+ * nearest free gap within half its width, and a narrow or locked one may then
+ * shrink to SHRUNK_CARD_PX, all on the current row, before a new row opens.
  */
 export function layoutRegionCards(
   regions: readonly CardInput[],
   occupied: ReadonlyArray<[number, number]>,
-  slotExtents: ReadonlyArray<[number, number]>,
+  imageSpans: ReadonlyArray<[number, number]>,
   stripWidth: number,
   glyph: number,
 ): RegionCard[] {
   const carded = regions
-    .filter((r) => !slotExtents.some(([lo, hi]) => lo === r.lo && hi === r.hi))
+    .filter((r) => !imageSpans.some(([lo, hi]) => lo < r.hi && r.lo < hi))
     .sort((a, b) => a.left - b.left);
   const rows: Array<Array<[number, number]>> = [[...occupied]];
   const out: RegionCard[] = [];
+  const clamp = (v: number, hi: number): number =>
+    Math.min(Math.max(v, 0), Math.max(hi, 0));
   for (const r of carded) {
-    const width = Math.min(Math.max(r.width, minCardPx(glyph)), stripWidth);
+    const fullWidth = Math.min(Math.max(r.width, minCardPx(glyph)), stripWidth);
     const centre = r.left + r.width / 2;
-    const left = Math.min(
-      Math.max(centre - width / 2, 0),
-      Math.max(stripWidth - width, 0),
-    );
-    const right = left + width;
-    let row = rows.findIndex((taken) =>
-      taken.every(
-        ([a, b]) => right + CARD_GAP_PX <= a || left >= b + CARD_GAP_PX,
-      ),
-    );
+    const narrow = r.width < minCardPx(glyph) || r.tier === "locked";
+    let row = -1;
+    let width = fullWidth;
+    let left = 0;
+    let shrunk = false;
+    for (let i = 0; i < rows.length && row < 0; i++) {
+      const plain = slideInto(
+        rows[i],
+        fullWidth,
+        clamp(centre - fullWidth / 2, stripWidth - fullWidth),
+        stripWidth,
+      );
+      if (plain !== null) {
+        row = i;
+        left = plain;
+      } else if (narrow && fullWidth > SHRUNK_CARD_PX) {
+        const squeezed = slideInto(
+          rows[i],
+          SHRUNK_CARD_PX,
+          clamp(centre - SHRUNK_CARD_PX / 2, stripWidth - SHRUNK_CARD_PX),
+          stripWidth,
+        );
+        if (squeezed !== null) {
+          row = i;
+          left = squeezed;
+          width = SHRUNK_CARD_PX;
+          shrunk = true;
+        }
+      }
+    }
     if (row < 0) {
       row = rows.length;
       rows.push([]);
+      left = clamp(centre - fullWidth / 2, stripWidth - fullWidth);
     }
-    rows[row].push([left, right]);
+    rows[row].push([left, left + width]);
     const size = formatBytes(r.hi - r.lo);
     const fill = fillOf(r.region, r.tier, size);
     const room = Math.floor(
@@ -194,21 +264,20 @@ export function layoutRegionCards(
           ? `${name.slice(0, room - 1)}…`
           : "";
     const subtitle =
-      heading !== name
-        ? ""
-        : fill.label.length <= room
-          ? fill.label
-          : fill.short.length <= room
-            ? fill.short
-            : "";
+      fill.label.length <= room
+        ? fill.label
+        : fill.short.length <= room
+          ? fill.short
+          : "";
     const cols = Math.floor((width - 2 * CARD_INSET_PX) / CELL_PITCH_PX);
     const total = cols * CELL_ROWS;
     out.push({
       id: r.region.id,
-      name: r.region.name,
+      name,
       left,
       width,
       row,
+      shrunk,
       kind: fill.kind,
       tier: r.tier,
       cols,

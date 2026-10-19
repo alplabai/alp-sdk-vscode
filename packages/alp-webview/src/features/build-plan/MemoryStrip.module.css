@@ -46,10 +46,13 @@
 }
 
 /* Tall enough for the name, the figure beneath it, and four rows of cells
- * (CELL_ROWS × CELL_PITCH_PX in slotUsage.ts) under both. */
+ * (CELL_ROWS × CELL_PITCH_PX in slotUsage.ts) under both. The height and the
+ * card height (--card-h) are set inline from the layout model — `cardHeightPx`
+ * and `cardLaneHeight` in stripCards.ts / RegionCards.tsx, which grow with the
+ * font — so this rule carries only the 13px default of the card height and the
+ * margin. */
 .lane[data-lane="placed"] {
   --card-h: 84px;
-  height: 84px;
   margin-top: var(--space-2);
 }
 
@@ -213,7 +216,7 @@
 .span {
   position: absolute;
   top: 0;
-  height: var(--card-h, 84px);
+  height: var(--card-h);
   box-sizing: border-box;
   padding: var(--space-2) var(--space-3) var(--space-3);
   border: 1px solid var(--border-chart);
@@ -365,7 +368,7 @@
  * faint empty squares. Not yours or not proven: the strip's hatch. */
 .regionCard {
   position: absolute;
-  height: var(--card-h, 84px);
+  height: var(--card-h);
   box-sizing: border-box;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-chart);

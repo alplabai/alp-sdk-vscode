@@ -321,17 +321,26 @@ export function buildStrip(
     });
   }
 
-  const slotExtents: Array<[number, number]> = memory.spans.flatMap((sp) => {
-    if (sp.kind !== "slot_image" || sp.base === null) return [];
-    const end = endOf(sp) ?? budgetEnd(sp, budgets.get(sp.label));
-    return end === null ? [] : [[sp.base, end] as [number, number]];
+  // Every placed slot image and IPC carve-out: a region one of them touches
+  // is carded by it (a marker when its extent is not yet known).
+  const imageSpans: Array<[number, number]> = memory.spans.flatMap((sp) => {
+    if (
+      (sp.kind !== "slot_image" && sp.kind !== "carve_out") ||
+      sp.base === null
+    ) {
+      return [];
+    }
+    const end =
+      endOf(sp) ??
+      (sp.kind === "slot_image" ? budgetEnd(sp, budgets.get(sp.label)) : null);
+    return [[sp.base, end ?? sp.base + 1] as [number, number]];
   });
   const cards = layoutRegionCards(
     drafts,
     stripSpans
       .filter((sp) => sp.width > 0 || sp.marker)
       .map((sp) => [sp.left, sp.left + Math.max(sp.width, 2)]),
-    slotExtents,
+    imageSpans,
     width,
     metrics.glyph,
   );

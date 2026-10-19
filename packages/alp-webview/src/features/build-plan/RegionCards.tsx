@@ -40,7 +40,7 @@ export function RegionCards({
           className={styles.regionCard}
           data-region-card={c.name}
           data-kind={c.kind}
-          data-tier={c.tier ?? undefined}
+          data-shrunk={c.shrunk || undefined}
           data-selected={c.selectable && c.id === selected ? "" : undefined}
           data-keep-selection=""
           data-pickable={c.selectable || undefined}

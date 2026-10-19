@@ -204,7 +204,14 @@
    * pick, with the chart-1 proximity disclosed rather than hidden. */
   --chart-3: var(--vscode-terminal-ansiCyan, #0598bc);
   --chart-4: var(--vscode-charts-purple, #b180d7);
-  --chart-5: var(--vscode-charts-yellow, #cca700);
+  /* Magenta, NOT charts.yellow: the locked regions' amber (--fill-locked,
+   * below) is made from the editor-warning yellow, and a series colour from
+   * the same hue would read as "locked" on a slot's used squares. The amber
+   * is held >= 25 deg of hue from every series colour in every covered theme
+   * (test/buildPlan.lockedFill.test.js); ansiMagenta is core-registered and
+   * opaque, and sits 26-28 deg from --chart-4's purple, over the palette's
+   * 19 deg floor. */
+  --chart-5: var(--vscode-terminal-ansiMagenta, #bc3fbc);
   --chart-6: var(--vscode-charts-red, #f14c4c);
 }
 
@@ -213,7 +220,8 @@
  * fallback for a theme that defines none. Mixed 35% toward the text colour:
  * Light+'s editorWarning (#BF8803) alone is 2.8:1 on its panel ground, under
  * the 3:1 non-text floor, and the mix clears it in every covered theme
- * (test/buildPlan.lockedFill.test.js). It is not --status-err: red is kept
+ * (test/buildPlan.lockedFill.test.js), and is kept >= 25 deg of hue from every
+ * --chart-N. It is not --status-err: red is kept
  * for real warnings, and a locked region is not one. */
 :root {
   --fill-locked: color-mix(
