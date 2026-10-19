@@ -45,6 +45,14 @@ import {
   FALLBACK_STRIP_WIDTH,
   type StripModel,
 } from "./stripLayout";
+import { DEFAULT_FONT_PX } from "./stripLabels";
+import {
+  AxisTicks,
+  axisHeight,
+  CalloutLane,
+  LockMark,
+  ParentLanes,
+} from "./StripLanes";
 import styles from "./MemoryStrip.module.css";
 
 const CONFLICT_TITLE: Record<MemoryConflict["kind"], string> = {
@@ -54,9 +62,10 @@ const CONFLICT_TITLE: Record<MemoryConflict["kind"], string> = {
   outside_region: "lands outside the region it names",
 };
 
-/** The narrowest box that still holds its name, and the narrowest that
- *  holds its figure beneath the name; anything narrower keeps the text in
- *  its title and in the detail line instead of clipping it mid-glyph. */
+/** The narrowest placed-image box that holds its name, and the narrowest
+ *  that holds its figure beneath the name; anything narrower keeps the text
+ *  in its title and in the detail line instead of clipping it mid-glyph.
+ *  (A region cell never goes unnamed: see stripLabels.ts.) */
 const NAME_MIN_PX = 56;
 const FIGURE_MIN_PX = 150;
 
@@ -71,7 +80,7 @@ const FIGURE_MIN_PX = 150;
  *  once, found no element, and never observed again — the strip then stayed
  *  at the fallback width for the life of the panel. */
 function useMeasuredWidth() {
-  const [width, setWidth] = useState(0);
+  const [size, setSize] = useState({ width: 0, fontPx: DEFAULT_FONT_PX });
   const observer = useRef<ResizeObserver | null>(null);
   const ref = useCallback((el: HTMLDivElement | null) => {
     observer.current?.disconnect();
@@ -79,13 +88,34 @@ function useMeasuredWidth() {
     if (!el || typeof ResizeObserver === "undefined") return;
     const next = new ResizeObserver((entries) => {
       const measured = entries[0]?.contentRect.width;
-      if (measured !== undefined) setWidth(measured);
+      if (measured === undefined) return;
+      const fontPx = fontPxOf(el);
+      setSize((prev) =>
+        prev.width === measured && prev.fontPx === fontPx
+          ? prev
+          : { width: measured, fontPx },
+      );
     });
     next.observe(el);
     observer.current = next;
   }, []);
   useEffect(() => () => observer.current?.disconnect(), []);
-  return [ref, width > 0 ? width : FALLBACK_STRIP_WIDTH] as const;
+  return [
+    ref,
+    size.width > 0 ? size.width : FALLBACK_STRIP_WIDTH,
+    size.fontPx,
+  ] as const;
+}
+
+/** The panel's base font size in px as the labels actually render it
+ *  (`--font-size-base`, i.e. `--vscode-font-size`), so label widths follow
+ *  the reader's editor font size. */
+function fontPxOf(el: HTMLElement): number {
+  const style = getComputedStyle(el);
+  const token = parseFloat(style.getPropertyValue("--font-size-base"));
+  const own = parseFloat(style.fontSize);
+  const px = Number.isFinite(token) ? token : own;
+  return Number.isFinite(px) && px > 0 ? px : DEFAULT_FONT_PX;
 }
 
 /** Items a reader can select, in reading order: placed images left to
@@ -101,10 +131,13 @@ function selectableOrder(
   const byLeft = (a: { left: number }, b: { left: number }) => a.left - b.left;
   const spans = model ? [...model.spans].sort(byLeft).map((s) => s.id) : [];
   const regions = model
-    ? [...model.regions]
-        .filter((r) => r.selectable)
-        .sort(byLeft)
-        .map((r) => r.id)
+    ? [
+        ...model.parents.filter((r) => r.selectable).map((r) => r.id),
+        ...[...model.regions]
+          .filter((r) => r.selectable)
+          .sort(byLeft)
+          .map((r) => r.id),
+      ]
     : [];
   return [...spans, ...regions, ...partitionIds, ...ghosts.map((g) => g.id)];
 }
@@ -330,7 +363,13 @@ function CellField({ cells }: { cells: CellFill }) {
   );
 }
 
-function Legend({ tiers }: { tiers: AuthorityTier[] }) {
+function Legend({
+  tiers,
+  anyLocked,
+}: {
+  tiers: AuthorityTier[];
+  anyLocked: boolean;
+}) {
   return (
     <ul className={styles.legend} aria-label="Write authority">
       {tiers.map((tier) => (
@@ -344,6 +383,12 @@ function Legend({ tiers }: { tiers: AuthorityTier[] }) {
           {TIER_LABEL[tier]}
         </li>
       ))}
+      {anyLocked && (
+        <li>
+          <LockMark />
+          Not an edit target
+        </li>
+      )}
     </ul>
   );
 }
@@ -374,10 +419,10 @@ export function MemoryStrip({
    *  otherwise every "Edit in Configurator" says the verdict may be old. */
   fresh?: boolean;
 }) {
-  const [stripRef, width] = useMeasuredWidth();
+  const [stripRef, width, fontPx] = useMeasuredWidth();
   const uid = useId();
   const regions = memory.regions ?? [];
-  const model = buildStrip(memory, budgets, width);
+  const model = buildStrip(memory, budgets, width, fontPx);
   const ghosts = [
     ...buildUnplacedRows(memory.unresolved),
     ...unresolvedRegionRows(regions),
@@ -437,10 +482,13 @@ export function MemoryStrip({
     onClick: () => setPicked(id),
     onKeyDown: onKeyDown(id),
   });
+  const anyLocked = model
+    ? [...model.parents, ...model.regions].some((r) => r.locked)
+    : false;
   const tiersDrawn = model
-    ? ([...new Set(model.regions.map((r) => r.tier))].filter(
-        (t): t is AuthorityTier => t !== null,
-      ) as AuthorityTier[])
+    ? ([
+        ...new Set([...model.parents, ...model.regions].map((r) => r.tier)),
+      ].filter((t): t is AuthorityTier => t !== null) as AuthorityTier[])
     : [];
   const note =
     regions.length === 0
@@ -459,12 +507,18 @@ export function MemoryStrip({
           Memory
         </h2>
         {note && <span className={styles.sectionNote}>{note}</span>}
-        {tiersDrawn.length > 0 && <Legend tiers={tiersDrawn} />}
+        {(tiersDrawn.length > 0 || anyLocked) && (
+          <Legend tiers={tiersDrawn} anyLocked={anyLocked} />
+        )}
       </div>
       {model ? (
         <div className={styles.strip} ref={stripRef} data-strip-width={width}>
           <div className={styles.lanes}>
-            <div className={styles.axis} aria-hidden={true}>
+            <div
+              className={styles.axis}
+              aria-hidden={true}
+              style={{ bottom: axisHeight(model) }}
+            >
               {model.segments.map((seg) => (
                 <span
                   key={seg.lo}
@@ -475,6 +529,11 @@ export function MemoryStrip({
                 />
               ))}
             </div>
+            <ParentLanes
+              parents={model.parents}
+              nameOf={(id) => rows.find((x) => x.id === id)?.accessibleName}
+              itemProps={itemProps}
+            />
             {model.regions.length > 0 && (
               <div
                 className={styles.lane}
@@ -491,6 +550,7 @@ export function MemoryStrip({
                       key={`${r.id}:${i}`}
                       className={styles.region}
                       data-tier={r.tier ?? undefined}
+                      data-label={r.label.mode}
                       title={r.title}
                       style={{ left: r.left, width: r.width }}
                       {...(r.selectable
@@ -502,15 +562,12 @@ export function MemoryStrip({
                             tabIndex: -1,
                           })}
                     >
-                      {r.width >= NAME_MIN_PX && r.name}
-                      {row?.fullyLocked && r.width >= NAME_MIN_PX && (
-                        <Icon
-                          name="lock"
-                          size={10}
-                          className={styles.lockIcon}
-                          aria-label="locked: not an edit target"
-                        />
-                      )}
+                      {r.label.mode !== "callout" &&
+                        r.label.mode !== "overflow" &&
+                        r.label.text}
+                      {r.locked &&
+                        r.label.mode !== "callout" &&
+                        r.label.mode !== "overflow" && <LockMark />}
                       {r.tier && (
                         <span className={styles.tierMark} data-tier={r.tier} />
                       )}
@@ -519,6 +576,7 @@ export function MemoryStrip({
                 })}
               </div>
             )}
+            <CalloutLane model={model} onPick={setPicked} />
             <div
               className={styles.lane}
               data-lane="placed"
@@ -569,21 +627,7 @@ export function MemoryStrip({
                 );
               })}
             </div>
-            <div className={styles.ticks} aria-hidden="true">
-              {model.ticks.map((t) => (
-                // `data-address` names the declared edge each tick stands
-                // on, so a test can prove every declared address reached
-                // the strip without reading pixel positions back.
-                <span key={t.address} data-address={t.address}>
-                  <span className={styles.tick} style={{ left: t.lineX }} />
-                  {t.labelled && (
-                    <span className={styles.tickLabel} style={{ left: t.x }}>
-                      {t.label}
-                    </span>
-                  )}
-                </span>
-              ))}
-            </div>
+            <AxisTicks model={model} />
           </div>
         </div>
       ) : (

@@ -77,6 +77,76 @@
   align-items: center;
 }
 
+/* A container region: a thin bar over the cells, across its whole extent.
+ * Same quiet grey and outline as a cell, so it reads as a region; the
+ * authority tier mark runs along its bottom edge as on a cell. */
+.parentLane {
+  position: relative;
+  height: calc(var(--font-size-base) + 10px);
+  margin-bottom: var(--space-2);
+}
+
+.parent {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-chart);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+  color: var(--text-primary);
+  font-family: var(--text-mono);
+  font-size: var(--font-size-base);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.parent:hover {
+  background: color-mix(in srgb, var(--text-secondary) 22%, transparent);
+}
+
+.parent[aria-disabled="true"] {
+  cursor: default;
+}
+
+/* Names of cells too narrow for one: under the cells, never over a
+ * neighbour (stripLabels.ts places each on its own row). */
+.callouts {
+  position: relative;
+  margin-top: var(--space-1);
+}
+
+.callout {
+  position: absolute;
+  z-index: 1;
+  /* Opaque, in the panel ground, so the axis's gap hatch (which runs the
+   * lane's full height) never strikes through a name. */
+  background: var(--surface-bg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--text-mono);
+  font-size: var(--font-size-base);
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+
+.callout[data-pickable] {
+  cursor: pointer;
+}
+
+/* The padlock's hover text lives on this wrapper (Icon is aria-hidden). */
+.lockMark {
+  display: inline-block;
+  cursor: help;
+}
+
 .region:hover {
   background: color-mix(in srgb, var(--text-secondary) 22%, transparent);
 }
@@ -88,6 +158,7 @@
 /* Selection is a 2px ring in the text colour, not the focus colour: the
  * focus ring is VS Code's own and must keep meaning "keyboard focus". */
 .region[aria-pressed="true"],
+.parent[aria-pressed="true"],
 .span[aria-pressed="true"] {
   box-shadow: inset 0 0 0 2px var(--text-primary);
 }
@@ -310,12 +381,17 @@
 .tickLabel {
   position: absolute;
   top: 8px;
-  transform: translateX(-50%);
   font-family: var(--text-mono);
   font-size: var(--font-size-base);
   line-height: 1.1;
   color: var(--text-secondary);
   white-space: nowrap;
+}
+
+/* The window's last byte, inclusive: a dotted underline marks it apart from
+ * the first-byte labels (its title says so). */
+.tickLabel[data-edge="end"] {
+  text-decoration: underline dotted;
 }
 
 /* Declared but not placed: a dashed outline where a box would be. */

@@ -40,6 +40,15 @@ const AEN_REGIONS = [
   region("atoc", 2153218048, 32768, "locked"), // 0x80578000, 32 KiB
 ];
 
+/** tan 0.7.0 on E1M-AEN801: the six regions above plus `mram_main`, now
+ *  RESOLVED — base 2147483648 (0x80000000), 5767168 B (5.5 MiB), composite,
+ *  a container spanning every other region. Values copied from a real
+ *  `system-manifest.yaml` `memory:` list. */
+const AEN801_REGIONS = [
+  ...AEN_REGIONS,
+  region("mram_main", 2147483648, 5767168, "composite"),
+];
+
 /** rpmsg-v2n: ddr_main (4 GiB) CONTAINS m33_tcm; ocram_low sits far below.
  *  All three are `source: soc_derived`, `kind: unresolved` in the fixture. */
 const V2N = { source: "soc_derived", kind: "unresolved" };
@@ -66,4 +75,4 @@ function span(overrides) {
   };
 }
 
-module.exports = { AEN_REGIONS, V2N_REGIONS, region, span };
+module.exports = { AEN_REGIONS, AEN801_REGIONS, V2N_REGIONS, region, span };
