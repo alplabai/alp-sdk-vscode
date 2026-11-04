@@ -206,17 +206,22 @@ export function switchCandidates(
   });
 }
 
-/** True when `tan platform list` failed for a token / 403 / 404 reason (the
- *  manifest repo is private for now). Matched on code AND message: tan owns
- *  the exact issue code, and this must not depend on guessing it. */
-export function isListAccessIssue(
-  issues: ReadonlyArray<{ code: string; message: string }>,
-): boolean {
-  return issues.some((i) =>
-    /token|403|404|unauthori[sz]ed|forbidden|not.?found/i.test(
-      `${i.code} ${i.message}`,
-    ),
-  );
+/** tan-cli#1572: every `tan platform list` fetch failure is this one code. */
+export const LIST_FAILED_CODE = "platform.list-failed";
+
+type ListIssue = { code: string; message: string };
+
+/** The `platform.list-failed` issue, if the list failed that way. */
+export function listFailedIssue(
+  issues: ReadonlyArray<ListIssue>,
+): ListIssue | undefined {
+  return issues.find((i) => i.code === LIST_FAILED_CODE);
+}
+
+/** True when that failure is an access problem: tan appends a GITHUB_TOKEN
+ *  hint to the message on HTTP 403/404 (the manifest repo is private for now). */
+export function isListAccessIssue(issues: ReadonlyArray<ListIssue>): boolean {
+  return /GITHUB_TOKEN/.test(listFailedIssue(issues)?.message ?? "");
 }
 
 // ── The quick-pick menu ──────────────────────────────────────────────────────

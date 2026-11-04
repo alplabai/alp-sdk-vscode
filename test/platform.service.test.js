@@ -9,6 +9,7 @@ const {
   mismatchKey,
   mismatches,
   isListAccessIssue,
+  listFailedIssue,
   isPlatformLine,
   isPlatformTarget,
   isPlatformVersion,
@@ -112,12 +113,15 @@ test("tan platform list: tolerant read, newest MICRO per line, all", () => {
   assert.equal(readPlatformList({}), null);
 });
 
-test("list access issues are recognised, others are not", () => {
+test("list failures: only platform.list-failed with GITHUB_TOKEN is access", () => {
+  const F = "platform.list-failed";
   assert.ok(
-    isListAccessIssue([{ code: "platform.http", message: "HTTP 403" }]),
+    isListAccessIssue([{ code: F, message: "HTTP 403. Set GITHUB_TOKEN." }]),
   );
-  assert.ok(isListAccessIssue([{ code: "x", message: "GITHUB_TOKEN needed" }]));
-  assert.ok(!isListAccessIssue([{ code: "x", message: "timed out" }]));
+  assert.ok(!isListAccessIssue([{ code: F, message: "timed out" }]));
+  assert.ok(!isListAccessIssue([{ code: "x", message: "GITHUB_TOKEN 403" }]));
+  assert.ok(!isListAccessIssue([{ code: "x", message: "HTTP 404 not found" }]));
+  assert.equal(listFailedIssue([{ code: "x", message: "m" }]), undefined);
 });
 
 test("the menu: pin lists components then actions; no pin only switch", () => {

@@ -274,6 +274,12 @@ const GATED_CODES = {
   // this suite inside `package_and_publish` and `package_darwin_arm64`.
   "monitor.no-port": "frozen",
 
+  // tan-cli#1572 (`tan platform list`): every fetch failure is this code. The
+  // pinned tan predates `tan platform`, so its frozen list declares it nowhere
+  // (`null`); flip this to "frozen" when the pin moves to a tan that ships it.
+  // Ext: `LIST_FAILED_CODE` in packages/alp-core/src/platform/service.ts.
+  "platform.list-failed": null,
+
   // `tan init` refusals, keyed in `packages/alp-core/src/project/
   // initRefusal.ts`'s `KINDS` table (found by idiom 5 below), which decides
   // which wizard step the customer is sent back to. tan 0.7.0-rc1 froze

@@ -11,6 +11,7 @@ import * as path from "node:path";
 import {
   isPlatformTarget,
   isListAccessIssue,
+  listFailedIssue,
   mismatchKey,
   platformMenu,
   readPlatform,
@@ -212,16 +213,20 @@ async function listFailed(
   context: vscode.ExtensionContext,
   outcome: Parameters<typeof planCliOutcome>[0],
 ): Promise<void> {
-  if (isListAccessIssue(outcome.envelope?.issues ?? [])) {
+  const issues = outcome.envelope?.issues ?? [];
+  const failed = listFailedIssue(issues);
+  if (failed) {
     const picked = await notify({
       severity: "warning",
       channel: "toast",
-      message:
-        "Could not list Alp Platform releases: the release repository is " +
-        "private for now, so tan needs a GITHUB_TOKEN in its environment. " +
-        "Set GITHUB_TOKEN and retry, or use a local manifest file.",
+      message: isListAccessIssue(issues)
+        ? "Could not list Alp Platform releases: the release repository is " +
+          "private for now, so tan needs a GITHUB_TOKEN with read access in " +
+          "its environment. Set GITHUB_TOKEN and retry, or use a local " +
+          "manifest file."
+        : `Could not list Alp Platform releases: ${failed.message}`,
       actions: [{ id: "useManifestFile" }],
-      dedupeKey: "platform-list-access",
+      dedupeKey: "platform-list-failed",
     });
     if (picked === "useManifestFile") await useManifestFile(context);
     return;

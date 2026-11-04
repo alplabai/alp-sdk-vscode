@@ -323,7 +323,12 @@ test("switch: a token/403 failure offers a local manifest file", async () => {
       ok: false,
       message: "boom",
       envelope: {
-        issues: [{ code: "platform.list-failed", message: "HTTP 403" }],
+        issues: [
+          {
+            code: "platform.list-failed",
+            message: "HTTP 403. Set GITHUB_TOKEN.",
+          },
+        ],
       },
     },
     notifyPicks: ["useManifestFile"],
@@ -337,5 +342,27 @@ test("switch: a token/403 failure offers a local manifest file", async () => {
     "use",
     "--manifest",
     "/tmp/m.yaml",
+  ]);
+});
+
+test("switch: another platform.list-failed shows its message and offers a manifest", async () => {
+  const { mod, host, context } = await load({
+    listOutcome: {
+      ok: false,
+      message: "x",
+      envelope: {
+        issues: [{ code: "platform.list-failed", message: "timed out" }],
+      },
+    },
+    notifyPicks: ["useManifestFile"],
+    file: "/tmp/m.yaml",
+  });
+  await mod.switchRelease(context);
+  assert.match(host.notifies[0].message, /Could not list.*timed out/);
+  assert.doesNotMatch(host.notifies[0].message, /GITHUB_TOKEN/);
+  assert.deepEqual(host.terminal[0].args.slice(0, 3), [
+    "platform",
+    "use",
+    "--manifest",
   ]);
 });
