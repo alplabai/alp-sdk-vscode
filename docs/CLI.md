@@ -13,7 +13,7 @@ surface.
 > `alp` (`cli-rs`) binary and the TypeScript implementation (`packages/alp-cli`)
 > have been retired. This document is the envelope contract this repo depends
 > on. It describes the INTENDED surface: `tan` is not feature-complete at the
-> pinned `SUPPORTED_CLI_VERSION` 0.7.0 (`src/alpCli/service.ts`), and
+> pinned `SUPPORTED_CLI_VERSION` 0.7.1 (`src/alpCli/service.ts`), and
 > two parts of it are declared by that binary but refuse when you run them —
 > the second note below names both.
 > `tan` is published as a GitHub release asset for each target (tag
@@ -180,7 +180,7 @@ subcommands, same flags). `alp model` is the SDK-native command surface; `tan
 model` is the thin envelope wrapper emitting `{command, ok, exitCode, project,
 data, issues}`.
 
-At the pinned 0.7.0 every entry below exists except `info` (tan-cli#674);
+At the pinned 0.7.1 every entry below exists except `info` (tan-cli#674);
 through 0.6.0 only `build` did, and the rest exited 1 with
 `model.unknown-subcommand`. The flags listed are the contract the family was
 specified against — `tan model --help` is the authority on the real ones.

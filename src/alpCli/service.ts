@@ -96,15 +96,14 @@ import { headlineIssue } from "@alp-sdk/core/cli/headlineIssue";
  *  `src/alpCli/somCliFloor.ts` is the matching guard, and it compares against
  *  the PROBED version for exactly the reason `RENODE_CORE_CLI_VERSION` does.
  *
- *  `0.7.0` is the pin: the GA of the line that carries `tan model zoo`/`add`
+ *  `0.7.1` is the pin: the GA of the line that carries `tan model zoo`/`add`
  *  (tan-cli#1338, #699), per-entry artifact provenance on
  *  `missingPrerequisites[]` (tan-cli#1066, #467), and the two GATED_CODES tan
- *  froze after 0.6.0 (#655). It went to the stable release without changing
- *  the contract the extension reads beyond one added reserved code,
- *  `model.device-ab-scope-mismatch`. `RENESAS_BUILD_CLI_VERSION` does not
- *  move, for the reason given above. */
+ *  froze after 0.6.0 (#655). `0.7.1` is the `0.7.1-rc1` promoted with no code
+ *  change, so the contract the extension reads is the one `0.7.0` carried.
+ *  `RENESAS_BUILD_CLI_VERSION` does not move, for the reason given above. */
 
-export const SUPPORTED_CLI_VERSION = "0.7.0";
+export const SUPPORTED_CLI_VERSION = "0.7.1";
 
 /**
  * Every published `alplabai/tan-cli` tag that does NOT carry an
@@ -250,6 +249,11 @@ export const HOSTS_WITHOUT_RELEASE_ASSET: Readonly<
   // `checksums.txt`, `dependency-lock.txt` and `envelope-contract.json`. Still
   // no `aarch64-pc-windows-msvc` and no `aarch64-unknown-linux-gnu`.
   "0.7.0": ["win32/arm64", "linux/arm64"],
+  // MEASURED against the GA release: `gh release view v0.7.1 --repo
+  // alplabai/tan-cli` lists the same four archives as v0.7.0 plus
+  // `checksums.txt`, `dependency-lock.txt` and `envelope-contract.json`. Still
+  // no `aarch64-pc-windows-msvc` and no `aarch64-unknown-linux-gnu`.
+  "0.7.1": ["win32/arm64", "linux/arm64"],
 };
 
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */
