@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The extension pins tan `0.7.1`.** `SUPPORTED_CLI_VERSION` moves from
+  `0.7.0` to the `v0.7.1` release, the `0.7.1-rc1` promoted to GA with no code
+  change since, so the envelope contract the extension reads is unchanged.
+  Like `0.7.0`, `0.7.1` publishes no arm64 Windows or arm64 Linux archive, and
+  needs alp-sdk `v0.17.0` or newer to build any Zephyr board. Pinned-version
+  docs and install URLs move to `v0.7.1`.
+
 - **Alp Platform releases in VS Code.** From activation, the status bar shows
   `Alp Platform 26.11.0` for a pinned workspace, or a muted `Alp Platform:
   none` when `tan` supports platforms but nothing is pinned; with a `tan` that
