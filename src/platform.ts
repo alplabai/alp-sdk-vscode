@@ -30,7 +30,10 @@ import { runDoctor } from "./alpCli/doctor";
 import { runAlpCommand, runAlpInTerminal } from "./alpCli/vscodeAdapter";
 import { notify } from "./notify/vscodeAdapter";
 import { planCliOutcome } from "./notify/service";
-import { collectProjectContext } from "./project/vscodeAdapter";
+import {
+  collectProjectContext,
+  readOnlyProjectCwd,
+} from "./project/vscodeAdapter";
 import { awaitRun, isRunActive, log } from "./util";
 
 export const PLATFORM_COMMAND = "alp.platformRelease";
@@ -45,11 +48,17 @@ let current: PlatformPin | null | undefined;
 const warned = new Set<string>();
 let malformedLogged = false;
 let inflight: Promise<void> | undefined;
+let rerun = false;
+/** The last doctor run produced no report (tan missing, timed out, bad
+ *  output) — distinct from an old tan that simply has no `platform`. */
+let doctorFailed = false;
 
 /** Test seam: forget every session latch. */
 export function resetPlatformState(): void {
   item = undefined;
   current = undefined;
+  rerun = false;
+  doctorFailed = false;
   warned.clear();
   malformedLogged = false;
   inflight = undefined;
@@ -77,26 +86,22 @@ export function registerPlatform(
   ];
 }
 
-/** One `tan doctor` run -> `applyPlatform`. Coalesces concurrent calls. */
+/** One `tan doctor` run -> `applyPlatform`. A call made while one is in
+ *  flight is not dropped: it runs once more afterwards, so the state a
+ *  `tan platform` command just changed is what ends up on screen. */
 export function refreshPlatform(
   context: vscode.ExtensionContext,
 ): Promise<void> {
-  inflight ??= (async () => {
+  if (inflight) {
+    rerun = true;
+    return inflight;
+  }
+  inflight = (async () => {
     try {
-      if (!vscode.workspace.workspaceFolders?.length) {
-        applyPlatform(context, undefined);
-        return;
-      }
-      const doctor = await runDoctor(
-        context,
-        ["doctor"],
-        collectProjectContext().workspaceRoot ?? "",
-        undefined,
-        false,
-      );
-      // A failed run carries no `platform`: that clears the item rather than
-      // leaving the last pin on screen.
-      applyPlatform(context, doctor.platform);
+      do {
+        rerun = false;
+        await refreshOnce(context);
+      } while (rerun);
     } finally {
       inflight = undefined;
     }
@@ -104,11 +109,34 @@ export function refreshPlatform(
   return inflight;
 }
 
-/** Apply one doctor answer (`undefined` when there was none). */
+async function refreshOnce(context: vscode.ExtensionContext): Promise<void> {
+  if (!vscode.workspace.workspaceFolders?.length) {
+    applyPlatform(context, undefined);
+    return;
+  }
+  // `readOnlyProjectCwd`, never `""` (which spawn resolves to the extension
+  // host's own directory). A folder holding only `.alp/platform.yaml` still
+  // resolves: the first workspace folder is the root when no board.yaml is.
+  const doctor = await runDoctor(
+    context,
+    ["doctor"],
+    readOnlyProjectCwd(),
+    undefined,
+    false,
+  );
+  // A failed run carries no `platform`: that clears the item rather than
+  // leaving the last pin on screen.
+  applyPlatform(context, doctor.platform, doctor.data === null);
+}
+
+/** Apply one doctor answer (`undefined` when there was none). `failed` = the
+ *  doctor run produced no report at all. */
 export function applyPlatform(
   context: vscode.ExtensionContext,
   raw: unknown,
+  failed = false,
 ): void {
+  doctorFailed = failed;
   const read = readPlatform(raw);
   if (read.kind === "malformed" && !malformedLogged) {
     malformedLogged = true;
@@ -176,12 +204,15 @@ async function runPlatform(
   // The busy guard refuses (and reserves nothing) when this run name is live;
   // awaiting it then would never settle.
   const busy = isRunActive(RUN_NAME);
-  const done = busy ? undefined : awaitRun(RUN_NAME);
   await runAlpInTerminal(context, args, { name: RUN_NAME, cwd });
-  if (done) {
-    await done;
-    await refreshPlatform(context);
-  }
+  // `runAlpInTerminal` returns without dispatching when the CLI cannot be
+  // resolved or its dispatch gate declines, and the busy guard refuses without
+  // reserving: none of those ever fires a finish event, so waiting would leak.
+  // A live reservation is proof a run started (`runInTerminal` reserves
+  // synchronously, and this check runs before any task event can).
+  if (busy || !isRunActive(RUN_NAME)) return;
+  await awaitRun(RUN_NAME);
+  await refreshPlatform(context);
 }
 
 /** `tan platform use <line|version>`. Refuses anything outside the §1 grammar
@@ -326,6 +357,18 @@ async function runAction(
 export async function platformRelease(
   context: vscode.ExtensionContext,
 ): Promise<void> {
+  if (doctorFailed) {
+    await notify({
+      severity: "warning",
+      channel: "toast",
+      message:
+        "Could not read the Alp Platform state: `tan doctor` produced no " +
+        "report. Run Doctor to see why, then try again.",
+      actions: [{ id: "runDoctor" }],
+      dedupeKey: "platform-doctor-failed",
+    });
+    return;
+  }
   if (current === undefined) {
     await notify({
       severity: "info",

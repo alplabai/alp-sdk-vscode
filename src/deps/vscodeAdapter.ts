@@ -866,7 +866,7 @@ export async function buildDependencyReport(
   );
   // Before the null check, so a FAILED run clears the item instead of leaving
   // the last pin on screen (`doctor.platform` is absent on failure).
-  applyPlatform(context, doctor.platform);
+  applyPlatform(context, doctor.platform, doctor.data === null);
   if (!doctor.data) {
     // The whole table came from this one run, so losing it is losing the
     // table. A partial table that looked complete would be the worse answer.

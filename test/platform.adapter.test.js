@@ -96,15 +96,24 @@ async function load(script = {}) {
   const stubs = {
     vscode,
     "./alpCli/doctor": {
-      runDoctor: async () => {
+      runDoctor: async (_c, args, cwd) => {
         host.refreshes += 1;
-        return { data: {}, platform: host.doctorPlatform };
+        host.doctorCwds = [...(host.doctorCwds ?? []), cwd];
+        if (host.doctorDelay) await host.doctorDelay();
+        return host.doctorFails
+          ? { data: null, message: "tan missing" }
+          : { data: {}, platform: host.doctorPlatform };
       },
     },
     "./alpCli/vscodeAdapter": {
       runAlpInTerminal: async (_c, args, opts) => {
         host.terminal.push({ args, opts });
-        setImmediate(() => host.finish?.());
+        if (host.noDispatch) return;
+        host.active = true;
+        setImmediate(() => {
+          host.active = false;
+          host.finish?.();
+        });
       },
       runAlpCommand: async (_c, args) => {
         host.cli.push(args);
@@ -125,11 +134,15 @@ async function load(script = {}) {
       collectProjectContext: () => ({
         workspaceRoot: host.workspaceRoot ?? "/ws",
       }),
+      readOnlyProjectCwd: () => host.workspaceRoot ?? "/ws",
     },
     "./util": {
       log: (m, level) => host.logs.push({ m, level }),
-      isRunActive: () => false,
-      awaitRun: () => new Promise((r) => (host.finish = () => r(0))),
+      isRunActive: () => host.active === true,
+      awaitRun: () => {
+        host.awaits = (host.awaits ?? 0) + 1;
+        return new Promise((r) => (host.finish = () => r(0)));
+      },
     },
   };
   const modPath = require.resolve(path.join(root, "out", "platform.js"));
@@ -365,4 +378,63 @@ test("switch: another platform.list-failed shows its message and offers a manife
     "use",
     "--manifest",
   ]);
+});
+
+test("refresh: the doctor cwd is the project cwd, never an empty string", async () => {
+  const { host } = await load();
+  assert.deepEqual(host.doctorCwds, ["/ws"]);
+});
+
+test("a folder holding only .alp/platform.yaml still resolves a cwd", async () => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const {
+    resolveProjectContext,
+  } = require("../packages/alp-core/dist/project/service.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alp-pin-only-"));
+  fs.mkdirSync(path.join(dir, ".alp"));
+  fs.writeFileSync(path.join(dir, ".alp", "platform.yaml"), "schema: x\n");
+  const ctx = resolveProjectContext(
+    {
+      workspaceFolders: [dir],
+      settings: { boardYamlPath: "", sdkPath: "", westCwd: "", pythonPath: "" },
+      platform: process.platform,
+    },
+    fs.existsSync,
+  );
+  assert.equal(ctx.workspaceRoot, dir.split(path.sep).join("/"));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("a run that never dispatches does not wait for a finish event", async () => {
+  const { mod, host, context } = await load({ noDispatch: true });
+  const before = host.refreshes;
+  await mod.usePlatform(context, "26.11");
+  assert.equal(host.terminal.length, 1);
+  assert.equal(host.awaits ?? 0, 0);
+  assert.equal(host.refreshes, before, "no refresh without a run");
+});
+
+test("a failed doctor says so, and is not 'unsupported'", async () => {
+  const { mod, host, context, item } = await load({ doctorFails: true });
+  assert.equal(item.visible, false);
+  await mod.platformRelease(context);
+  assert.match(host.notifies[0].message, /produced no report/);
+  assert.equal(host.notifies[0].actions[0].id, "runDoctor");
+  assert.equal(host.quickPicks.length, 0);
+});
+
+test("a refresh requested mid-flight runs once more afterwards", async () => {
+  let release;
+  const { mod, host, context } = await load({
+    doctorDelay: () => new Promise((r) => (release = r)),
+  });
+  // The activation refresh is still in flight (its delay was never released).
+  host.doctorPlatform = PIN();
+  const again = mod.refreshPlatform(context);
+  host.doctorDelay = undefined;
+  release();
+  await again;
+  assert.equal(host.refreshes, 2);
+  assert.equal(host.items[0].text, "Alp Platform 26.11.0");
 });
