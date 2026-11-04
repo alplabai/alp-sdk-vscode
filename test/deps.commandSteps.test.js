@@ -96,6 +96,7 @@ function load(opts = {}) {
   const mod = loadWithStubs("deps/vscodeAdapter.js", {
     vscode: { window: { showQuickPick: async (items) => items }, Uri: {} },
     "../alpCli/vscodeAdapter": {},
+    "../platform": { applyPlatform() {} },
     "../alpCli/doctor": {},
     "../notify/vscodeAdapter": { notifyAsync() {} },
     "../project/vscodeAdapter": {},

@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Alp Platform releases in VS Code.** From activation, the status bar shows
+  `Alp Platform 26.11.0` for a pinned workspace, or a muted `Alp Platform:
+  none` when `tan` supports platforms but nothing is pinned; with a `tan` that
+  predates `tan platform` it is hidden. Click it, or run `Alp: Platform
+  Release…`, to see each component (match, mismatch or unknown, installed
+  against pinned) and to switch release, re-apply the pinned one, clear the pin
+  (after a confirm) or open `.alp/platform.yaml`. Switching lists the newest
+  version of each line from `tan platform list`, can show release candidates,
+  and runs `tan platform use <version>` in a terminal; if listing fails for a
+  missing `GITHUB_TOKEN` (the release repository is private for now) it offers
+  `Use a local manifest file…`. A warning names every component off the
+  manifest, once per distinct mismatch, with a `Run tan platform use 26.11`
+  button. The item refreshes on folder changes, on saving
+  `.alp/platform.yaml`, and after each `tan platform` command, and a failed
+  doctor run clears it rather than leaving a stale pin. `MIN_SDK_VERSION` is
+  unchanged.
+
 - **Every Memory region gets a waffle card.** Each resolved region that holds
   no image now has a card of squares like the image-slot cards, titled with
   the region's name and placed under its own cell. A region an image or IPC

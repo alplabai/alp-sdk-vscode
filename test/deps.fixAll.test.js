@@ -104,6 +104,7 @@ function load(opts = {}) {
       Uri: {},
     },
     "../alpCli/vscodeAdapter": {},
+    "../platform": { applyPlatform() {} },
     "../alpCli/doctor": {},
     "../notify/vscodeAdapter": { notifyAsync() {} },
     "../project/vscodeAdapter": {},
@@ -636,6 +637,7 @@ test(
       // Consent granted, same as `load()` above (#467).
       vscode: { window: { showQuickPick: async (items) => items }, Uri: {} },
       "../alpCli/vscodeAdapter": {},
+      "../platform": { applyPlatform() {} },
       "../alpCli/doctor": {},
       "../notify/vscodeAdapter": { notifyAsync() {} },
       "../project/vscodeAdapter": {},

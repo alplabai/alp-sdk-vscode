@@ -55,6 +55,7 @@ function loadDepsAdapter(overrides = {}) {
   return loadWithStubs("deps/vscodeAdapter.js", {
     vscode: { window: {}, Uri: {} },
     "../alpCli/vscodeAdapter": {},
+    "../platform": { applyPlatform() {} },
     "../alpCli/doctor": {},
     "../notify/vscodeAdapter": { notifyAsync() {} },
     // `readOnlyProjectCwd` (#605) is `latestSdkTag`'s replacement for a bare
@@ -251,6 +252,7 @@ async function report(
 ) {
   const spawns = [];
   const { buildDependencyReport } = loadDepsAdapter({
+    "../platform": { applyPlatform() {} },
     "../alpCli/doctor": {
       runDoctor: async (_context, args, cwd, _signal, interactive) => {
         spawns.push({ args, cwd, options: { interactive } });
@@ -712,6 +714,7 @@ test("an orphaned prerequisite is LOGGED, not only recorded on the report", asyn
   };
   const lines = [];
   const { buildDependencyReport } = loadDepsAdapter({
+    "../platform": { applyPlatform() {} },
     "../alpCli/doctor": {
       runDoctor: async () => ({ data: orphanData, message: "" }),
     },
@@ -762,6 +765,7 @@ test("the SAME orphan is logged ONCE per session, not once per refresh (#603 sec
   // genuinely orphaned envelope stays orphaned across every one of those.
   const lines = [];
   const { buildDependencyReport } = loadDepsAdapter({
+    "../platform": { applyPlatform() {} },
     "../alpCli/doctor": {
       runDoctor: async () => ({ data: orphanEnvelope(["cmake"]), message: "" }),
     },
@@ -810,6 +814,7 @@ test("a DIFFERENT orphan arriving later is STILL logged — the latch must not o
   ];
   let call = 0;
   const { buildDependencyReport } = loadDepsAdapter({
+    "../platform": { applyPlatform() {} },
     "../alpCli/doctor": {
       runDoctor: async () => ({ data: envelopes[call++], message: "" }),
     },
@@ -866,6 +871,7 @@ test("a still-orphaned tool is NOT dropped from the line when a NEW orphan arriv
   ];
   let call = 0;
   const { buildDependencyReport } = loadDepsAdapter({
+    "../platform": { applyPlatform() {} },
     "../alpCli/doctor": {
       runDoctor: async () => ({ data: envelopes[call++], message: "" }),
     },
@@ -922,6 +928,7 @@ test("the SAME tool orphaned with a DIFFERENT command is logged again, not swall
   ];
   let call = 0;
   const { buildDependencyReport } = loadDepsAdapter({
+    "../platform": { applyPlatform() {} },
     "../alpCli/doctor": {
       runDoctor: async () => ({ data: envelopes[call++], message: "" }),
     },
@@ -955,6 +962,7 @@ test("the SAME tool orphaned with a DIFFERENT command is logged again, not swall
 test("nothing is logged when every prerequisite bound to a row", async () => {
   const lines = [];
   const { buildDependencyReport } = loadDepsAdapter({
+    "../platform": { applyPlatform() {} },
     "../alpCli/doctor": {
       runDoctor: async () => ({ data: DOCTOR_DATA, message: "" }),
     },

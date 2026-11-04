@@ -68,6 +68,9 @@ export type ActionId =
   | "openAnyway"
   | "deleteFromDisk"
   | "downloadTanCli"
+  // Off-manifest Alp Platform warning (#718); the caller runs `tan platform use`.
+  | "usePlatform"
+  | "useManifestFile"
   // The one act that programs hardware (#540). Caller-handled on purpose: the
   // pick must come back so `gateFlashDispatch` can gate the spawn on it — an
   // action the presenter ran itself would leave the gate with nothing to read.

@@ -424,6 +424,7 @@ async function loggedLines(doctorData) {
       log: (line) => lines.push(line),
       runInTerminal() {},
     },
+    "../platform": { applyPlatform() {} },
     "../alpCli/doctor": {
       runDoctor: async () => ({ data: doctorData, message: "" }),
     },

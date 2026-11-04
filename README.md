@@ -107,6 +107,38 @@ VS Code Marketplace: search for "Alp SDK".  Or grab the latest
 `.vsix` from the [Releases page](../../releases) and install via
 `Extensions: Install from VSIX`.
 
+## Alp Platform releases
+
+An **Alp Platform** release is one version number (`YY.M.MICRO`, for example
+`26.11.0`) for a bench-validated set of the Alp SDK, `tan`, this extension and
+the GD32 and CC3501E bridge firmware. The first line is 26.11 (November 2026);
+a new line ships every one to two months.
+
+The extension shows the release from the moment it activates:
+
+- the status bar reads `Alp Platform 26.11.0` for a pinned workspace, or a
+  muted `Alp Platform: none` when `tan` supports platforms but nothing is
+  pinned; with a `tan` that predates `tan platform` the item is hidden;
+- clicking it, or running **Alp: Platform Release…**, opens a menu with the
+  pin and each component (match / mismatch / unknown, installed against
+  pinned), then **Switch platform release…**, **Re-apply pinned release**
+  (`tan platform use 26.11.0`), **Clear platform pin** (asks first) and
+  **Open manifest** (`.alp/platform.yaml`);
+- **Switch platform release…** lists the newest version of each line from
+  `tan platform list`, with an option to show every version and release
+  candidate, and runs `tan platform use <version>` in a terminal. While the
+  release repository is private, `tan` needs `GITHUB_TOKEN` in its
+  environment; without it the extension offers **Use a local manifest
+  file…** (`tan platform use --manifest <file>`);
+- when the SDK, `tan` or the extension itself differs from the pinned manifest,
+  a warning names each component with its installed and pinned version, once
+  per distinct mismatch, with a **Run tan platform use 26.11** button.
+
+The item refreshes when the workspace folders change, when
+`.alp/platform.yaml` is saved, and after every `tan platform` command the
+extension runs. It reads the pin through `tan doctor`, never parses the
+manifest itself, and changes nothing except through `tan`.
+
 ## Repo layout
 
 ```text
