@@ -254,6 +254,7 @@ function loadAdapter() {
       Uri: {},
     },
     "../alpCli/vscodeAdapter": {},
+    "../platform": { applyPlatform() {} },
     "../alpCli/doctor": {},
     "../notify/vscodeAdapter": { notifyAsync() {} },
     "../project/vscodeAdapter": {},

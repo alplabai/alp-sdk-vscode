@@ -79,6 +79,7 @@ function load(opts = {}) {
       proxyEnvAdditions: () => ({}),
       runAlpCommand: async () => ({ outcome: { envelope: null } }),
     },
+    "../platform": { applyPlatform() {} },
     "../alpCli/doctor": {},
     "../notify/vscodeAdapter": {
       notifyAsync: (plan) => notified.push(plan),

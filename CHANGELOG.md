@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **The status bar shows the Alp Platform release the workspace is pinned to.**
+  When `tan doctor` reports a platform pin (`data.platform`), an
+  `Alp Platform 27.2.0` item appears; with no pin, or a tan that predates the
+  key, it stays hidden. When any component is off the manifest (SDK, tan, or
+  this extension's own version), a warning names each one with its installed
+  and pinned version, once per distinct mismatch set per session, and offers to
+  run `tan platform use <line>` in a terminal. `MIN_SDK_VERSION` is unchanged.
+
 - **Every Memory region gets a waffle card.** Each resolved region that holds
   no image now has a card of squares like the image-slot cards, titled with
   the region's name and placed under its own cell. A region an image or IPC

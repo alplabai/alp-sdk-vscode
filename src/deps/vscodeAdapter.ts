@@ -63,6 +63,7 @@ import {
   unansweredSdkListCodes,
 } from "../alpCli/service";
 import { runDoctor } from "../alpCli/doctor";
+import { applyPlatform } from "../platform";
 import { proxyEnvAdditions, runAlpCommand } from "../alpCli/vscodeAdapter";
 import {
   venvWestInTopdir,
@@ -868,6 +869,7 @@ export async function buildDependencyReport(
     // table. A partial table that looked complete would be the worse answer.
     return { report: null, error: doctor.message };
   }
+  applyPlatform(context, doctor.platform, cwd);
   // An envelope with no per-tool probe in it is the same loss by a different
   // route: every row the table exists for is simply absent, and what is left
   // looks like a complete, mostly-passing report. Refuse it, and say why —
