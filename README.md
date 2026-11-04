@@ -107,6 +107,23 @@ VS Code Marketplace: search for "Alp SDK".  Or grab the latest
 `.vsix` from the [Releases page](../../releases) and install via
 `Extensions: Install from VSIX`.
 
+## Alp Platform releases
+
+An **Alp Platform** release is one version number (`YY.M.MICRO`, for example
+`26.11.0`) for a bench-validated set of the Alp SDK, `tan`, this extension and
+the GD32 and CC3501E bridge firmware. The first line is 26.11 (November 2026);
+a new line ships every one to two months.
+
+When a workspace is pinned with `tan platform use 26.11`, the extension:
+
+- shows `Alp Platform <version>` in the status bar;
+- warns once per change when the SDK, `tan` or the extension itself differs
+  from the pinned manifest, with a **Run tan platform use** action.
+
+It reads the pin through `tan doctor`, never parses the manifest itself, and
+needs a `tan` release that includes `tan platform`. With an older `tan` or no
+pin, nothing is shown.
+
 ## Repo layout
 
 ```text
