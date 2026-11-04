@@ -864,12 +864,14 @@ export async function buildDependencyReport(
     options.signal,
     interactive,
   );
+  // Before the null check, so a FAILED run clears the item instead of leaving
+  // the last pin on screen (`doctor.platform` is absent on failure).
+  applyPlatform(context, doctor.platform);
   if (!doctor.data) {
     // The whole table came from this one run, so losing it is losing the
     // table. A partial table that looked complete would be the worse answer.
     return { report: null, error: doctor.message };
   }
-  applyPlatform(context, doctor.platform, cwd);
   // An envelope with no per-tool probe in it is the same loss by a different
   // route: every row the table exists for is simply absent, and what is left
   // looks like a complete, mostly-passing report. Refuse it, and say why —

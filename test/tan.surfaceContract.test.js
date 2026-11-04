@@ -748,6 +748,9 @@ const EXPECTED_UNRESOLVABLE = [
   // `tan platform use <line>` (#718). The pinned tan predates `platform`, so
   // there is nothing to check it against; drop this entry (and make the argv a
   // literal again) when SUPPORTED_CLI_VERSION moves to a tan that ships it.
+  // One entry per site: `platform list` (runAlpCommand) and the terminal runner
+  // that carries use / use --manifest / clear.
+  "src/platform.ts  args",
   "src/platform.ts  args",
   "src/west.ts  args",
   // The module wizard's `tan scaffold`, and the second entry in this list that

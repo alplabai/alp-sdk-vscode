@@ -44,6 +44,7 @@ import { createSchemaProvenanceStatus } from "./schemaProvenance";
 import { createSdkSchemaContributor } from "./yamlSchemaContributor";
 import { registerSelectSdkCommand } from "./sdk/activeSdk";
 import { createStatusBar } from "./statusBar";
+import { registerPlatform } from "./platform";
 import { registerAlpTaskProvider } from "./tasks/vscodeAdapter";
 import { recordBuildFinish } from "./build/lastBuild";
 import {
@@ -348,6 +349,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // nothing to resolve those against and pre-launch aborts silently.
     registerAlpTaskProvider(context),
     createStatusBar(stateMgr),
+    ...registerPlatform(context),
     // Validate board.yaml against the RESOLVED SDK's schema, with the vendored
     // snapshot demoted to the no-SDK fallback (#493) -- then name which of the
     // two is in force, since a squiggle cannot say where it came from.

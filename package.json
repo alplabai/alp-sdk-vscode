@@ -44,6 +44,7 @@
     "onTaskType:alp",
     "onDebugResolve:cortex-debug",
     "workspaceContains:**/board.yaml",
+    "workspaceContains:**/.alp/platform.yaml",
     "workspaceContains:**/prj*.conf"
   ],
   "main": "./out/extension.js",
@@ -221,6 +222,11 @@
         "title": "Alp: Dependencies",
         "category": "Alp",
         "icon": "$(checklist)"
+      },
+      {
+        "command": "alp.platformRelease",
+        "title": "Alp: Platform Release…",
+        "category": "Alp"
       },
       {
         "command": "alp.toolchainDoctor",

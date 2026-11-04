@@ -2,13 +2,22 @@
 
 ## Unreleased
 
-- **The status bar shows the Alp Platform release the workspace is pinned to.**
-  When `tan doctor` reports a platform pin (`data.platform`), an
-  `Alp Platform 27.2.0` item appears; with no pin, or a tan that predates the
-  key, it stays hidden. When any component is off the manifest (SDK, tan, or
-  this extension's own version), a warning names each one with its installed
-  and pinned version, once per distinct mismatch set per session, and offers to
-  run `tan platform use <line>` in a terminal. `MIN_SDK_VERSION` is unchanged.
+- **Alp Platform releases in VS Code.** From activation, the status bar shows
+  `Alp Platform 26.11.0` for a pinned workspace, or a muted `Alp Platform:
+  none` when `tan` supports platforms but nothing is pinned; with a `tan` that
+  predates `tan platform` it is hidden. Click it, or run `Alp: Platform
+  Release…`, to see each component (match, mismatch or unknown, installed
+  against pinned) and to switch release, re-apply the pinned one, clear the pin
+  (after a confirm) or open `.alp/platform.yaml`. Switching lists the newest
+  version of each line from `tan platform list`, can show release candidates,
+  and runs `tan platform use <version>` in a terminal; if listing fails for a
+  missing `GITHUB_TOKEN` (the release repository is private for now) it offers
+  `Use a local manifest file…`. A warning names every component off the
+  manifest, once per distinct mismatch, with a `Run tan platform use 26.11`
+  button. The item refreshes on folder changes, on saving
+  `.alp/platform.yaml`, and after each `tan platform` command, and a failed
+  doctor run clears it rather than leaving a stale pin. `MIN_SDK_VERSION` is
+  unchanged.
 
 - **Every Memory region gets a waffle card.** Each resolved region that holds
   no image now has a card of squares like the image-slot cards, titled with

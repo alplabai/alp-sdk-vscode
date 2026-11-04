@@ -114,15 +114,30 @@ An **Alp Platform** release is one version number (`YY.M.MICRO`, for example
 the GD32 and CC3501E bridge firmware. The first line is 26.11 (November 2026);
 a new line ships every one to two months.
 
-When a workspace is pinned with `tan platform use 26.11`, the extension:
+The extension shows the release from the moment it activates:
 
-- shows `Alp Platform <version>` in the status bar;
-- warns once per change when the SDK, `tan` or the extension itself differs
-  from the pinned manifest, with a **Run tan platform use** action.
+- the status bar reads `Alp Platform 26.11.0` for a pinned workspace, or a
+  muted `Alp Platform: none` when `tan` supports platforms but nothing is
+  pinned; with a `tan` that predates `tan platform` the item is hidden;
+- clicking it, or running **Alp: Platform Release…**, opens a menu with the
+  pin and each component (match / mismatch / unknown, installed against
+  pinned), then **Switch platform release…**, **Re-apply pinned release**
+  (`tan platform use 26.11.0`), **Clear platform pin** (asks first) and
+  **Open manifest** (`.alp/platform.yaml`);
+- **Switch platform release…** lists the newest version of each line from
+  `tan platform list`, with an option to show every version and release
+  candidate, and runs `tan platform use <version>` in a terminal. While the
+  release repository is private, `tan` needs `GITHUB_TOKEN` in its
+  environment; without it the extension offers **Use a local manifest
+  file…** (`tan platform use --manifest <file>`);
+- when the SDK, `tan` or the extension itself differs from the pinned manifest,
+  a warning names each component with its installed and pinned version, once
+  per distinct mismatch, with a **Run tan platform use 26.11** button.
 
-It reads the pin through `tan doctor`, never parses the manifest itself, and
-needs a `tan` release that includes `tan platform`. With an older `tan` or no
-pin, nothing is shown.
+The item refreshes when the workspace folders change, when
+`.alp/platform.yaml` is saved, and after every `tan platform` command the
+extension runs. It reads the pin through `tan doctor`, never parses the
+manifest itself, and changes nothing except through `tan`.
 
 ## Repo layout
 
