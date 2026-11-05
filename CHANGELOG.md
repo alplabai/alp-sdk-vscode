@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.8.0
+
+**Stable.** Adds Alp Platform releases to VS Code: a status bar item shows
+which platform release the workspace is pinned to, and `Alp: Platform
+Release…` compares every component against it, switches release, or clears the
+pin. The extension now installs tan `0.8.0`, which adds `tan platform`; tan
+`0.8.0` needs alp-sdk `v0.17.0` or newer to build any Zephyr board. Also
+includes the Memory view rework below.
 
 - **The extension pins tan `0.8.0`.** `SUPPORTED_CLI_VERSION` moves from
   `0.7.1` to the `v0.8.0` release, which adds `tan platform` and the
