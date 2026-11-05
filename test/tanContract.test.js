@@ -212,7 +212,7 @@ const GATED_CODES = {
   // `new-som` refusals and `faultdecode`'s reached consumers "as
   // `cli.parse-error` on a `command: "cli"` envelope" before that change, and
   // that an interrupted run "fell into the `cli.parse-error` fallback" before
-  // `cli.interrupted` existed. Against the pinned 0.7.1 all three have
+  // `cli.interrupted` existed. Against the pinned 0.8.0 all three have
   // their own codes, so the branch means what it says; on an older binary
   // reached through `alpSdk.cliPath` it can over-report "wrong command line".
   "cli.parse-error": "frozen",
@@ -275,10 +275,11 @@ const GATED_CODES = {
   "monitor.no-port": "frozen",
 
   // tan-cli#1572 (`tan platform list`): every fetch failure is this code. The
-  // pinned tan predates `tan platform`, so its frozen list declares it nowhere
-  // (`null`); flip this to "frozen" when the pin moves to a tan that ships it.
+  // pinned tan (0.8.0) ships `tan platform` and declares the code, but still
+  // as `reserved` (not yet `frozen`) in its artefact; flip this to "frozen"
+  // when a pinned tan promotes it.
   // Ext: `LIST_FAILED_CODE` in packages/alp-core/src/platform/service.ts.
-  "platform.list-failed": null,
+  "platform.list-failed": "reserved",
 
   // `tan init` refusals, keyed in `packages/alp-core/src/project/
   // initRefusal.ts`'s `KINDS` table (found by idiom 5 below), which decides
@@ -446,7 +447,7 @@ const DOCTOR_ENVELOPE_MODELS = "packages/alp-core/src/cli/doctorEnvelope.ts";
 
 /**
  * Keys tan's `dataKeys` declares that `doctorEnvelope.ts` deliberately does not
- * model, with the reason. Both are additive keys nothing renders.
+ * model, with the reason. Neither is rendered by the doctor panel.
  */
 const UNMODELLED_DOCTOR_KEYS = {
   generatedAt:
@@ -454,6 +455,11 @@ const UNMODELLED_DOCTOR_KEYS = {
     "just fetched, so a stamp would only ever say 'now'. Modelling it would " +
     "invite a surface to print a time that is not the one on screen after a " +
     "refresh races.",
+  platform:
+    "The Alp Platform pin. Deliberately not a DoctorEnvelopeData field: it is " +
+    "narrowed on its own by `readPlatform` in packages/alp-core/src/platform/" +
+    "service.ts, which also tells an absent key (older tan) from null " +
+    "(unpinned) — a distinction the doctor panel's model would flatten.",
 };
 
 /** Field names of `export interface <name>`, each keeping its `?`. Nested brace

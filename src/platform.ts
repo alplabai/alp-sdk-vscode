@@ -189,8 +189,9 @@ export function applyPlatform(
 
 /**
  * Run `tan platform <args>` in the terminal, then refresh the item. `args` is
- * a parameter, not a literal: the PINNED tan predates `tan platform`, so the
- * surface-contract gate cannot check these argvs (EXPECTED_UNRESOLVABLE).
+ * a pass-through parameter, so the surface-contract gate sees one unresolved
+ * site here (EXPECTED_UNRESOLVABLE); the literal `["platform", ...]` argvs
+ * its callers pass are not followed into.
  */
 async function runPlatform(
   context: vscode.ExtensionContext,
@@ -271,10 +272,9 @@ async function listFailed(
 export async function switchRelease(
   context: vscode.ExtensionContext,
 ): Promise<void> {
-  const args = ["platform", "list"]; // variable: see `runPlatform`
   const { outcome } = await runAlpCommand(
     context,
-    args,
+    ["platform", "list"],
     collectProjectContext().workspaceRoot ?? undefined,
     { interactive: true },
   );

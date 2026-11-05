@@ -1,8 +1,8 @@
 {
-  "version": "0.7.1",
-  "capturedAt": "2026-11-04",
-  "sourceDigest": "a8845e21a3060f6520219ecb9e8f29774bf6709aa68e66911b2f891840dfb7d8",
-  "contentDigest": "60be038d8743ca885f6946513aeb1699a090025a5972ae0f67dc6fad6d02e04c",
+  "version": "0.8.0",
+  "capturedAt": "2026-11-05",
+  "sourceDigest": "2e376821c644f3953d5b8f6ab02a5fa25cf7ef0ffc57860302b3e7c2a9604bee",
+  "contentDigest": "47fc17037e779f51ecf8acafdc7a1da5568e910bb30ba4934e30afcf07f1c99c",
   "globalOptions": [
     "--project",
     "--board-yaml",
@@ -2271,6 +2271,60 @@
           "ref": null,
           "marker": "`--target`/`--all`/`--verbose`/`--quiet`/`--no-color`/`--non-interactive`/ `--ci` are declared, not consumed",
           "metavar": null,
+          "valueOptional": false
+        }
+      }
+    },
+    "platform": {
+      "maxPositionals": 2,
+      "subcommandValues": [
+        "use",
+        "show",
+        "clear",
+        "list"
+      ],
+      "refusingSubcommands": {},
+      "options": {
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--include-rc": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--manifest": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "FILE",
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
           "valueOptional": false
         }
       }
