@@ -98,9 +98,9 @@ test("the three tiers are pairwise distinguishable in every covered theme", () =
   }
 });
 
-test("the hatch really is a hatch, and only one tier wears it", () => {
+test("each tier wears its own shape: solid, dashed, hatched", () => {
   const patterns = TIERS.map((t) => tierInk("dark", t).pattern);
-  assert.deepEqual(patterns, ["solid", "solid", "hatch"]);
+  assert.deepEqual(patterns, ["solid", "dash", "hatch"]);
 });
 
 test("the AuthorityTier set MemoryStrip.tsx types data-tier against is exactly the set MemoryStrip.module.css styles", () => {

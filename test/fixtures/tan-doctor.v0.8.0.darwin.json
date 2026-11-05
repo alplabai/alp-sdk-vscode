@@ -88,7 +88,7 @@
         "name": "tanInstall",
         "status": "pass",
         "scope": "host",
-        "detail": "tan 0.7.0"
+        "detail": "tan 0.8.0"
       },
       {
         "name": "hostPython",
@@ -159,7 +159,8 @@
       "Download the Alif Security Toolkit (`app-release-exec-linux-SE_FW_x.y.z`) from the Alif developer portal -- it is license-gated and alp-sdk does not redistribute it -- then `export SETOOLS_DIR=<...>/app-release-exec-linux`. Flow A (`west flash`) additionally needs `export SE_UART=/dev/ttyUSB0` (your SE-UART device); Flow D does not. See docs/aen-bench-bringup.md. Doctor reads $SETOOLS_DIR and the built manifest's flash_args.setools_dir; a --setools-dir flag given to `tan flash` is not visible to it.",
       "Upgrade the SEGGER J-Link pack to V9.46+."
     ],
-    "missingPrerequisites": null
+    "missingPrerequisites": null,
+    "platform": null
   },
   "issues": [
     {

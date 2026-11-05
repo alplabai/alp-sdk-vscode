@@ -1,5 +1,90 @@
 # Changelog
 
+## 0.8.0
+
+**Stable.** Adds Alp Platform releases to VS Code: a status bar item shows
+which platform release the workspace is pinned to, and `Alp: Platform
+Release…` compares every component against it, switches release, or clears the
+pin. The extension now installs tan `0.8.0`, which adds `tan platform`; tan
+`0.8.0` needs alp-sdk `v0.17.0` or newer to build any Zephyr board. Also
+includes the Memory view rework below.
+
+- **The extension pins tan `0.8.0`.** `SUPPORTED_CLI_VERSION` moves from
+  `0.7.1` to the `v0.8.0` release, which adds `tan platform` and the
+  `data.platform` key on `tan doctor`. The surface snapshot is recaptured
+  from the pinned binary, so `platform` is checked against it, and the
+  contract gate now asserts `platform.list-failed` as a declared code (tan
+  0.8.0 lists it `reserved`) instead of an undeclared one. `platform list` has
+  left the surface gate's unresolvable list (the terminal runner's
+  pass-through `args` stays there). Like `0.7.x`, `0.8.0` publishes no arm64 Windows or
+  arm64 Linux archive, and needs alp-sdk `v0.17.0` or newer to build any
+  Zephyr board. Pinned-version docs and install URLs move to `v0.8.0`.
+
+- **The extension pins tan `0.7.1`.** `SUPPORTED_CLI_VERSION` moves from
+  `0.7.0` to the `v0.7.1` release, the `0.7.1-rc1` promoted to GA with no code
+  change since, so the envelope contract the extension reads is unchanged.
+  Like `0.7.0`, `0.7.1` publishes no arm64 Windows or arm64 Linux archive, and
+  needs alp-sdk `v0.17.0` or newer to build any Zephyr board. Pinned-version
+  docs and install URLs move to `v0.7.1`.
+
+- **Alp Platform releases in VS Code.** From activation, the status bar shows
+  `Alp Platform 26.11.0` for a pinned workspace, or a muted `Alp Platform:
+  none` when `tan` supports platforms but nothing is pinned; with a `tan` that
+  predates `tan platform` it is hidden. Click it, or run `Alp: Platform
+  Release…`, to see each component (match, mismatch or unknown, installed
+  against pinned) and to switch release, re-apply the pinned one, clear the pin
+  (after a confirm) or open `.alp/platform.yaml`. Switching lists the newest
+  version of each line from `tan platform list`, can show release candidates,
+  and runs `tan platform use <version>` in a terminal; if listing fails for a
+  missing `GITHUB_TOKEN` (the release repository is private for now) it offers
+  `Use a local manifest file…`. A warning names every component off the
+  manifest, once per distinct mismatch, with a `Run tan platform use 26.11`
+  button. The item refreshes on folder changes, on saving
+  `.alp/platform.yaml`, and after each `tan platform` command, and a failed
+  doctor run clears it rather than leaving a stale pin. `MIN_SDK_VERSION` is
+  unchanged.
+
+- **Every Memory region gets a waffle card.** Each resolved region that holds
+  no image now has a card of squares like the image-slot cards, titled with
+  the region's name and placed under its own cell. A region an image or IPC
+  carve-out touches keeps that item's own card. Locked regions (vendor image,
+  Secure Enclave) are all amber with a padlock and the word `locked`, plus the
+  size and owner when the card is wide enough; regions with no usage data,
+  such as `storage`, show empty squares and say `no data` or `no usage data ·
+  96 KiB` instead of inventing a fill; reserved and unproven regions are
+  hatched. A card that would touch its neighbour slides to the nearest gap,
+  then a narrow or locked one shrinks to a padlock and squares (its cell's
+  callout names it), and only then does a new row open. Clicking a card
+  selects its region. The locked mark on cells and container bars is the same
+  amber, as a dashed rule, with one "Locked" legend entry. The amber is now
+  kept apart from the chart series, so series colour 5 is magenta instead of
+  yellow.
+
+- **The Memory strip draws a container region as its own bar.** A region that
+  fully contains another (`mram_main`, now resolved by tan `0.7.0`, spans every
+  flash slot on E1M-AEN801) leaves the cell lane for a thin bar above it,
+  labelled like `mram_main · 5.50 MiB · composite`, selectable with the same
+  keyboard and screen-reader behaviour as a cell. It used to sit under its own
+  children and print through them as `mcabomain`. Containers whose extents
+  overlap, equal extents included, get separate bar rows.
+- **No Memory cell is ever unnamed.** A name that does not fit is shortened
+  with an ellipsis only when that keeps most of it; otherwise the whole name
+  is printed under its cell with its lock mark, and clicking it selects the
+  cell. Callouts stack on up to three rows, past which one "+N more" line
+  names the rest. Cells that overlap each other no longer print through one
+  another, and label widths follow the editor font size.
+- **The Memory axis keeps its address labels.** Neighbouring labels anchor to
+  their tick and stagger over up to three rows instead of being dropped, so all
+  seven AEN801 edges are labelled from 640 px up. Below that the labels that
+  still collide on every row are omitted (at 360 px, `0x80578000`). The last
+  label, the inclusive last byte, is dotted-underlined and says so in its
+  tooltip.
+- **The padlock on a Memory cell now says what it means.** It marks a region
+  that is not a Configurator edit target (no IPC carve-out or storage
+  partition can go there), which is separate from the write-authority legend.
+  The legend gains a "Not an edit target" entry, and hovering the padlock
+  explains it.
+
 ## 0.7.1
 
 **Stable.** The first stable release since `0.6.0`: the same code as the

@@ -125,6 +125,8 @@ export async function runDoctor(
   message: string;
   detail?: string;
   outcome: CliOutcome;
+  /** Raw `data.platform` (untrusted; read it through `readPlatform`). */
+  platform?: unknown;
 }> {
   const { outcome } = await runAlpCommand(context, args, cwd, {
     signal,
@@ -155,5 +157,10 @@ export async function runDoctor(
       outcome,
     };
   }
-  return { data, message: outcome.message, outcome };
+  return {
+    data,
+    message: outcome.message,
+    outcome,
+    platform: (data as unknown as Record<string, unknown>).platform,
+  };
 }

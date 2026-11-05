@@ -37,6 +37,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { resolvedOpaqueRgb } = require("./vscodeThemes");
+const { lockedFill } = require("./lockedFill");
 
 const STRIP_CSS_PATH = path.join(
   __dirname,
@@ -155,7 +156,7 @@ function colorExprOf(stop) {
   throw new Error(`could not find a colour expression in stop: ${stop}`);
 }
 
-/** `"solid" | "hatch"`, read off the gradient's OWN colour stops — NOT off
+/** `"solid" | "dash" | "hatch"`, read off the gradient's OWN colour stops — NOT off
  * the function name and NOT a hardcoded tier -> pattern table. A
  * `repeating-linear-gradient(...)` is a hatch only when at least one of its
  * stops is the bare keyword `transparent`: that is what actually lets the
@@ -165,9 +166,11 @@ function colorExprOf(stop) {
  * report "solid" so the pairwise ink check still runs on it. */
 function patternOf(decl) {
   if (!decl.startsWith("repeating-linear-gradient(")) return "solid";
-  const stops = functionArgs(decl).slice(1); // drop the angle argument
+  const [angle, ...stops] = functionArgs(decl);
   const hasGapStop = stops.some((stop) => /^transparent(\s|$)/.test(stop));
-  return hasGapStop ? "hatch" : "solid";
+  if (!hasGapStop) return "solid";
+  // Square-on bands (90deg) read as a dashed rule; any diagonal is a hatch.
+  return /^(90|270)deg$/.test(angle.trim()) ? "dash" : "hatch";
 }
 
 /** `{ rgb, pattern }` — what a tier mark actually paints with, in `theme`.
@@ -206,6 +209,9 @@ function tierInk(theme, tier) {
     const strokeExpr = colorExprOf(strokeStop);
     if (strokeExpr.startsWith("color-mix(")) {
       return { rgb: compositeColorMix(theme, strokeExpr), pattern };
+    }
+    if (strokeExpr === "var(--fill-locked)") {
+      return { rgb: lockedFill(theme), pattern };
     }
     if (strokeExpr.startsWith("var(")) {
       return {

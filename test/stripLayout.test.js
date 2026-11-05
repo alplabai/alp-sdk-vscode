@@ -94,19 +94,23 @@ test("rpmsg-aen: every band carries its tier, and the window's end tick is the i
   assert.equal(model.ticks[0].label, "0x80000000");
 });
 
-test("tick labels never sit closer than one label width; every edge keeps its line", async () => {
+test("tick labels on one axis row never sit closer than one label width; every edge keeps its line", async () => {
   const { buildStrip } = await load();
   const model = buildStrip(view({ regions: AEN_REGIONS }), new Map(), 400);
   assert.equal(model.ticks.length, 7, "seven declared edges, seven ticks");
-  const labelled = model.ticks
-    .filter((t) => t.labelled)
-    .sort((a, b) => a.x - b.x);
-  assert.ok(labelled.length >= 2 && labelled.length < model.ticks.length);
-  for (let i = 1; i < labelled.length; i++) {
-    assert.ok(labelled[i].x - labelled[i - 1].x >= 10 * 7.8);
+  const labelled = model.ticks.filter((t) => t.labelled);
+  assert.ok(labelled.length >= 2);
+  for (const row of [0, 1]) {
+    const onRow = labelled
+      .filter((t) => t.row === row)
+      .sort((a, b) => a.x - b.x);
+    for (let i = 1; i < onRow.length; i++) {
+      assert.ok(onRow[i].x - onRow[i - 1].x >= 10 * 7.8);
+    }
   }
   // The clamped first and last labels stay inside the strip.
-  assert.ok(labelled[0].x >= 0 && labelled[labelled.length - 1].x <= 400);
+  const xs = labelled.map((t) => t.x);
+  assert.ok(Math.min(...xs) >= 0 && Math.max(...xs) <= 400);
 });
 
 test("a slot image is a box to its tan-size budget with a used fill; a bare base is a marker", async () => {

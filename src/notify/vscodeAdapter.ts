@@ -176,6 +176,8 @@ const ACTIONS: Record<
   openAnyway: { title: "Open Anyway" },
   deleteFromDisk: { title: "Delete from disk" },
   downloadTanCli: { title: "Download" },
+  usePlatform: { title: "Run tan platform use" },
+  useManifestFile: { title: "Use a local manifest file…" },
   // Names the consequence, not the command: "Flash" alone reads like the
   // button that was already clicked, and this dialog is the last point at
   // which an irreversible write to real silicon can still be stopped.

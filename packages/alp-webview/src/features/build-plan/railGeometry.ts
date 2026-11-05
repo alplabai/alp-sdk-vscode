@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The strip's pure geometry: which addresses a piecewise scale must land on,
-// and which edge labels fit beside each other.
+// and where each edge label sits.
 //
 // Both functions are arithmetic over the manifest's own numbers with no React
 // and no DOM in them, for the same reason `memoryRows.ts` is separate from the
@@ -62,33 +62,52 @@ export function railBoundaries(
   return { boundaries, occupied };
 }
 
+/** How many staggered rows the axis labels may use (three: at the 640px
+ * fallback width the last four AEN801 edges need all three). */
+export const AXIS_ROWS = 3;
+
+/** A label's horizontal extent, in strip pixels. */
+export interface LabelBox {
+  x0: number;
+  x1: number;
+}
+
 /**
- * Which edge labels to print. Every edge keeps its tick LINE; a LABEL is
- * omitted when it would sit closer than `minSpacing` to one already kept,
- * so 0x80550000 / 0x80560000 / 0x80578000 / 0x80580000 never overprint into
- * one unreadable smear. The window's own two ends are kept first — they
- * bound the drawing — then every other edge in address order.
+ * Where each edge label goes. Every edge keeps its tick LINE; its LABEL goes
+ * on the first (row, placement) where it clears every label already on that
+ * row by `minGap`. `candidatesOf` lists the placements an edge accepts, best
+ * first — the strip offers centred, then starting at the tick, then ending
+ * at it, so a label crowded against a strip end anchors to its tick instead
+ * of being pushed off it. A row is tried with every placement before the next
+ * row, so neighbours stagger before they slide. Only an edge that fits no
+ * placement on any row is dropped (absent from the result).
  *
- * `positionOf` is whatever axis the caller lays the edges along; the strip
- * passes its clamped label centre so two labels pinned to the same end of
- * the strip are measured where they are actually drawn.
+ * The window's own two ends are placed first — they bound the drawing — then
+ * every other edge in address order.
  */
-export function thinEdgeLabels(
+export function stackEdgeLabels(
   addrs: readonly number[],
-  positionOf: (address: number) => number,
-  minSpacing: number,
-): Set<number> {
-  if (addrs.length === 0) return new Set();
+  candidatesOf: (address: number) => readonly LabelBox[],
+  minGap: number,
+  rows: number = AXIS_ROWS,
+): Map<number, { row: number; box: LabelBox }> {
+  const out = new Map<number, { row: number; box: LabelBox }>();
+  if (addrs.length === 0) return out;
+  const taken: LabelBox[][] = Array.from({ length: rows }, () => []);
+  const clears = (row: number, b: LabelBox): boolean =>
+    taken[row].every((t) => b.x1 + minGap <= t.x0 || b.x0 >= t.x1 + minGap);
   const ends = [addrs[0], addrs[addrs.length - 1]];
-  const kept: number[] = [];
-  const keptAddrs = new Set<number>();
   for (const a of [...ends, ...addrs]) {
-    if (keptAddrs.has(a)) continue;
-    const p = positionOf(a);
-    if (kept.every((k) => Math.abs(k - p) >= minSpacing)) {
-      keptAddrs.add(a);
-      kept.push(p);
+    if (out.has(a)) continue;
+    const candidates = candidatesOf(a);
+    search: for (let row = 0; row < rows; row++) {
+      for (const box of candidates) {
+        if (!clears(row, box)) continue;
+        taken[row].push(box);
+        out.set(a, { row, box });
+        break search;
+      }
     }
   }
-  return keptAddrs;
+  return out;
 }

@@ -745,6 +745,11 @@ const EXPECTED_UNRESOLVABLE = [
   // identical reason `initArgs` is, not merely pinned.
   "src/ideHub/newProjectFlowPanel.ts  previewArgs",
   "src/loader.ts  args",
+  // `runPlatform`'s pass-through `args` (use / use --manifest / clear, #718):
+  // a single opaque site, like `envelope.ts  args`. `platform list` is a
+  // literal at its call site now that the pinned tan ships `platform`, so it
+  // is checked against the snapshot and has left this list.
+  "src/platform.ts  args",
   "src/west.ts  args",
   // The module wizard's `tan scaffold`, and the second entry in this list that
   // IS checked — see the note below the `initArgs` one.

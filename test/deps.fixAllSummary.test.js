@@ -85,6 +85,7 @@ function loadDepsAdapter(overrides = {}) {
   return loadWithStubs("deps/vscodeAdapter.js", {
     vscode: { window: { showQuickPick: async (items) => items }, Uri: {} },
     "../alpCli/vscodeAdapter": {},
+    "../platform": { applyPlatform() {} },
     "../alpCli/doctor": {},
     "../notify/vscodeAdapter": { notifyAsync() {} },
     "../project/vscodeAdapter": {},
@@ -538,6 +539,7 @@ function mountAndRunFixAll(outcome, targetRows) {
   const real = loadWithStubs("deps/vscodeAdapter.js", {
     vscode: { window: { showQuickPick: async (items) => items }, Uri: {} },
     "../alpCli/vscodeAdapter": {},
+    "../platform": { applyPlatform() {} },
     "../alpCli/doctor": {},
     "../notify/vscodeAdapter": { notifyAsync() {} },
     "../project/vscodeAdapter": {},
