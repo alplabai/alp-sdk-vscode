@@ -66,7 +66,7 @@ Four mechanisms a neighboring embedded extension could not truthfully copy:
 
 ## Operating Context
 
-- Ships as a single VS Code extension, version `0.7.1`, distributed via the
+- Ships as a single VS Code extension, version `0.8.0`, distributed via the
   Marketplace and as a `.vsix`.
 - **Shell:** one Activity Bar container, *Alp IDE*, with native tree views
   (`src/views/`: `setup`, `workspaces`, `projects`, `sdk`, `build`), a status
@@ -93,7 +93,7 @@ Four mechanisms a neighboring embedded extension could not truthfully copy:
 
 ## Capabilities and Constraints
 
-- **Pinned CLI:** `SUPPORTED_CLI_VERSION = "0.7.1"` (`src/alpCli/service.ts`)
+- **Pinned CLI:** `SUPPORTED_CLI_VERSION = "0.8.0"` (`src/alpCli/service.ts`)
   — the GA of the line that carries `tan model zoo`/`add` (tan-cli#1338),
   per-entry artifact provenance on `missingPrerequisites[]` (tan-cli#1066) and
   two newly frozen issue codes. The Renesas `CONFIG_ALP_SDK_CHIP_NONE` fix

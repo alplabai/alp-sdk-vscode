@@ -48,7 +48,7 @@
 // site the extractor calls `flash` is a site `isFlashArgv` recognises.
 
 /**
- * Options of `tan flash` that CONSUME the next token, at the 0.7.1 pin.
+ * Options of `tan flash` that CONSUME the next token, at the 0.8.0 pin.
  *
  * Exactly the entries of `commands.flash.options` carrying a `metavar` in the
  * vendored surface. Six of them — `--jlink PATH`, `--probe-serial SN`,
@@ -98,7 +98,7 @@ export const FLASH_VALUE_TAKING_FLAGS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * ROOT-position options that consume the next token, at the 0.7.1 pin.
+ * ROOT-position options that consume the next token, at the 0.8.0 pin.
  *
  * Exactly the members of the surface's `globalOptions` that carry a `metavar`
  * in some command's option map. `globalOptions` is a bare name list with no

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **The extension pins tan `0.8.0`.** `SUPPORTED_CLI_VERSION` moves from
+  `0.7.1` to the `v0.8.0` release, which adds `tan platform` and the
+  `data.platform` key on `tan doctor`. The surface snapshot is recaptured
+  from the pinned binary, so `platform` is checked against it, and the
+  contract gate now asserts `platform.list-failed` as a declared code (tan
+  0.8.0 lists it `reserved`) instead of an undeclared one. `platform list` has
+  left the surface gate's unresolvable list (the terminal runner's
+  pass-through `args` stays there). Like `0.7.x`, `0.8.0` publishes no arm64 Windows or
+  arm64 Linux archive, and needs alp-sdk `v0.17.0` or newer to build any
+  Zephyr board. Pinned-version docs and install URLs move to `v0.8.0`.
+
 - **The extension pins tan `0.7.1`.** `SUPPORTED_CLI_VERSION` moves from
   `0.7.0` to the `v0.7.1` release, the `0.7.1-rc1` promoted to GA with no code
   change since, so the envelope contract the extension reads is unchanged.
