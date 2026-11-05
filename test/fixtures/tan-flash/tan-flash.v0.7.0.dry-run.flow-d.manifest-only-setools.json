@@ -1,0 +1,63 @@
+{
+  "command": "flash",
+  "ok": true,
+  "exitCode": 0,
+  "project": {
+    "root": "/home/dev/proj2",
+    "boardYaml": null
+  },
+  "sdk": {
+    "root": "/home/dev/alp-sdk",
+    "sourceTier": "sdkRootFlag"
+  },
+  "data": {
+    "schemaVersion": "1",
+    "buildRoot": "/home/dev/proj2/./build",
+    "entries": [
+      {
+        "kind": "slice",
+        "id": "m55_hp",
+        "method": "alif_mram_jlink",
+        "status": "ok",
+        "rc": 0,
+        "message": "ATOC placement not computed; pass --setools-dir (or set SETOOLS_DIR) to preview it -- the SETOOLS install here (/home/dev/setools) comes only from flash_args.setools_dir in the manifest, and a preview does not run a tool the project chose. NOTE: a real write REPLACES the ENTIRE ATOC -- Flow D cannot enumerate what is resident, so any boot entry this ATOC does not name is silently delisted and the SES still reports \"[SES] ATOC ok\". Arming the write therefore also needs --atoc-unqueryable (or flash_args.atoc_unqueryable: true) alongside the confirm gate (alp-sdk#2025, tan-cli#1252). (probe selection: serial (none pinned) via unpinned)",
+        "methodDeclared": "zephyr_west_flash",
+        "probe": {
+          "source": "unpinned",
+          "serial": null,
+          "usbPath": null,
+          "visibleProbes": null,
+          "sysfsRoot": "/sys/bus/usb/devices"
+        },
+        "jlink": {
+          "binary": "/usr/local/bin/JLinkExe",
+          "binarySource": "PATH"
+        },
+        "setools": {
+          "dir": "/home/dev/setools",
+          "source": "flash_args.setools_dir",
+          "signSkipped": true
+        }
+      },
+      {
+        "kind": "helper",
+        "id": "cc3501e_otp",
+        "status": "skipped",
+        "rc": -1,
+        "message": "flash: helper 'cc3501e_otp' is programmed by Alp Lab in production and is customer-flashable only to recover a bricked device, with Alp Lab-supplied binaries; skipping. Field updates arrive over update_channel: alp_ota_spi_otp. To recover a bricked device deliberately, re-run with `--helper cc3501e_otp --recover`."
+      }
+    ]
+  },
+  "issues": [
+    {
+      "code": "flash.probe-unverified",
+      "severity": "warning",
+      "message": "m55_hp: this host cannot enumerate USB devices, so the J-Link selection was not cross-checked against sysfs; only the spawn-time ShowEmuList verification stands between this run and a wrong probe."
+    },
+    {
+      "code": "flash.preview-sign-skipped",
+      "severity": "info",
+      "message": "m55_hp: the ATOC was not signed for this preview -- the SETOOLS install comes only from flash_args.setools_dir in the manifest. Pass --setools-dir (or set SETOOLS_DIR) to see the placement."
+    }
+  ]
+}

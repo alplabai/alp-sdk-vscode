@@ -127,6 +127,44 @@ export const ROOT_VALUE_TAKING_FLAGS: ReadonlySet<string> = new Set([
   "--target",
 ]);
 
+/**
+ * The ONLY `tan flash` options the gate lets through, mapped to whether each
+ * takes a value. Everything else is refused, so a flag this build has not
+ * modelled can neither change what is written nor desynchronise the gate's
+ * reading of the argv from tan's (Typer/Click).
+ *
+ * - used by the extension: `--core`, `--dry-run`, `--sdk-root` (the runner adds
+ *   it), `--format` (the gate adds it);
+ * - safely tolerated, and carried through to the preview and the write:
+ *   `--setools-dir`, `--probe-serial`, `--probe-usb-path`, `--jlink`;
+ * - recognised only so a dedicated, clearer refusal can fire: `--confirm` and
+ *   `--atoc-unqueryable` (the gate adds both itself), `--recover`, `--project`.
+ *
+ * `test/flash.options.test.js` walks this table against the recorded surface,
+ * so a rename or an arity change in a future pin goes red.
+ *
+ * Click rules this reader mirrors: no long-option abbreviation (`--cor` is not
+ * `--core`); a value-taking option consumes the NEXT token unconditionally —
+ * even one that starts with `--`; `--opt=value` is one token; `--` ends
+ * options. tan's `cli.py` also hoists global options written after the
+ * subcommand, which is why `--sdk-root` and `--format` are read in either
+ * position with the same arity.
+ */
+export const FLASH_ALLOWED_OPTIONS: Readonly<Record<string, boolean>> = {
+  "--core": true,
+  "--setools-dir": true,
+  "--probe-serial": true,
+  "--probe-usb-path": true,
+  "--jlink": true,
+  "--format": true,
+  "--sdk-root": true,
+  "--dry-run": false,
+  "--confirm": false,
+  "--atoc-unqueryable": false,
+  "--recover": false,
+  "--project": true,
+};
+
 /** The flag that arms tan's confirm gate. One spelling, named once. */
 export const FLASH_CONFIRM_FLAG = "--confirm";
 
@@ -151,6 +189,27 @@ export interface FlashArgv {
   isArmed: boolean;
   /** `--recover`: a production helper-MCU recovery flash. Refused upstream of here. */
   isRecovery: boolean;
+  /** `--atoc-unqueryable` already written at the call site. The gate adds it itself, after its own modal. */
+  hasAtocUnqueryable: boolean;
+  /** `--setools-dir`'s value, or null. */
+  setoolsDir: string | null;
+  /**
+   * Option tokens that are not in `FLASH_ALLOWED_OPTIONS`: raw and RAM writes,
+   * ATOC replacement, reset suppression, an unknown or abbreviated flag, a
+   * short option. Refused like `--recover`: the consent screen and the preview
+   * describe a plain flash.
+   */
+  unmodelledFlags: readonly string[];
+  /**
+   * Allowed value-taking options whose value starts with `-` (`--core
+   * --confirm`). Click hands that token to the option as its value, and this
+   * reader does the same — but nothing legitimate looks like that, so the gate
+   * refuses it rather than trust the two parsers to agree.
+   */
+  suspectValues: readonly string[];
+  /** A `--` appeared before the command. Refused by the gate: no call site
+   *  writes one, and the two parsers must not be left to agree about it. */
+  hasRootEndOfOptions: boolean;
   /**
    * `--project` was written, in EITHER position. Refused rather than read:
    * this repo cannot say whether tan anchors the flash on it or on APP_PATH,
@@ -241,6 +300,11 @@ export function readFlashArgv(args: readonly string[]): FlashArgv {
   let isDryRun = false;
   let isArmed = false;
   let isRecovery = false;
+  let hasAtocUnqueryable = false;
+  let setoolsDir: string | null = null;
+  const unmodelledFlags: string[] = [];
+  let hasRootEndOfOptions = false;
+  const suspectValues: string[] = [];
   let hasProjectFlag = false;
   const danglingFlags: string[] = [];
   const positionals: string[] = [];
@@ -251,6 +315,14 @@ export function readFlashArgv(args: readonly string[]): FlashArgv {
     if (i === commandIndex) continue;
     const token = args[i];
     if (!endOfOptions && token === "--") {
+      // A `--` BEFORE the command ends only the root's options: Click starts
+      // the subcommand's option parsing fresh, so `-- flash --confirm` arms.
+      // Carrying it past the command read `--confirm` as a positional here
+      // while tan read it as the flag. Recorded and refused by the gate.
+      if (commandIndex < 0 || i < commandIndex) {
+        hasRootEndOfOptions = true;
+        continue;
+      }
       endOfOptions = true;
       continue;
     }
@@ -268,6 +340,11 @@ export function readFlashArgv(args: readonly string[]): FlashArgv {
       }
 
       if (name === "--project") hasProjectFlag = true;
+      if (!Object.hasOwn(FLASH_ALLOWED_OPTIONS, name)) {
+        unmodelledFlags.push(name);
+      } else if (takesValue && value !== undefined && value.startsWith("-")) {
+        suspectValues.push(name);
+      }
       if (beforeCommand) continue;
       if (name === "--core") coreId = value ?? null;
       else if (name === "--helper") helperName = value ?? null;
@@ -275,6 +352,8 @@ export function readFlashArgv(args: readonly string[]): FlashArgv {
       else if (name === "--dry-run") isDryRun = true;
       else if (name === FLASH_CONFIRM_FLAG) isArmed = true;
       else if (name === "--recover") isRecovery = true;
+      else if (name === "--atoc-unqueryable") hasAtocUnqueryable = true;
+      else if (name === "--setools-dir") setoolsDir = value ?? null;
       continue;
     }
     positionals.push(token);
@@ -289,6 +368,11 @@ export function readFlashArgv(args: readonly string[]): FlashArgv {
     isDryRun,
     isArmed,
     isRecovery,
+    hasAtocUnqueryable,
+    setoolsDir,
+    unmodelledFlags,
+    hasRootEndOfOptions,
+    suspectValues,
     hasProjectFlag,
     danglingFlags,
     extraPositionals: positionals.slice(1),
@@ -296,8 +380,7 @@ export function readFlashArgv(args: readonly string[]): FlashArgv {
 }
 
 /**
- * Return a copy of `args` carrying `--confirm`, inserted immediately after the
- * command.
+ * Return a copy of `args` with `flags` inserted immediately after the command.
  *
  * IMMUTABLE — the caller's array is never touched, so a refused consent leaves
  * nothing armed behind it.
@@ -306,14 +389,77 @@ export function readFlashArgv(args: readonly string[]): FlashArgv {
  * APP_PATH positional. Directly after the command is the one placement no
  * parser can read as anything else — and "after the command" means after the
  * command WHEREVER IT SITS, not after argv[0], so a root flag in front of it
- * (`["--sdk-root", p, "flash"]`) does not turn `--confirm` into that flag's
- * value. An argv that already carries `--confirm` is returned unchanged rather
- * than given a second copy — the flag is a boolean, and consent has already
- * been obtained by the time this is called.
+ * (`["--sdk-root", p, "flash"]`) does not turn an inserted flag into that
+ * flag's value. An argv with no command is returned unchanged.
+ */
+function insertAfterCommand(
+  args: readonly string[],
+  flags: readonly string[],
+): string[] {
+  const at = commandIndexOf(args);
+  if (at < 0) return [...args];
+  return [...args.slice(0, at + 1), ...flags, ...args.slice(at + 1)];
+}
+
+/**
+ * Return a copy of `args` carrying `--confirm`. An argv that already carries it
+ * is returned unchanged rather than given a second copy — the flag is a
+ * boolean, and consent has already been obtained by the time this is called.
  */
 export function armFlashArgv(args: readonly string[]): string[] {
-  const argv = readFlashArgv(args);
-  if (argv.isArmed || argv.commandIndex < 0) return [...args];
-  const at = argv.commandIndex;
-  return [...args.slice(0, at + 1), FLASH_CONFIRM_FLAG, ...args.slice(at + 1)];
+  if (readFlashArgv(args).isArmed) return [...args];
+  return insertAfterCommand(args, [FLASH_CONFIRM_FLAG]);
+}
+
+/** The acknowledgement tan's Flow D write demands (tan-cli#1252). */
+export const ATOC_UNQUERYABLE_FLAG = "--atoc-unqueryable";
+
+/** Add `--atoc-unqueryable`. Only after the customer has said yes to the
+ *  boot-table replacement on its own modal. */
+export function acknowledgeAtocReplacement(args: readonly string[]): string[] {
+  if (readFlashArgv(args).hasAtocUnqueryable) return [...args];
+  return insertAfterCommand(args, [ATOC_UNQUERYABLE_FLAG]);
+}
+
+/** Name the SETOOLS install to sign with. `--setools-dir` outranks the
+ *  environment and the manifest, and is the only source tan will EXECUTE for a
+ *  confirmed write that the operator did not name. */
+export function withSetoolsDir(args: readonly string[], dir: string): string[] {
+  if (readFlashArgv(args).setoolsDir !== null) return [...args];
+  return insertAfterCommand(args, ["--setools-dir", dir]);
+}
+
+/** The preview of `args`: the same run, `--dry-run`, as a JSON envelope. */
+export function previewFlashArgv(args: readonly string[]): string[] {
+  return insertAfterCommand(args, ["--dry-run", "--format", "json"]);
+}
+
+/** The real run of `args`, read back as a JSON envelope. */
+export function jsonFlashArgv(args: readonly string[]): string[] {
+  return insertAfterCommand(args, ["--format", "json"]);
+}
+
+/** `args` without `--core` (either spelling): the whole-board form of a
+ *  per-slice flash. */
+export function withoutCore(args: readonly string[]): string[] {
+  const commandIndex = commandIndexOf(args);
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const token = args[i];
+    if (commandIndex >= 0 && i > commandIndex && isFlagToken(token)) {
+      const { name, inline } = splitFlag(token);
+      if (name === "--core") {
+        if (inline === undefined) i += 1;
+        continue;
+      }
+      if (inline === undefined && FLASH_VALUE_TAKING_FLAGS.has(name)) {
+        out.push(token);
+        if (i + 1 < args.length) out.push(args[i + 1]);
+        i += 1;
+        continue;
+      }
+    }
+    out.push(token);
+  }
+  return out;
 }

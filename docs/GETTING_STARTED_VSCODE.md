@@ -222,6 +222,11 @@ Use:
 - Alp: West flash
 - Alp: Run under native_sim
 
+Alp: Flash (the Build Plan buttons and the `tan flash` command) previews with
+`tan` first and asks before it writes. On an Alif Ensemble board (AEN) it asks a
+second time before replacing the boot table, and signs with the SETOOLS in your
+`SETOOLS_DIR`. See `docs/EXTENSION_CLI_INTEGRATION.md` §6a-1.
+
 ## 7. Models Panel
 
 **Not reachable in this build, and the CLI behind it is one subcommand.**

@@ -1,0 +1,28 @@
+{
+  "command": "flash",
+  "ok": true,
+  "exitCode": 0,
+  "project": {
+    "root": "/home/dev/proj",
+    "boardYaml": null
+  },
+  "sdk": {
+    "root": "/home/dev/alp-sdk",
+    "sourceTier": "sdkRootFlag"
+  },
+  "data": {
+    "schemaVersion": "1",
+    "buildRoot": "/home/dev/proj/./build",
+    "entries": [
+      {
+        "kind": "slice",
+        "id": "m33",
+        "method": "zephyr_west_flash",
+        "status": "ok",
+        "rc": 0,
+        "message": "would run west flash --build-dir /home/dev/proj/./build"
+      }
+    ]
+  },
+  "issues": []
+}

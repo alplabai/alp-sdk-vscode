@@ -1,0 +1,205 @@
+{
+  "command": "flash",
+  "ok": false,
+  "exitCode": 1,
+  "project": {
+    "root": "/home/dev/proj",
+    "boardYaml": null
+  },
+  "sdk": {
+    "root": "/home/dev/alp-sdk",
+    "sourceTier": "sdkRootFlag"
+  },
+  "data": {
+    "schemaVersion": "1",
+    "buildRoot": "/home/dev/proj/./build",
+    "entries": [
+      {
+        "kind": "slice",
+        "id": "m55_he",
+        "method": "alif_mram_jlink",
+        "status": "failed",
+        "rc": 1,
+        "message": "alif_mram_jlink[m55_he]: Connecting to J-Link via USB...O.K. | Found SW-DP with ID 0x4C013477 | Downloading file [x.bin]... | ERROR: Failed to download RAMCode.",
+        "methodDeclared": "zephyr_west_flash",
+        "probe": {
+          "source": "unpinned",
+          "serial": null,
+          "usbPath": null,
+          "visibleProbes": null,
+          "sysfsRoot": "/sys/bus/usb/devices",
+          "isolation": "verified-single-emulator"
+        },
+        "jlink": {
+          "binary": "/usr/local/bin/JLinkExe",
+          "binarySource": "PATH",
+          "dpidr": "0x4C013477",
+          "dpidrSource": "write-transcript",
+          "verification": "cache-verified",
+          "verificationNote": "verifybin compares the image against J-Link's flash cache, not the chip; a fresh-session read after a cold power cycle is what proves a write (alp-sdk#2233). --readback adds a fresh-session read-back + sha256 compare.",
+          "reset": "not-reached",
+          "resetFailures": [],
+          "transcriptTail": [
+            "Connecting to J-Link via USB...O.K.",
+            "Found SW-DP with ID 0x4C013477",
+            "Downloading file [x.bin]...",
+            "ERROR: Failed to download RAMCode."
+          ],
+          "transcriptPath": "/home/dev/proj/./build/flash-logs/alif_mram_jlink-m55_he-20261013T000000Z.log"
+        },
+        "setools": {
+          "dir": "/home/dev/setools",
+          "source": "the --setools-dir flag",
+          "scratch": "/tmp/tan-setools-scratch",
+          "scratchRemoved": true,
+          "deviceConfig": {
+            "included": true,
+            "path": "/home/dev/setools/build/config/app-device-config.json",
+            "source": "the stock SETOOLS build/config/app-device-config.json",
+            "metadataDevice": "AE822FA0E5597LS0",
+            "stock": true
+          }
+        },
+        "atoc": {
+          "address": "0x8057e030",
+          "size": 4,
+          "entries": [
+            {
+              "name": "DEVICE",
+              "objAddress": "0x80000000"
+            },
+            {
+              "name": "m55_he",
+              "objAddress": "0x80010000"
+            },
+            {
+              "name": "m55_hp",
+              "objAddress": "0x802b0000"
+            }
+          ]
+        },
+        "plan": {
+          "argv": [
+            "JLinkExe",
+            "-device",
+            "AE822FA0E5597LS0_M55_HE",
+            "-if",
+            "SWD",
+            "-speed",
+            "4000",
+            "-ExitOnError",
+            "1",
+            "-NoGui",
+            "1",
+            "-CommanderScript"
+          ],
+          "jlinkScript": [
+            "exec DisableAutoUpdateFW",
+            "si SWD",
+            "speed 4000",
+            "device AE822FA0E5597LS0_M55_HE",
+            "connect",
+            "loadbin /home/dev/proj/./build/m55_he.bin 0x80010000",
+            "loadbin /home/dev/proj/./build/m55_hp.bin 0x802b0000",
+            "loadbin /tmp/tan-setools-scratch/build/AppTocPackage.bin 0x8057e030",
+            "verifybin /home/dev/proj/./build/m55_he.bin 0x80010000",
+            "verifybin /home/dev/proj/./build/m55_hp.bin 0x802b0000",
+            "verifybin /tmp/tan-setools-scratch/build/AppTocPackage.bin 0x8057e030",
+            "RSetType 2",
+            "r",
+            "g",
+            "exit"
+          ],
+          "writes": [
+            {
+              "name": "app",
+              "address": "0x80010000",
+              "path": "/home/dev/proj/./build/m55_he.bin",
+              "size": 68,
+              "sectorSpan": {
+                "first": "0x80010000",
+                "end": "0x80014000",
+                "count": 1,
+                "bytes": 16384,
+                "sectorBytes": 16384
+              }
+            },
+            {
+              "name": "app:m55_hp",
+              "address": "0x802b0000",
+              "path": "/home/dev/proj/./build/m55_hp.bin",
+              "size": 68,
+              "sectorSpan": {
+                "first": "0x802B0000",
+                "end": "0x802B4000",
+                "count": 1,
+                "bytes": 16384,
+                "sectorBytes": 16384
+              }
+            },
+            {
+              "name": "atoc",
+              "address": "0x8057e030",
+              "path": "/tmp/tan-setools-scratch/build/AppTocPackage.bin",
+              "size": 4,
+              "sectorSpan": {
+                "first": "0x8057C000",
+                "end": "0x80580000",
+                "count": 1,
+                "bytes": 16384,
+                "sectorBytes": 16384
+              }
+            }
+          ],
+          "atoc": {
+            "address": "0x8057e030",
+            "size": 4,
+            "entries": [
+              {
+                "name": "DEVICE",
+                "objAddress": "0x80000000"
+              },
+              {
+                "name": "m55_he",
+                "objAddress": "0x80010000"
+              },
+              {
+                "name": "m55_hp",
+                "objAddress": "0x802b0000"
+              }
+            ],
+            "signedByTan": true
+          },
+          "scratchNote": "the ATOC path above lives in a scratch overlay removed when this entry ends"
+        }
+      },
+      {
+        "kind": "slice",
+        "id": "m55_hp",
+        "method": "alif_mram_jlink",
+        "status": "failed",
+        "rc": 1,
+        "message": "m55_hp: written in the combined ATOC led by m55_he (failed): alif_mram_jlink[m55_he]: Connecting to J-Link via USB...O.K. | Found SW-DP with ID 0x4C013477 | Downloading file [x.bin]... | ERROR: Failed to download RAMCode."
+      },
+      {
+        "kind": "helper",
+        "id": "cc3501e_otp",
+        "status": "skipped",
+        "rc": -1,
+        "message": "flash: helper 'cc3501e_otp' is programmed by Alp Lab in production and is customer-flashable only to recover a bricked device, with Alp Lab-supplied binaries; skipping. Field updates arrive over update_channel: alp_ota_spi_otp. To recover a bricked device deliberately, re-run with `--helper cc3501e_otp --recover`."
+      }
+    ]
+  },
+  "issues": [
+    {
+      "code": "flash.probe-unverified",
+      "severity": "warning",
+      "message": "m55_he: this host cannot enumerate USB devices, so the J-Link selection was not cross-checked against sysfs; only the spawn-time ShowEmuList verification stands between this run and a wrong probe."
+    },
+    {
+      "code": "flash.entry-failed",
+      "severity": "error",
+      "message": "alif_mram_jlink[m55_he]: Connecting to J-Link via USB...O.K. | Found SW-DP with ID 0x4C013477 | Downloading file [x.bin]... | ERROR: Failed to download RAMCode."
+    }
+  ]
+}

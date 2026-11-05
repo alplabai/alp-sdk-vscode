@@ -911,6 +911,25 @@ test("posixLoginShellCommand cd's into cwd and execs the binary", () => {
   );
 });
 
+test("posixLoginShellCommand scrubs named variables via `env -u`, inside the login shell's -c", () => {
+  // The whole string is the login shell's `-c`, so the profile has already run
+  // by the time `env -u` does. That ordering is what removes a profile's
+  // `export ALP_FLASH_FORCE=1` (#540); an env-object delete alone cannot.
+  assert.equal(
+    posixLoginShellCommand("/opt/tan", ["flash"], "/w", ["ALP_FLASH_FORCE"]),
+    "cd '/w' && exec env -u ALP_FLASH_FORCE '/opt/tan' 'flash'",
+  );
+  assert.equal(
+    posixLoginShellCommand("/opt/tan", ["flash"], undefined, ["A_B", "C"]),
+    "exec env -u A_B -u C '/opt/tan' 'flash'",
+  );
+  // `-u` takes identifiers, so a name is validated, not quoted.
+  assert.throws(
+    () => posixLoginShellCommand("/opt/tan", [], undefined, ["X; rm -rf ~"]),
+    /not an environment variable name/,
+  );
+});
+
 test("aheadPathFixAction gates the ahead-tan remedy on preferGlobalCli", () => {
   // Flag off: a PATH tan only won because no managed copy exists; the cache
   // outranks PATH when off, so downloading the pinned version restores support.

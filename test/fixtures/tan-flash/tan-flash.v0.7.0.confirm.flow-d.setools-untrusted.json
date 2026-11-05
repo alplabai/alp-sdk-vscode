@@ -1,0 +1,46 @@
+{
+  "command": "flash",
+  "ok": false,
+  "exitCode": 1,
+  "project": {
+    "root": "/home/dev/proj",
+    "boardYaml": null
+  },
+  "sdk": {
+    "root": "/home/dev/alp-sdk",
+    "sourceTier": "sdkRootFlag"
+  },
+  "data": {
+    "schemaVersion": "1",
+    "buildRoot": "/home/dev/proj/./build",
+    "entries": [
+      {
+        "kind": "slice",
+        "id": "m55_hp",
+        "method": "alif_mram_jlink",
+        "status": "failed",
+        "rc": 1,
+        "message": "alif_mram_jlink: the SETOOLS install '/opt/setools' is named only by flash_args.setools_dir in the manifest, which the project controls -- tan will not EXECUTE an app-gen-toc a checkout picked for a write to a board. Name the install yourself: --setools-dir <path> on the command line or SETOOLS_DIR=<path> in the environment.",
+        "methodDeclared": "zephyr_west_flash",
+        "jlink": {
+          "binary": "/usr/local/bin/JLinkExe",
+          "binarySource": "PATH"
+        }
+      },
+      {
+        "kind": "helper",
+        "id": "cc3501e_otp",
+        "status": "skipped",
+        "rc": -1,
+        "message": "flash: helper 'cc3501e_otp' is programmed by Alp Lab in production and is customer-flashable only to recover a bricked device, with Alp Lab-supplied binaries; skipping. Field updates arrive over update_channel: alp_ota_spi_otp. To recover a bricked device deliberately, re-run with `--helper cc3501e_otp --recover`."
+      }
+    ]
+  },
+  "issues": [
+    {
+      "code": "flash.setools-untrusted-source",
+      "severity": "error",
+      "message": "alif_mram_jlink: the SETOOLS install '/opt/setools' is named only by flash_args.setools_dir in the manifest, which the project controls -- tan will not EXECUTE an app-gen-toc a checkout picked for a write to a board. Name the install yourself: --setools-dir <path> on the command line or SETOOLS_DIR=<path> in the environment."
+    }
+  ]
+}

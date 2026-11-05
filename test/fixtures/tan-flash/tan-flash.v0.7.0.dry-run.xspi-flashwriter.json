@@ -1,0 +1,35 @@
+{
+  "command": "flash",
+  "ok": true,
+  "exitCode": 0,
+  "project": {
+    "root": "/home/dev/proj",
+    "boardYaml": null
+  },
+  "sdk": {
+    "root": "/home/dev/alp-sdk",
+    "sourceTier": "sdkRootFlag"
+  },
+  "data": {
+    "schemaVersion": "1",
+    "buildRoot": "/home/dev/proj/./build",
+    "entries": [
+      {
+        "kind": "slice",
+        "id": "m55_hp",
+        "method": "xspi_flashwriter",
+        "status": "ok",
+        "rc": 0,
+        "message": "would run flash-writer-scif port=<port> writer=<flash_writer.mot> baud=115200 partition=mtd1 artefact=m55_hp.bin"
+      },
+      {
+        "kind": "helper",
+        "id": "cc3501e_otp",
+        "status": "skipped",
+        "rc": -1,
+        "message": "flash: helper 'cc3501e_otp' is programmed by Alp Lab in production and is customer-flashable only to recover a bricked device, with Alp Lab-supplied binaries; skipping. Field updates arrive over update_channel: alp_ota_spi_otp. To recover a bricked device deliberately, re-run with `--helper cc3501e_otp --recover`."
+      }
+    ]
+  },
+  "issues": []
+}

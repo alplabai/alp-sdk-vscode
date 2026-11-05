@@ -36,7 +36,7 @@ test("streams through the login shell so the child keeps the user's PATH", () =>
   assert.match(ADAPTER, /"-lc"/);
   // The command string comes from the pure service, not a second hand-rolled
   // quoter in the adapter.
-  assert.match(ADAPTER, /posixLoginShellCommand\(command, args, cwd\)/);
+  assert.match(ADAPTER, /posixLoginShellCommand\(command, args, cwd, unset\)/);
   assert.match(streamed, /shellRun\s*\?\s*cp\.spawn\(shellRun\.file/);
 });
 
@@ -111,7 +111,12 @@ test("the streamed argv carries no flag tan defers (tan-cli#427)", () => {
   // Asserted on the assignment, not on the whole slice: the comment above it
   // quotes both flag names on purpose, so a bare
   // `doesNotMatch(streamed, /--no-color/)` would fail on prose, not on code.
-  assert.match(streamed, /const finalArgs = withSdkRoot\(args\);/);
+  // (A flash reuses the SDK root its preview ran with — `withPinnedSdkRoot` —
+  // and every other run still reads it fresh.)
+  assert.match(
+    streamed,
+    /const finalArgs = sdkPrefix\s*\?\s*withPinnedSdkRoot\(sdkPrefix, args\)\s*:\s*withSdkRoot\(args\);/,
+  );
   // Any array literal here is an appended-flag list coming back.
   assert.doesNotMatch(streamed, /const finalArgs = \[/);
 });

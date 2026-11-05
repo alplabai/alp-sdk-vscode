@@ -646,13 +646,15 @@ export class BuildPlanPanel {
     // the same board, so per-core names would be two reservations and two
     // programmers at once. The core is in the logged command line.
     //
-    // `--confirm` is deliberately absent — but it is NOT what makes this argv
-    // safe: three of tan's six backends write on a bare `tan flash`
-    // (tan-cli#796). `gateFlashDispatch` (`src/flash/gate.ts`) is what spawns
-    // nothing until the customer accepts, and that dialog is the one place
-    // they learn what `--core` costs them — tan's own help for it is "skips
-    // every other slice AND all helpers", so this button leaves the rest of
-    // the board on its old images.
+    // `--confirm` is deliberately absent: whether it applies depends on the
+    // backend tan resolves for this slice, which `gateFlashDispatch`
+    // (`src/flash/gate.ts`) learns from a `--dry-run` preview and decides
+    // there. It spawns nothing until the customer accepts, and that dialog is
+    // the one place they learn what `--core` costs them — tan's own help for it
+    // is "skips every other slice AND all helpers", so this button leaves the
+    // rest of the board on its old images. On a Flow D board (AEN) a per-slice
+    // flash that would also delist a sibling's boot entry is refused there, and
+    // the whole-board Flash is the way to flash it.
     void runAlpStreamed(this.context, ["flash", "--core", coreId], {
       name: FLASH_RUN_NAME,
       cwd,
