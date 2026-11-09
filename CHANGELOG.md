@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **New Project offers the N48 Renesas SoMs.** E1M-V2N104, E1M-V2N105,
+  E1M-V2N106 and E1M-V2M104, E1M-V2M105, E1M-V2M106 (the RZ/V2N N48 silicon
+  with GPU, ISP and security IP; alp-sdk#3119) join the module list and the
+  `board.yaml` SKU snippet, with the same Renesas tan-version check as the
+  101-103 SKUs.
+
 ## 0.8.0
 
 **Stable.** Adds Alp Platform releases to VS Code: a status bar item shows

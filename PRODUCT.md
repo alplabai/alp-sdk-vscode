@@ -81,8 +81,10 @@ Four mechanisms a neighboring embedded extension could not truthfully copy:
   `E1M_MODULES` in `src/ideHub/projectScaffold.ts` —
   `alif-ensemble`: `E1M-AEN301`, `E1M-AEN401`, `E1M-AEN501`, `E1M-AEN601`,
   `E1M-AEN701`, `E1M-AEN801`, `E1M-AEN803`;
-  `renesas-rzv2n`: `E1M-V2N101`, `E1M-V2N102`, `E1M-V2N103`;
-  `renesas-rzv2n-deepx`: `E1M-V2M101`, `E1M-V2M102`, `E1M-V2M103`.
+  `renesas-rzv2n`: `E1M-V2N101`, `E1M-V2N102`, `E1M-V2N103`, `E1M-V2N104`,
+  `E1M-V2N105`, `E1M-V2N106`;
+  `renesas-rzv2n-deepx`: `E1M-V2M101`, `E1M-V2M102`, `E1M-V2M103`,
+  `E1M-V2M104`, `E1M-V2M105`, `E1M-V2M106`.
 - **Dependencies on other extensions:** `extensionDependencies` are
   `redhat.vscode-yaml` and `marus25.cortex-debug`; `extensionPack` adds
   `ms-vscode.cpptools` and `vadimcn.vscode-lldb`.

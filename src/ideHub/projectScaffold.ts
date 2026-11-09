@@ -66,6 +66,23 @@ export const E1M_MODULES: E1mModule[] = [
     family: "renesas-rzv2n",
   },
   {
+    id: "E1M-V2N104",
+    displayName: "E1M-V2N104 (Renesas RZ/V2N N48: GPU + ISP + security)",
+    family: "renesas-rzv2n",
+  },
+  {
+    id: "E1M-V2N105",
+    displayName:
+      "E1M-V2N105 (Renesas RZ/V2N N48: GPU + ISP + security, larger memory)",
+    family: "renesas-rzv2n",
+  },
+  {
+    id: "E1M-V2N106",
+    displayName:
+      "E1M-V2N106 (Renesas RZ/V2N N48: GPU + ISP + security, 4 GB RAM / 16 GB eMMC)",
+    family: "renesas-rzv2n",
+  },
+  {
     id: "E1M-V2M101",
     displayName: "E1M-V2M101 (Renesas RZ/V2N + DEEPX DX-M1)",
     family: "renesas-rzv2n-deepx",
@@ -79,6 +96,23 @@ export const E1M_MODULES: E1mModule[] = [
     id: "E1M-V2M103",
     displayName:
       "E1M-V2M103 (Renesas RZ/V2N + DEEPX DX-M1, 4 GB RAM / 16 GB eMMC)",
+    family: "renesas-rzv2n-deepx",
+  },
+  {
+    id: "E1M-V2M104",
+    displayName: "E1M-V2M104 (Renesas RZ/V2N N48 + DEEPX DX-M1, security)",
+    family: "renesas-rzv2n-deepx",
+  },
+  {
+    id: "E1M-V2M105",
+    displayName:
+      "E1M-V2M105 (Renesas RZ/V2N N48 + DEEPX DX-M1, security, larger memory)",
+    family: "renesas-rzv2n-deepx",
+  },
+  {
+    id: "E1M-V2M106",
+    displayName:
+      "E1M-V2M106 (Renesas RZ/V2N N48 + DEEPX DX-M1, security, 4 GB RAM / 16 GB eMMC)",
     family: "renesas-rzv2n-deepx",
   },
 ];
