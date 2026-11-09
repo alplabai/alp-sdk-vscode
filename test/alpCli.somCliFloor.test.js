@@ -36,14 +36,22 @@ const { E1M_MODULES } = require("../out/ideHub/projectScaffold.js");
  *  warning and stay green. */
 // V2N103/V2M103 (alp-sdk v0.17.0) are memory-tier variants of the V2N101
 // PCB and silicon, so the same Renesas configure path -- and the same floor --
-// applies; #502 itself measured the first four.
+// applies; #502 itself measured the first four. V2N104-106/V2M104-106
+// (alp-sdk#3119) are the same boards on the N48 silicon variant (security IP);
+// the build path is unchanged, so the same floor applies.
 const BROKEN_SKUS = [
   "E1M-V2N101",
   "E1M-V2N102",
   "E1M-V2N103",
+  "E1M-V2N104",
+  "E1M-V2N105",
+  "E1M-V2N106",
   "E1M-V2M101",
   "E1M-V2M102",
   "E1M-V2M103",
+  "E1M-V2M104",
+  "E1M-V2M105",
+  "E1M-V2M106",
 ];
 
 test("every Renesas SKU the #502 floor covers is recognised as Renesas", () => {

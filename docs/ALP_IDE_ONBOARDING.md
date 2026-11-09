@@ -67,7 +67,8 @@ Select the target E1M module from the grouped list:
 - **Alif Ensemble** — E1M-AEN801, AEN803, AEN301, AEN401, AEN501, AEN601,
   AEN701
 - **Renesas RZ/V2N** — E1M-V2N101, V2N102, V2N103, V2M101 (+ DEEPX DX-M1),
-  V2M102, V2M103
+  V2M102, V2M103; on the N48 silicon (GPU + ISP + security): V2N104, V2N105,
+  V2N106, V2M104, V2M105, V2M106
 
 The selected module determines the `som.sku` value written to `board.yaml`.
 
